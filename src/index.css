@@ -1,0 +1,50 @@
+@import 'tailwindcss';
+
+@keyframes shake {
+
+	0%,
+	100% {
+		transform: translateX(0);
+	}
+
+	20% {
+		transform: translateX(-5px);
+	}
+
+	40% {
+		transform: translateX(5px);
+	}
+
+	60% {
+		transform: translateX(-3px);
+	}
+
+	80% {
+		transform: translateX(3px);
+	}
+}
+
+.animate-shake {
+	animation: shake 0.4s cubic-bezier(.36, .07, .19, .97) both;
+}
+
+@keyframes flash {
+	0% {
+		opacity: 0;
+		transform: scale(0.5);
+	}
+
+	50% {
+		opacity: 1;
+		transform: scale(1.5);
+	}
+
+	100% {
+		opacity: 0;
+		transform: scale(2);
+	}
+}
+
+.animate-flash {
+	animation: flash 0.5s ease-out forwards;
+}
