@@ -1,6 +1,6 @@
 import './index.css';
 
-import { StrictMode, useState, useRef } from 'react';
+import { StrictMode, useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ELEMENT_COLORS, ELEMENT_ICONS } from './data/elements';
 import { getRecipeResult } from './data/recipes';
@@ -35,6 +35,16 @@ export const App = () => {
 	const [paletteTranslate, setPaletteTranslate] = useState(0);
 	const isGesturingPalette = useRef<'none' | 'swiping' | 'spawning'>('none');
 	const gestureStart = useRef({ x: 0, y: 0, name: '' });
+
+	const pagesCount = Math.ceil(discovered.length / ITEMS_PER_PAGE);
+	const prevPagesCount = useRef(pagesCount);
+
+	useEffect(() => {
+		if (pagesCount > prevPagesCount.current) {
+			setCurrentPage(pagesCount - 1);
+		}
+		prevPagesCount.current = pagesCount;
+	}, [pagesCount]);
 
 	const bringToFront = (id: string) => {
 		setElements((prev) => {
@@ -222,6 +232,7 @@ export const App = () => {
 	const onPaletteDown = (e: React.PointerEvent, name?: string) => {
 		gestureStart.current = { x: e.clientX, y: e.clientY, name: name || '' };
 		isGesturingPalette.current = 'none';
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	};
 
 	const onPaletteMove = (e: React.PointerEvent) => {
@@ -231,12 +242,14 @@ export const App = () => {
 		const dy = e.clientY - gestureStart.current.y;
 
 		if (isGesturingPalette.current === 'none') {
-			if (Math.abs(dx) > 10) {
-				isGesturingPalette.current = 'swiping';
-				(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-			} else if (dy < -20 && gestureStart.current.name) {
+			const horizontalThreshold = 15;
+			const verticalThreshold = 8;
+
+			if (dy < -verticalThreshold && Math.abs(dy) > Math.abs(dx) && gestureStart.current.name) {
 				isGesturingPalette.current = 'spawning';
 				spawnFromPalette(e, gestureStart.current.name);
+			} else if (Math.abs(dx) > horizontalThreshold) {
+				isGesturingPalette.current = 'swiping';
 			}
 		} else if (isGesturingPalette.current === 'swiping') {
 			setPaletteTranslate(dx);
@@ -299,7 +312,6 @@ export const App = () => {
 					onPointerDown={(e) => onPaletteDown(e)}
 					onPointerMove={onPaletteMove}
 					onPointerUp={onPaletteUp}
-					onPointerLeave={onPaletteUp}
 				>
 					<div
 						className={`flex h-full transition-transform duration-300 ease-out`}
@@ -314,24 +326,24 @@ export const App = () => {
 									const colorClass = ELEMENT_COLORS[name] ?? 'bg-gray-300 border-gray-500';
 									const weightMatch = colorClass.match(/-(\d{3})/);
 									const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-									const textColor = weight < 500 ? 'text-slate-950' : 'text-white';
+									const textColor = weight < 500 ? 'text-black/70' : 'text-white/90';
 									const Icon = ELEMENT_ICONS[name];
 
 									return (
 										<div
 											key={`${pageIdx}-${name}`}
-											className={`relative flex flex-col h-11 items-center justify-end pb-1.5 rounded-lg border-2 text-[11px] font-black shadow-sm active:scale-95 select-none overflow-hidden ${colorClass} ${textColor}`}
+											className={`relative flex flex-col h-11 items-center justify-end pb-1 rounded-lg border-2 text-[10px] font-black shadow-sm active:scale-95 select-none overflow-hidden ${colorClass} ${textColor}`}
 											onPointerDown={(e) => {
 												e.stopPropagation();
 												onPaletteDown(e, name);
 											}}
 										>
 											{Icon && (
-												<div className={`absolute inset-0 flex items-center justify-center opacity-40 pointer-events-none ${weight < 500 ? 'text-black' : 'text-white'}`}>
-													<Icon size={32} />
+												<div className={`absolute inset-x-0 top-0.5 flex justify-center opacity-30 pointer-events-none ${weight < 500 ? 'text-black' : 'text-white'}`}>
+													<Icon size={24} />
 												</div>
 											)}
-											<span className="relative z-10 drop-shadow-sm leading-none">{name}</span>
+											<span className="relative z-10 px-1 text-center truncate w-full drop-shadow-sm leading-[1.1]">{name}</span>
 										</div>
 									);
 								})}
@@ -358,22 +370,22 @@ export const App = () => {
 					// Quick contrast fix: parse the tailwind weight (e.g., 200, 600)
 					const weightMatch = colorClass.match(/-(\d{3})/);
 					const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-					const textColor = weight < 500 ? 'text-slate-950' : 'text-white';
+					const textColor = weight < 500 ? 'text-black/70' : 'text-white/90';
 					const Icon = ELEMENT_ICONS[el.name];
 
 					return (
 						<div
 							key={el.id}
-							className={`absolute flex flex-col h-16 w-20 ml-[-40px] mt-[-32px] cursor-grab items-center justify-end pb-2 rounded-lg border-2 text-base font-black shadow-lg pointer-events-auto select-none touch-none transition-shadow overflow-hidden ${colorClass} ${textColor} ${isDragging ? 'z-[100] scale-110 cursor-grabbing' : 'z-50'} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-slate-900 animate-pulse' : ''} ${isShaking ? 'animate-shake' : ''} ${!isDragging ? 'transition-[left,top,box-shadow,ring,transform] duration-300 ease-out' : ''}`}
+							className={`absolute flex flex-col h-16 w-20 ml-[-40px] mt-[-32px] cursor-grab items-center justify-end pb-1.5 rounded-lg border-2 text-[13px] font-black shadow-lg pointer-events-auto select-none touch-none transition-shadow overflow-hidden ${colorClass} ${textColor} ${isDragging ? 'z-[100] scale-110 cursor-grabbing' : 'z-50'} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-slate-900 animate-pulse' : ''} ${isShaking ? 'animate-shake' : ''} ${!isDragging ? 'transition-[left,top,box-shadow,ring,transform] duration-300 ease-out' : ''}`}
 							style={{ left: el.x, top: el.y }}
 							onPointerDown={(e) => handlePointerDown(e, el.id)}
 						>
 							{Icon && (
-								<div className={`absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none ${weight < 500 ? 'text-black' : 'text-white'}`}>
-									<Icon size={48} />
+								<div className={`absolute inset-x-0 top-1.5 flex justify-center opacity-30 pointer-events-none ${weight < 500 ? 'text-black' : 'text-white'}`}>
+									<Icon size={36} />
 								</div>
 							)}
-							<span className="relative z-10 drop-shadow-sm leading-none">{el.name}</span>
+							<span className="relative z-10 px-1 text-center drop-shadow-sm leading-tight">{el.name}</span>
 						</div>
 					);
 				})}
