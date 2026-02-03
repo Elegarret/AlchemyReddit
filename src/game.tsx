@@ -4,6 +4,7 @@ import { StrictMode, useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ELEMENT_COLORS, ELEMENT_ICONS } from './data/elements';
 import { getRecipeResult } from './data/recipes';
+import { trpc } from './trpc';
 
 type Element = {
 	id: string;
@@ -12,14 +13,47 @@ type Element = {
 	y: number;
 };
 
+const STORAGE_KEYS = {
+	DISCOVERED: 'alchemy-discovered',
+	ELEMENTS: 'alchemy-table-elements',
+	PAGE: 'alchemy-current-page',
+};
+
 let elementIdCounter = 0;
 const createElementId = () => `el-${++elementIdCounter}`;
 
 const ITEMS_PER_PAGE = 12;
 
 export const App = () => {
-	const [discovered, setDiscovered] = useState<string[]>(['air', 'fire', 'earth', 'water']);
-	const [elements, setElements] = useState<Element[]>([]);
+	const [discovered, setDiscovered] = useState<string[]>(() => {
+		try {
+			const saved = localStorage.getItem(STORAGE_KEYS.DISCOVERED);
+			return saved ? JSON.parse(saved) : ['air', 'fire', 'earth', 'water'];
+		} catch {
+			return ['air', 'fire', 'earth', 'water'];
+		}
+	});
+
+	const [elements, setElements] = useState<Element[]>(() => {
+		try {
+			const saved = localStorage.getItem(STORAGE_KEYS.ELEMENTS);
+			if (saved) {
+				const parsed = JSON.parse(saved) as Element[];
+				const maxId = parsed.reduce((max, el) => {
+					const idNum = parseInt(el.id.replace('el-', ''));
+					return isNaN(idNum) ? max : Math.max(max, idNum);
+				}, 0);
+				elementIdCounter = Math.max(elementIdCounter, maxId);
+				return parsed;
+			}
+		} catch (e) {
+			console.error('Failed to load elements', e);
+		}
+		return [];
+	});
+
+	const [loadingReddit, setLoadingReddit] = useState(true);
+	const [syncComplete, setSyncComplete] = useState(false);
 
 	const [dragging, setDragging] = useState<string | null>(null);
 	const [reactiveIDs, setReactiveIDs] = useState<string[]>([]);
@@ -31,7 +65,14 @@ export const App = () => {
 	const flashCounter = useRef(0);
 
 	// Palette Swipe State
-	const [currentPage, setCurrentPage] = useState(0);
+	const [currentPage, setCurrentPage] = useState(() => {
+		try {
+			const saved = localStorage.getItem(STORAGE_KEYS.PAGE);
+			return saved ? parseInt(saved, 10) : 0;
+		} catch {
+			return 0;
+		}
+	});
 	const [paletteTranslate, setPaletteTranslate] = useState(0);
 	const isGesturingPalette = useRef<'none' | 'swiping' | 'spawning'>('none');
 	const gestureStart = useRef({ x: 0, y: 0, name: '' });
@@ -45,6 +86,95 @@ export const App = () => {
 		}
 		prevPagesCount.current = pagesCount;
 	}, [pagesCount]);
+
+	// Persistence Effects
+	useEffect(() => {
+		localStorage.setItem(STORAGE_KEYS.DISCOVERED, JSON.stringify(discovered));
+	}, [discovered]);
+
+	// Reddit Progress Fetch
+	useEffect(() => {
+		const loadRedditProgress = async () => {
+			try {
+				const response = await trpc.init.get.query();
+				const prog = response.redditProgress;
+
+				if (prog) {
+					// 1. Merge discovered items
+					if (prog.discovered.length > 0) {
+						setDiscovered((prev) => {
+							const combined = Array.from(new Set([...prev, ...prog.discovered]));
+							return combined;
+						});
+					}
+
+					// 2. Load elements (only if local is empty/defaults)
+					// This prevents Device B (new) from overwriting Reddit with [] 
+					// while allowing Device A (old) to keep its more complete local state
+					if (prog.elements.length > 0) {
+						setElements((prev) => {
+							if (prev.length === 0) {
+								const maxId = prog.elements.reduce((max, el) => {
+									const idNum = parseInt(el.id.replace('el-', ''));
+									return isNaN(idNum) ? max : Math.max(max, idNum);
+								}, 0);
+								elementIdCounter = Math.max(elementIdCounter, maxId);
+								return prog.elements;
+							}
+							return prev;
+						});
+					}
+				}
+			} catch (err) {
+				console.error('[Sync] Load failed:', err);
+			} finally {
+				// We Mark sync as complete even on error so that the user can still play
+				setLoadingReddit(false);
+				setSyncComplete(true);
+			}
+		};
+		loadRedditProgress();
+	}, []);
+
+	// Reddit Progress Save (Discovery or Table changes)
+	const prevDiscoveredCount = useRef(discovered.length);
+	useEffect(() => {
+		// CRITICAL: Never save back to reddit until we've finished the initial load/merge
+		if (!syncComplete || loadingReddit) return;
+
+		const saveToReddit = () => {
+			trpc.progress.save.mutate({
+				discovered,
+				elements: elements.slice(-20)
+			}).catch((err) => {
+				console.error('[Sync] Save failed:', err);
+			});
+		};
+
+		// Discovery is higher priority
+		if (discovered.length > prevDiscoveredCount.current) {
+			console.log('[Sync] New discovery, saving to Reddit...');
+			saveToReddit();
+			prevDiscoveredCount.current = discovered.length;
+			return;
+		}
+
+		// Debounce table changes
+		const timeout = setTimeout(() => {
+			console.log('[Sync] Debounced table save to Reddit...');
+			saveToReddit();
+		}, 3000);
+
+		return () => clearTimeout(timeout);
+	}, [discovered, elements, syncComplete, loadingReddit]);
+
+	useEffect(() => {
+		localStorage.setItem(STORAGE_KEYS.ELEMENTS, JSON.stringify(elements));
+	}, [elements]);
+
+	useEffect(() => {
+		localStorage.setItem(STORAGE_KEYS.PAGE, currentPage.toString());
+	}, [currentPage]);
 
 	const bringToFront = (id: string) => {
 		setElements((prev) => {
