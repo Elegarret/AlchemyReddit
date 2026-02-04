@@ -66,8 +66,8 @@ export const App = () => {
 			// Gap is 1.5 (6px).
 			// We want minimum item width to be around 80-90px.
 			const availableWidth = width - 32;
-			const cols = Math.floor(availableWidth / 85);
-			setLayoutCols(Math.max(4, cols)); // Start with at least 4 columns (mobile)
+			const cols = Math.floor(availableWidth / 64);
+			setLayoutCols(Math.max(5, cols)); // Start with at least 5 columns (mobile)
 		};
 
 		handleResize();
@@ -699,7 +699,7 @@ export const App = () => {
 						{pages.map((page, pageIdx) => (
 							<div
 								key={pageIdx}
-								className="min-w-full grid grid-rows-3 gap-1.5 px-4 pb-2"
+								className="min-w-full h-full grid grid-rows-3 gap-1.5 px-4 pb-2"
 								style={{ gridTemplateColumns: `repeat(${layoutCols}, minmax(0, 1fr))` }}
 							>
 								{page.map((name) => {
@@ -711,7 +711,7 @@ export const App = () => {
 									return (
 										<div
 											key={`${pageIdx}-${name}`}
-											className={`relative flex flex-col h-11 items-center justify-end rounded-lg border-2 text-[10px] font-black shadow-sm active:scale-95 select-none overflow-hidden ${colorClass}`}
+											className={`relative flex flex-col h-full items-center justify-end rounded-lg border-2 text-[10px] font-black shadow-sm active:scale-95 select-none overflow-hidden ${colorClass}`}
 											onPointerDown={(e) => {
 												e.stopPropagation();
 												onPaletteDown(e, name);
