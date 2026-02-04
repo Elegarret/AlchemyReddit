@@ -27,8 +27,6 @@ const STORAGE_KEYS = {
 let elementIdCounter = 0;
 const createElementId = () => `el-${++elementIdCounter}`;
 
-const ITEMS_PER_PAGE = 18;
-
 export const App = () => {
 	const [discovered, setDiscovered] = useState<string[]>(() => {
 		try {
@@ -59,6 +57,23 @@ export const App = () => {
 
 	const [loadingReddit, setLoadingReddit] = useState(true);
 	const [syncComplete, setSyncComplete] = useState(false);
+	const [layoutCols, setLayoutCols] = useState(6);
+
+	useEffect(() => {
+		const handleResize = () => {
+			const width = window.innerWidth;
+			// px-4 is 16px. Total horizontal padding is 32px.
+			// Gap is 1.5 (6px).
+			// We want minimum item width to be around 80-90px.
+			const availableWidth = width - 32;
+			const cols = Math.floor(availableWidth / 85);
+			setLayoutCols(Math.max(4, cols)); // Start with at least 4 columns (mobile)
+		};
+
+		handleResize();
+		window.addEventListener('resize', handleResize);
+		return () => window.removeEventListener('resize', handleResize);
+	}, []);
 
 	const [dragging, setDragging] = useState<string | null>(null);
 	const [reactiveIDs, setReactiveIDs] = useState<string[]>([]);
@@ -110,15 +125,24 @@ export const App = () => {
 	const isGesturingPalette = useRef<'none' | 'swiping' | 'spawning'>('none');
 	const gestureStart = useRef({ x: 0, y: 0, name: '' });
 
-	const pagesCount = Math.ceil(discovered.length / ITEMS_PER_PAGE);
+	const itemsPerPage = layoutCols * 3;
+	const pagesCount = Math.ceil(discovered.length / itemsPerPage);
 	const prevPagesCount = useRef(pagesCount);
+	const prevDiscoveredLen = useRef(discovered.length);
 
 	useEffect(() => {
-		if (pagesCount > prevPagesCount.current) {
+		// Only jump to new page if we actually discovered something new
+		if (pagesCount > prevPagesCount.current && discovered.length > prevDiscoveredLen.current) {
 			setCurrentPage(pagesCount - 1);
 		}
+		// If resize caused page count to drop and we are out of bounds, fix it
+		if (currentPage >= pagesCount && pagesCount > 0) {
+			setCurrentPage(pagesCount - 1);
+		}
+
 		prevPagesCount.current = pagesCount;
-	}, [pagesCount]);
+		prevDiscoveredLen.current = discovered.length;
+	}, [pagesCount, discovered.length, currentPage]);
 
 	// Persistence Effects
 	useEffect(() => {
@@ -533,8 +557,8 @@ export const App = () => {
 		: discovered;
 
 	const pages: string[][] = [];
-	for (let i = 0; i < filteredDiscovered.length; i += ITEMS_PER_PAGE) {
-		pages.push(filteredDiscovered.slice(i, i + ITEMS_PER_PAGE));
+	for (let i = 0; i < filteredDiscovered.length; i += itemsPerPage) {
+		pages.push(filteredDiscovered.slice(i, i + itemsPerPage));
 	}
 	if (pages.length === 0 && filterQuery) {
 		pages.push([]);
@@ -673,7 +697,11 @@ export const App = () => {
 						}}
 					>
 						{pages.map((page, pageIdx) => (
-							<div key={pageIdx} className="min-w-full grid grid-cols-6 grid-rows-3 gap-1.5 px-4 pb-2">
+							<div
+								key={pageIdx}
+								className="min-w-full grid grid-rows-3 gap-1.5 px-4 pb-2"
+								style={{ gridTemplateColumns: `repeat(${layoutCols}, minmax(0, 1fr))` }}
+							>
 								{page.map((name) => {
 									const colorClass = ELEMENT_COLORS[name] ?? 'bg-gray-300 border-gray-500';
 									const weightMatch = colorClass.match(/-(\d{3})/);
