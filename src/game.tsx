@@ -3,8 +3,8 @@ import './index.css';
 import { StrictMode, useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ELEMENT_COLORS, ELEMENT_ICONS, KEY_ITEMS, KEY_ITEMS_DATA, ELEMENT_MESSAGES } from './data/elements';
-import { getRecipeResult } from './data/recipes';
-import { IoSettingsSharp, IoCloseSharp } from 'react-icons/io5';
+import { getRecipeResult, RECIPES } from './data/recipes';
+import { IoSettingsSharp, IoCloseSharp, IoSearchSharp } from 'react-icons/io5';
 import { trpc } from './trpc';
 
 type Element = {
@@ -13,9 +13,10 @@ type Element = {
 	x: number;
 	y: number;
 	icon?: any;
+	hint?: string;
 };
 
-const HUMAN_ICONS = ['🙋‍♂️', '🙋🏻‍♀️'];
+// No longer needed, icons moved to elements.ts
 
 const STORAGE_KEYS = {
 	DISCOVERED: 'alchemy-discovered',
@@ -70,6 +71,27 @@ export const App = () => {
 	const [discoveryPopup, setDiscoveryPopup] = useState<string | null>(null);
 	const [confirmWipe, setConfirmWipe] = useState(false);
 	const [infoPopup, setInfoPopup] = useState<string | null>(null);
+	const [filterQuery, setFilterQuery] = useState('');
+	const [showMobileFilter, setShowMobileFilter] = useState(false);
+
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.ctrlKey || e.altKey || e.metaKey || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+			if (e.key === 'Escape' || e.key === 'Backspace') {
+				setFilterQuery('');
+				return;
+			}
+
+			if (e.key.length === 1 && /^[a-zA-Z]$/.test(e.key)) {
+				setFilterQuery(e.key.toLowerCase());
+				setCurrentPage(0);
+			}
+		};
+
+		window.addEventListener('keydown', handleKeyDown);
+		return () => window.removeEventListener('keydown', handleKeyDown);
+	}, []);
 
 	const dragOffset = useRef({ x: 0, y: 0 });
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -220,14 +242,54 @@ export const App = () => {
 		(e.target as HTMLElement).setPointerCapture(e.pointerId);
 	};
 
+	const getRandomTableIcon = (name: string) => {
+		const rawIcon = ELEMENT_ICONS[name];
+		if (!Array.isArray(rawIcon)) return undefined;
+		if (rawIcon.length <= 1) return rawIcon[0];
+		// Pick a random icon starting from index 1
+		return rawIcon[1 + Math.floor(Math.random() * (rawIcon.length - 1))];
+	};
+
+	const getRandomHint = (currentDiscovered: string[] = discovered) => {
+		const possible: string[] = [];
+		for (const [key, outputs] of Object.entries(RECIPES)) {
+			const [a, b] = key.split('+');
+			if (a && b && currentDiscovered.includes(a) && currentDiscovered.includes(b)) {
+				for (const out of outputs) {
+					if (!currentDiscovered.includes(out) && !possible.includes(out)) {
+						possible.push(out);
+					}
+				}
+			}
+		}
+		if (possible.length === 0) return undefined;
+		return possible[Math.floor(Math.random() * possible.length)];
+	};
+
+	const closeHint = (id: string) => {
+		setElements((prev) =>
+			prev.map((el) => {
+				if (el.id === id) {
+					const { hint, ...rest } = el;
+					return rest;
+				}
+				return el;
+			})
+		);
+	};
+
 	const spawnFromPalette = (e: React.PointerEvent, name: string) => {
 		const id = createElementId();
+		const icon = getRandomTableIcon(name);
+		const hint = name === 'scientist' ? (getRandomHint() ?? 'nothing') : undefined;
+
 		const newElement: Element = {
 			id,
 			name,
 			x: e.clientX,
 			y: e.clientY,
-			icon: name === 'human' ? HUMAN_ICONS[Math.floor(Math.random() * HUMAN_ICONS.length)] : undefined,
+			icon,
+			...(hint ? { hint } : {}),
 		};
 
 		setElements((prev) => [...prev, newElement]);
@@ -306,39 +368,57 @@ export const App = () => {
 					(el) => el.id !== dragging && el.id !== targetEl.id
 				);
 
-				const newResultElements = result.map((name) => ({
-					id: createElementId(),
-					name,
-					x: midX,
-					y: midY,
-					icon: name === 'human' ? HUMAN_ICONS[Math.floor(Math.random() * HUMAN_ICONS.length)] : undefined,
-				}));
+				// Prepare next discovery state to correctly generate hints
+				let nextDiscovered = [...discovered];
+				let newlyDiscoveredKeyItem = null;
+				let newlyDiscoveredInfoItem = null;
+				result.forEach((name) => {
+					if (!nextDiscovered.includes(name)) {
+						nextDiscovered.push(name);
+						if (KEY_ITEMS.includes(name)) {
+							newlyDiscoveredKeyItem = name;
+						} else if (ELEMENT_MESSAGES[name]) {
+							newlyDiscoveredInfoItem = name;
+						}
+					}
+				});
+
+				// Recalculate hints for ALL existing scientists on the table given the new discoveries
+				const updatedFilteredElements = filteredElements.map(el => {
+					if (el.name === 'scientist') {
+						return {
+							...el,
+							hint: getRandomHint(nextDiscovered) ?? 'nothing'
+						};
+					}
+					return el;
+				});
+
+				const newResultElements = result.map((name) => {
+					const icon = getRandomTableIcon(name);
+					const hint = name === 'scientist' ? (getRandomHint(nextDiscovered) ?? 'nothing') : undefined;
+					return {
+						id: createElementId(),
+						name,
+						x: midX,
+						y: midY,
+						icon,
+						...(hint ? { hint } : {}),
+					};
+				});
 
 				// Update discovered list
-				setDiscovered((prev) => {
-					let next = [...prev];
-					let newlyDiscoveredKeyItem = null;
-					let newlyDiscoveredInfoItem = null;
-					result.forEach((name) => {
-						if (!next.includes(name)) {
-							next.push(name);
-							if (KEY_ITEMS.includes(name)) {
-								newlyDiscoveredKeyItem = name;
-							} else if (ELEMENT_MESSAGES[name]) {
-								newlyDiscoveredInfoItem = name;
-							}
-						}
-					});
+				if (nextDiscovered.length > discovered.length) {
+					setDiscovered(nextDiscovered);
 					if (newlyDiscoveredKeyItem) {
 						setDiscoveryPopup(newlyDiscoveredKeyItem);
 					} else if (newlyDiscoveredInfoItem) {
 						setInfoPopup(newlyDiscoveredInfoItem);
 					}
-					return next;
-				});
+				}
 
 				// Step 1: Place at center
-				setElements([...filteredElements, ...newResultElements]);
+				setElements([...updatedFilteredElements, ...newResultElements]);
 
 				// Step 2: Bounce away if more than one result
 				if (newResultElements.length > 1) {
@@ -410,6 +490,15 @@ export const App = () => {
 			const horizontalThreshold = 15;
 			const verticalThreshold = 8;
 
+			// If only one page, lock swiping and make any drag spawn the element
+			if (pages.length <= 1) {
+				if ((Math.abs(dx) > 5 || Math.abs(dy) > 5) && gestureStart.current.name) {
+					isGesturingPalette.current = 'spawning';
+					spawnFromPalette(e, gestureStart.current.name);
+				}
+				return;
+			}
+
 			if (dy < -verticalThreshold && Math.abs(dy) > Math.abs(dx) && gestureStart.current.name) {
 				isGesturingPalette.current = 'spawning';
 				spawnFromPalette(e, gestureStart.current.name);
@@ -439,9 +528,16 @@ export const App = () => {
 	};
 
 	// Chunk elements into pages
+	const filteredDiscovered = filterQuery
+		? discovered.filter((name) => name.toLowerCase().startsWith(filterQuery))
+		: discovered;
+
 	const pages: string[][] = [];
-	for (let i = 0; i < discovered.length; i += ITEMS_PER_PAGE) {
-		pages.push(discovered.slice(i, i + ITEMS_PER_PAGE));
+	for (let i = 0; i < filteredDiscovered.length; i += ITEMS_PER_PAGE) {
+		pages.push(filteredDiscovered.slice(i, i + ITEMS_PER_PAGE));
+	}
+	if (pages.length === 0 && filterQuery) {
+		pages.push([]);
 	}
 
 	const nextKeyItem = KEY_ITEMS.find((item) => !discovered.includes(item));
@@ -495,13 +591,72 @@ export const App = () => {
 
 			{/* Palette Area */}
 			<div className="h-60 border-t border-palette bg-palette flex flex-col z-10">
-				<div className="pt-3 px-4 pb-1 flex items-center justify-between">
-					<h2 className="text-xs font-bold uppercase tracking-wider text-secondary">
-						Elements
-					</h2>
-					<span className="text-[10px] text-tertiary">
-						{discovered.length}/{totalElementsCount} Discovered
-					</span>
+				<div className="pt-3 px-4 pb-1 relative">
+					{showMobileFilter ? (
+						<div
+							className="flex items-center gap-1 pb-1 w-full"
+							onPointerDown={(e) => e.stopPropagation()}
+						>
+							<button
+								onClick={() => {
+									setFilterQuery('');
+									setShowMobileFilter(false);
+									setCurrentPage(0);
+								}}
+								className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700 text-white flex items-center justify-center mr-1 active:scale-90 transition-transform"
+							>
+								<IoCloseSharp size={18} />
+							</button>
+							<div className="flex items-center gap-1 overflow-x-auto no-scrollbar touch-pan-x w-full">
+								{'abcdefghijklmnopqrstuvwxyz'.split('')
+									.filter(char => discovered.some(el => el.toLowerCase().startsWith(char)))
+									.map((char) => (
+										<button
+											key={char}
+											onClick={() => {
+												setFilterQuery(char);
+												setCurrentPage(0);
+											}}
+											className={`flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center font-bold text-sm uppercase transition-all active:scale-95 ${filterQuery === char
+												? 'bg-blue-500 text-white shadow-lg scale-105'
+												: 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+												}`}
+										>
+											{char}
+										</button>
+									))}
+							</div>
+						</div>
+					) : (
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-2">
+								<h2 className="text-xs font-bold uppercase tracking-wider text-secondary">
+									{filterQuery ? `Elements (${filterQuery.toUpperCase()})` : 'Elements'}
+								</h2>
+								{/* Mobile Filter Button */}
+								<button
+									onClick={() => setShowMobileFilter(true)}
+									className="sm:hidden p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-tertiary hover:text-primary transition-colors active:scale-95"
+								>
+									<IoSearchSharp size={14} />
+								</button>
+								{/* Desktop Hint - Leaned to caption */}
+								<span className="text-[11px] text-tertiary opacity-40  hidden sm:inline-block ml-2">
+									{filterQuery
+										? 'Press ESC to cancel filter'
+										: pages.length > 1
+											? 'Type any letter to filter'
+											: ''}
+								</span>
+							</div>
+
+							<div className="flex items-center gap-3">
+								<span className="text-[10px] text-tertiary">
+									{discovered.length}/{totalElementsCount} Discovered
+								</span>
+							</div>
+						</div>
+					)}
 				</div>
 
 				<div
@@ -536,23 +691,32 @@ export const App = () => {
 										>
 											{Icon && (
 												<div className={`absolute inset-0 flex items-center justify-center pointer-events-none pb-2`}>
-													{typeof Icon === 'string' ? (
-														Icon.startsWith('/') || Icon.startsWith('http') ? (
-															<img src={Icon} alt="" className="w-9 h-9 object-contain drop-shadow-md" />
-														) : (
-															<span className="text-[34px] leading-none drop-shadow-md">{Icon}</span>
-														)
-													) : (
-														<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
-															<Icon size={30} />
-														</div>
-													)}
+													{(() => {
+														const displayIcon = Array.isArray(Icon) ? Icon[0] : Icon;
+														if (typeof displayIcon === 'string') {
+															if (displayIcon.startsWith('/') || displayIcon.startsWith('http')) {
+																return <img src={displayIcon} alt="" className="w-9 h-9 object-contain drop-shadow-md" />;
+															}
+															return <span className="text-[34px] leading-none drop-shadow-md">{displayIcon}</span>;
+														}
+														const IconComp = displayIcon;
+														return (
+															<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
+																<IconComp size={30} />
+															</div>
+														);
+													})()}
 												</div>
 											)}
-											<span className="relative z-10 px-1 text-center truncate w-full bg-black/40 py-0.5 text-[10px] backdrop-blur-sm text-white/95">{name}</span>
+											<span className="relative z-10 text-center truncate w-full bg-black/40 py-0.5 text-[10px] backdrop-blur-sm text-white/95">{name}</span>
 										</div>
 									);
 								})}
+								{pageIdx === 0 && discovered.length >= 6 && discovered.length < 12 && (
+									<div className="col-span-6 row-start-3 flex items-center justify-center pointer-events-none opacity-30 text-[9px] font-bold uppercase tracking-[0.2em] text-primary italic">
+										drag elements here to discard them
+									</div>
+								)}
 							</div>
 						))}
 					</div>
@@ -585,7 +749,7 @@ export const App = () => {
 					return (
 						<div
 							key={el.id}
-							className={`absolute flex flex-col h-20 w-20 ml-[-40px] mt-[-40px] cursor-grab items-center justify-end rounded-xl border-2 text-[11px] font-bold shadow-2xl pointer-events-auto select-none touch-none overflow-hidden ${colorClass} ${isDragging ? 'z-[100] scale-110 cursor-grabbing' : 'z-50'} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : ''} ${isShaking ? 'animate-shake' : ''} ${isExploding ? 'animate-explode-shake z-[150]' : ''} ${pushVector ? 'animate-push-out' : ''} ${!isDragging && !isExploding && !pushVector ? 'element-transition' : ''}`}
+							className={`absolute h-20 w-20 ml-[-40px] mt-[-40px] pointer-events-auto select-none touch-none ${isDragging ? 'z-[100] cursor-grabbing scale-110' : 'z-50 cursor-grab'} ${isShaking ? 'animate-shake' : ''} ${isExploding ? 'animate-explode-shake z-[150]' : ''} ${pushVector ? 'animate-push-out' : ''} ${!isDragging && !isExploding && !pushVector ? 'element-transition' : ''}`}
 							style={{
 								left: el.x,
 								top: el.y,
@@ -594,25 +758,66 @@ export const App = () => {
 							} as any}
 							onPointerDown={(e) => handlePointerDown(e, el.id)}
 						>
-							{/* Background Darkener for contrast */}
-							<div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />
+							<div className={`absolute inset-0 flex flex-col items-center justify-end rounded-xl border-2 text-[11px] font-bold shadow-2xl overflow-hidden ${colorClass} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : ''}`}>
+								{/* Background Darkener for contrast */}
+								<div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />
 
-							{Icon && (
-								<div className="absolute inset-x-0 top-0 bottom-6 flex items-center justify-center pointer-events-none">
-									{typeof Icon === 'string' ? (
-										Icon.startsWith('/') || Icon.startsWith('http') ? (
-											<img src={Icon} alt="" className="w-14 h-14 object-contain drop-shadow-xl" />
+								{Icon && (
+									<div className="absolute inset-x-0 top-0 bottom-6 flex items-center justify-center pointer-events-none">
+										{(() => {
+											const displayIcon = Array.isArray(Icon) ? Icon[0] : Icon;
+											if (typeof displayIcon === 'string') {
+												if (displayIcon.startsWith('/') || displayIcon.startsWith('http')) {
+													return <img src={displayIcon} alt="" className="w-14 h-14 object-contain drop-shadow-xl" />;
+												}
+												return <span className="text-[52px] leading-none drop-shadow-xl">{displayIcon}</span>;
+											}
+											const IconComp = displayIcon;
+											return (
+												<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
+													<IconComp size={44} />
+												</div>
+											);
+										})()}
+									</div>
+								)}
+								<span className="relative z-10 px-1 py-0.5 text-center bg-black/40 backdrop-blur-md w-full text-white/95 truncate leading-tight border-t border-white/5">{el.name}</span>
+							</div>
+
+							{/* Scientist Hint Bubble */}
+							{el.hint && el.name === 'scientist' && (
+								<div
+									className="absolute -top-24 left-1/2 -translate-x-1/2 z-[200] cursor-pointer animate-bounce-subtle pointer-events-auto"
+									onPointerDown={(e) => {
+										e.stopPropagation();
+										closeHint(el.id);
+									}}
+								>
+									<div className="relative bg-white text-black p-3 rounded-2xl shadow-xl border-2 border-slate-200 min-w-[140px] text-center filter drop-shadow-lg">
+										{el.hint === 'nothing' ? (
+											<span className="font-bold text-sm">No discoveries left!</span>
 										) : (
-											<span className="text-[52px] leading-none drop-shadow-xl">{Icon}</span>
-										)
-									) : (
-										<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
-											<Icon size={44} />
-										</div>
-									)}
+											<div className="flex flex-col items-center">
+												{(() => {
+													const idNum = parseInt(el.id.replace('el-', '')) || 0;
+													const phrases = [
+														"I'm sure you could create:",
+														"Theory suggests crafting:",
+														"Have you tried making:"
+													];
+													const phrase = phrases[idNum % phrases.length];
+													return (
+														<span className="text-[10px] text-gray-500 font-medium mb-1 uppercase tracking-wide leading-tight px-2">{phrase}</span>
+													);
+												})()}
+												<span className="text-lg font-black text-secondary capitalize leading-none pb-1">{el.hint?.replace(/-/g, ' ')}</span>
+											</div>
+										)}
+										{/* Triangle arrow */}
+										<div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[10px] border-t-white" />
+									</div>
 								</div>
 							)}
-							<span className="relative z-10 px-1 py-0.5 text-center bg-black/40 backdrop-blur-md w-full text-white/95 truncate leading-tight border-t border-white/5">{el.name}</span>
 						</div>
 					);
 				})}
@@ -723,8 +928,8 @@ export const App = () => {
 									className={`relative flex h-32 w-32 items-center justify-center rounded-2xl border-4 ${ELEMENT_COLORS[discoveryPopup] ?? 'bg-gray-300 border-gray-500'} shadow-2xl rotate-3`}
 								>
 									{(() => {
-										const Icon =
-											discoveryPopup === 'human' ? HUMAN_ICONS[0] : ELEMENT_ICONS[discoveryPopup];
+										const rawIcon = ELEMENT_ICONS[discoveryPopup];
+										const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
 										const colorClass = ELEMENT_COLORS[discoveryPopup] ?? 'bg-gray-300 border-gray-500';
 										const weightMatch = colorClass.match(/-(\d{3})/);
 										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
@@ -734,8 +939,9 @@ export const App = () => {
 											}
 											return <span className="text-7xl leading-none drop-shadow-2xl">{Icon}</span>;
 										} else if (Icon) {
+											const IconComp = Icon;
 											return (
-												<Icon size={80} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+												<IconComp size={80} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
 											);
 										}
 										return null;
@@ -778,7 +984,8 @@ export const App = () => {
 									className={`flex h-20 w-20 items-center justify-center rounded-xl border-2 ${ELEMENT_COLORS[infoPopup] ?? 'bg-gray-300 border-gray-500'} shadow-lg`}
 								>
 									{(() => {
-										const Icon = ELEMENT_ICONS[infoPopup];
+										const rawIcon = ELEMENT_ICONS[infoPopup];
+										const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
 										const colorClass = ELEMENT_COLORS[infoPopup] ?? 'bg-gray-300 border-gray-500';
 										const weightMatch = colorClass.match(/-(\d{3})/);
 										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
@@ -788,8 +995,9 @@ export const App = () => {
 											}
 											return <span className="text-4xl leading-none drop-shadow-lg">{Icon}</span>;
 										} else if (Icon) {
+											const IconComp = Icon;
 											return (
-												<Icon size={40} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+												<IconComp size={40} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
 											);
 										}
 										return null;

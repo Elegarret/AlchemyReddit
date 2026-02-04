@@ -1,4 +1,4 @@
-import { GiConcreteBag, GiFlour, GiStoneBlock, GiTank } from 'react-icons/gi';
+import { GiChariot, GiClayBrick, GiConcreteBag, GiFlour, GiMountaintop, GiStoneBlock, GiTank } from 'react-icons/gi';
 
 export const ELEMENT_COLORS: Record<string, string> = {
 	air: 'bg-blue-400 border-blue-600',
@@ -40,7 +40,6 @@ export const ELEMENT_COLORS: Record<string, string> = {
 	lizard: 'bg-green-500 border-green-700',
 	dinosaur: 'bg-emerald-800 border-emerald-950',
 	turtle: 'bg-green-900 border-green-950',
-	pterodactyl: 'bg-violet-400 border-violet-600',
 	animal: 'bg-amber-700 border-amber-900',
 	monkey: 'bg-amber-800 border-amber-950',
 	human: 'bg-orange-100 border-orange-300',
@@ -122,12 +121,14 @@ export const ELEMENT_COLORS: Record<string, string> = {
 	coal: 'bg-zinc-400 border-black',
 	manure: 'bg-amber-950 border-black',
 	explode: 'bg-orange-600 border-red-600',
+	oil: 'bg-zinc-800 border-black',
+	car: 'bg-blue-600 border-blue-800',
 };
 
 export const ELEMENT_ICONS: Record<string, any> = {
 	air: '☁️',
 	fire: '🔥',
-	earth: '⛰️',
+	earth: GiMountaintop,
 	water: '💧',
 	steam: '💨',
 	energy: '🌟',
@@ -140,7 +141,7 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	sand: '⛱️',
 	metal: '🔩',
 	ash: '☁',
-	clay: '🌰',
+	clay: GiClayBrick,
 	brick: '🧱',
 	storm: '⛈️',
 	glass: '💠',
@@ -162,11 +163,11 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	egg: '🥚',
 	bird: '🐦',
 	lizard: '🦎',
-	dinosaur: '🦖',
+	dinosaur: ['🦖', '🦖', '🦕'],
 	turtle: '🐢',
-	animal: '🐺',
+	animal: ['🐂', '🐂', '🦌', '🦔', '🦨'],
 	monkey: '🐒',
-	human: '👤',
+	human: ['👤', '🙋', '🙋🏻'],
 	golem: '🗿',
 	poison: '🧪',
 	corpse: '💀',
@@ -185,7 +186,7 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	zombie: '🧟',
 	ghoul: '🧛',
 	blood: '🩸',
-	vampire: '🧛‍♂️',
+	vampire: ['🧛‍♂️'],
 	werewolf: '🐺',
 	dragon: '🐲',
 	salamander: '🦎',
@@ -211,11 +212,11 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	sailboat: '⛵',
 	steamboat: '🚢',
 	cart: '/cart.png',
-	chariot: ' chariot.png',
+	chariot: GiChariot,
 	locomotive: '🚃',
 	weapon: '🗡️',
 	hunter: '🏹',
-	warrior: '⚔️',
+	warrior: ['🥷'],
 	saltpeter: '🍚',
 	gunpowder: '🧨',
 	firearm: '🔫',
@@ -224,17 +225,17 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	bread: '🍞',
 	'fried-eggs': '🍳',
 	meat: '🥩',
-	'roasted-meat': '🍗',
+	'roasted-meat': '🍖',
 	beer: '🍺',
 	cigarettes: '🚬',
 	vodka: '🍸',
 	drunkard: '🥴',
 	poo: '💩',
-	livestock: '🐄',
+	livestock: ['🐄', '🐄', '🐖', '🐑'],
 	milk: '🥛',
-	hero: '🦸',
+	hero: ['🦸'],
 	tank: GiTank,
-	scientist: '🧑‍🔬',
+	scientist: ['🧑‍🔬'],
 	shell: '🐚',
 	shield: '🛡️',
 	hamburger: '🍔',
@@ -244,6 +245,10 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	coal: GiStoneBlock,
 	manure: '💩',
 	explode: '💥',
+	oil: '🛢️',
+	car: '🚗',
+	computer: '💻',
+	nest: '🪺',
 };
 
 export const KEY_ITEMS = ['energy', 'life', 'dinosaur', 'human', 'livestock', 'field', 'tool', 'steam-engine'];
@@ -281,9 +286,21 @@ export const KEY_ITEMS_DATA: Record<string, { description: string; motivation: s
 		description: 'A mechanical marvel that converts thermal energy into powerful work.',
 		motivation: 'The machine age begins! Steam and steel will transform the horizon.',
 	},
+	'car': {
+		description: 'A self-propelled vehicle that revolutionized personal transportation.',
+		motivation: 'The road is yours! Travel further and faster than ever before.',
+	},
+	'computer': {
+		description: 'A programmable electronic device that can store, retrieve, and process data.',
+		motivation: 'The digital age begins! Logic and information will transform the world.',
+	},
 };
 
 export const ELEMENT_MESSAGES: Record<string, string> = {
 	alcohol:
 		'Yes, sometimes alchemical logic is weird. Alchemy is both science and magic. Alcohol is a liquid, yet it burns. Fire water!',
+	corpse:
+		'Oh no! You just killed somebody. What will you do with the body?',
+	dragon:
+		'Ooops! Instead of burning, the dino turned into a terrible dragon!',
 };
