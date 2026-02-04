@@ -9,7 +9,7 @@ import { z } from 'zod';
  * Initialization of tRPC backend
  * Should be done only once per backend!
  */
-import { getProgress, saveProgress } from './core/progress';
+import { getDiscoveredElements, saveDiscoveredElements } from './core/progress';
 
 /**
  * Initialization of tRPC backend
@@ -35,31 +35,23 @@ export const appRouter = t.router({
 				context.userId,
 			]);
 
-			const redditProgress = userId ? await getProgress(userId) : { discovered: [], elements: [] };
+			const redditDiscovered = userId ? await getDiscoveredElements(userId) : [];
 
 			return {
 				count,
 				postId: context.postId,
 				username,
-				redditProgress,
+				redditDiscovered,
 			};
 		}),
 	}),
 	progress: t.router({
 		save: publicProcedure
-			.input(z.object({
-				discovered: z.array(z.string()),
-				elements: z.array(z.object({
-					id: z.string(),
-					name: z.string(),
-					x: z.number(),
-					y: z.number(),
-				})),
-			}))
+			.input(z.array(z.string()))
 			.mutation(async ({ input }) => {
 				const userId = context.userId;
 				if (userId) {
-					await saveProgress(userId, input);
+					await saveDiscoveredElements(userId, input);
 				}
 				return { success: true };
 			}),

@@ -2,8 +2,9 @@ import './index.css';
 
 import { StrictMode, useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ELEMENT_COLORS, ELEMENT_ICONS } from './data/elements';
+import { ELEMENT_COLORS, ELEMENT_ICONS, KEY_ITEMS, KEY_ITEMS_DATA, ELEMENT_MESSAGES } from './data/elements';
 import { getRecipeResult } from './data/recipes';
+import { IoSettingsSharp, IoCloseSharp } from 'react-icons/io5';
 import { trpc } from './trpc';
 
 type Element = {
@@ -11,7 +12,10 @@ type Element = {
 	name: string;
 	x: number;
 	y: number;
+	icon?: any;
 };
+
+const HUMAN_ICONS = ['🙋‍♂️', '🙋🏻‍♀️'];
 
 const STORAGE_KEYS = {
 	DISCOVERED: 'alchemy-discovered',
@@ -22,7 +26,7 @@ const STORAGE_KEYS = {
 let elementIdCounter = 0;
 const createElementId = () => `el-${++elementIdCounter}`;
 
-const ITEMS_PER_PAGE = 12;
+const ITEMS_PER_PAGE = 18;
 
 export const App = () => {
 	const [discovered, setDiscovered] = useState<string[]>(() => {
@@ -59,6 +63,13 @@ export const App = () => {
 	const [reactiveIDs, setReactiveIDs] = useState<string[]>([]);
 	const [shakingIDs, setShakingIDs] = useState<Record<string, boolean>>({});
 	const [flash, setFlash] = useState<{ x: number, y: number, id: number } | null>(null);
+	const [explodingIDs, setExplodingIDs] = useState<Record<string, boolean>>({});
+	const [pushedElements, setPushedElements] = useState<Record<string, { x: number, y: number }>>({});
+	const [showOptions, setShowOptions] = useState(false);
+	const [username, setUsername] = useState<string | null>(null);
+	const [discoveryPopup, setDiscoveryPopup] = useState<string | null>(null);
+	const [confirmWipe, setConfirmWipe] = useState(false);
+	const [infoPopup, setInfoPopup] = useState<string | null>(null);
 
 	const dragOffset = useRef({ x: 0, y: 0 });
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -97,33 +108,16 @@ export const App = () => {
 		const loadRedditProgress = async () => {
 			try {
 				const response = await trpc.init.get.query();
-				const prog = response.redditProgress;
+				const remoteDiscovered = response.redditDiscovered;
 
-				if (prog) {
-					// 1. Merge discovered items
-					if (prog.discovered.length > 0) {
-						setDiscovered((prev) => {
-							const combined = Array.from(new Set([...prev, ...prog.discovered]));
-							return combined;
-						});
-					}
-
-					// 2. Load elements (only if local is empty/defaults)
-					// This prevents Device B (new) from overwriting Reddit with [] 
-					// while allowing Device A (old) to keep its more complete local state
-					if (prog.elements.length > 0) {
-						setElements((prev) => {
-							if (prev.length === 0) {
-								const maxId = prog.elements.reduce((max, el) => {
-									const idNum = parseInt(el.id.replace('el-', ''));
-									return isNaN(idNum) ? max : Math.max(max, idNum);
-								}, 0);
-								elementIdCounter = Math.max(elementIdCounter, maxId);
-								return prog.elements;
-							}
-							return prev;
-						});
-					}
+				if (remoteDiscovered && remoteDiscovered.length > 0) {
+					setDiscovered((prev) => {
+						const combined = Array.from(new Set([...prev, ...remoteDiscovered]));
+						return combined;
+					});
+				}
+				if (response.username) {
+					setUsername(response.username);
 				}
 			} catch (err) {
 				console.error('[Sync] Load failed:', err);
@@ -136,37 +130,21 @@ export const App = () => {
 		loadRedditProgress();
 	}, []);
 
-	// Reddit Progress Save (Discovery or Table changes)
+	// Reddit Progress Save (Discovery only)
 	const prevDiscoveredCount = useRef(discovered.length);
 	useEffect(() => {
 		// CRITICAL: Never save back to reddit until we've finished the initial load/merge
 		if (!syncComplete || loadingReddit) return;
 
-		const saveToReddit = () => {
-			trpc.progress.save.mutate({
-				discovered,
-				elements: elements.slice(-20)
-			}).catch((err) => {
-				console.error('[Sync] Save failed:', err);
-			});
-		};
-
-		// Discovery is higher priority
+		// Only save to reddit if we have more items than before
 		if (discovered.length > prevDiscoveredCount.current) {
 			console.log('[Sync] New discovery, saving to Reddit...');
-			saveToReddit();
+			trpc.progress.save.mutate(discovered).catch((err) => {
+				console.error('[Sync] Save failed:', err);
+			});
 			prevDiscoveredCount.current = discovered.length;
-			return;
 		}
-
-		// Debounce table changes
-		const timeout = setTimeout(() => {
-			console.log('[Sync] Debounced table save to Reddit...');
-			saveToReddit();
-		}, 3000);
-
-		return () => clearTimeout(timeout);
-	}, [discovered, elements, syncComplete, loadingReddit]);
+	}, [discovered, syncComplete, loadingReddit]);
 
 	useEffect(() => {
 		localStorage.setItem(STORAGE_KEYS.ELEMENTS, JSON.stringify(elements));
@@ -175,6 +153,47 @@ export const App = () => {
 	useEffect(() => {
 		localStorage.setItem(STORAGE_KEYS.PAGE, currentPage.toString());
 	}, [currentPage]);
+
+	// Explosion Effect Logic
+	useEffect(() => {
+		const explodeEl = elements.find(el => el.name === 'explode' && !explodingIDs[el.id]);
+		if (explodeEl) {
+			const currentExplodeId = explodeEl.id;
+			setExplodingIDs(prev => ({ ...prev, [currentExplodeId]: true }));
+
+			// Start explosion sequence after shake
+			setTimeout(() => {
+				// Flash at the explosion site
+				setFlash({ x: explodeEl.x, y: explodeEl.y, id: ++flashCounter.current });
+
+				setElements(currentElements => {
+					// Calculate push vectors for ALL elements currently on table
+					const pushData: Record<string, { x: number, y: number }> = {};
+					currentElements.forEach(el => {
+						if (el.id === currentExplodeId) return;
+						const dx = el.x - explodeEl.x;
+						const dy = el.y - explodeEl.y;
+						const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+						const force = 1000;
+						pushData[el.id] = {
+							x: (dx / dist) * force,
+							y: (dy / dist) * force
+						};
+					});
+					setPushedElements(pushData);
+					return [...currentElements]; // Return new array to ensure re-render
+				});
+
+				// Final cleanup: remove everything after animation
+				setTimeout(() => {
+					setElements([]);
+					setExplodingIDs({});
+					setPushedElements({});
+					setFlash(null);
+				}, 500);
+			}, 1500);
+		}
+	}, [elements, explodingIDs]);
 
 	const bringToFront = (id: string) => {
 		setElements((prev) => {
@@ -208,6 +227,7 @@ export const App = () => {
 			name,
 			x: e.clientX,
 			y: e.clientY,
+			icon: name === 'human' ? HUMAN_ICONS[Math.floor(Math.random() * HUMAN_ICONS.length)] : undefined,
 		};
 
 		setElements((prev) => [...prev, newElement]);
@@ -291,14 +311,29 @@ export const App = () => {
 					name,
 					x: midX,
 					y: midY,
+					icon: name === 'human' ? HUMAN_ICONS[Math.floor(Math.random() * HUMAN_ICONS.length)] : undefined,
 				}));
 
 				// Update discovered list
 				setDiscovered((prev) => {
 					let next = [...prev];
+					let newlyDiscoveredKeyItem = null;
+					let newlyDiscoveredInfoItem = null;
 					result.forEach((name) => {
-						if (!next.includes(name)) next.push(name);
+						if (!next.includes(name)) {
+							next.push(name);
+							if (KEY_ITEMS.includes(name)) {
+								newlyDiscoveredKeyItem = name;
+							} else if (ELEMENT_MESSAGES[name]) {
+								newlyDiscoveredInfoItem = name;
+							}
+						}
 					});
+					if (newlyDiscoveredKeyItem) {
+						setDiscoveryPopup(newlyDiscoveredKeyItem);
+					} else if (newlyDiscoveredInfoItem) {
+						setInfoPopup(newlyDiscoveredInfoItem);
+					}
 					return next;
 				});
 
@@ -404,36 +439,68 @@ export const App = () => {
 	};
 
 	// Chunk elements into pages
-	const pages = [];
+	const pages: string[][] = [];
 	for (let i = 0; i < discovered.length; i += ITEMS_PER_PAGE) {
 		pages.push(discovered.slice(i, i + ITEMS_PER_PAGE));
 	}
 
+	const nextKeyItem = KEY_ITEMS.find((item) => !discovered.includes(item));
+	const totalElementsCount = Object.keys(ELEMENT_COLORS).length;
+
+
 	return (
 		<div
-			className="flex h-screen w-screen flex-col overflow-hidden bg-slate-900 text-white font-sans select-none touch-none"
+			className="flex h-screen w-screen flex-col overflow-hidden bg-main text-primary font-sans select-none touch-none"
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 		>
 			{/* Worktable Area */}
 			<div
 				ref={containerRef}
-				className="relative flex-1 bg-gradient-to-b from-slate-800 to-slate-900"
+				className="relative flex-1 bg-table-gradient"
 			>
-				<div className="absolute left-6 top-6 pointer-events-none z-10">
-					<h1 className="text-2xl font-bold tracking-tight text-white/50">Alchemy Game</h1>
-					<p className="text-slate-500">Combine elements to discover new ones</p>
+				{/* Background Decoration */}
+				<div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none overflow-hidden mt-[-10%]">
+					<span className="text-[60vh] font-serif leading-none">☿</span>
 				</div>
+				<div className="absolute inset-x-0 top-12 flex flex-col items-center pointer-events-none z-10 text-center px-6 opacity-50">
+					{discovered.length === 4 ? (
+						<h2 className="text-2xl font-black tracking-tight text-primary animate-bounce-subtle">
+							Welcome to the Alchemy! Drag elements here to combine them and create the world!
+						</h2>
+					) : (
+						<>
+							<h1 className="text-xl font-bold tracking-tight text-primary opacity-40 mb-1">Alchemy Game</h1>
+							<p className="text-tertiary text-lg">
+								{nextKeyItem ? (
+									<>
+										Next key element: <span className="font-bold text-secondary capitalize">{nextKeyItem.replace('-', ' ')}</span>
+									</>
+								) : (
+									'All key items discovered!'
+								)}
+							</p>
+						</>
+					)}
+				</div>
+
+				<button
+					onClick={() => setShowOptions(true)}
+					className="absolute right-2 top-2 z-30 p-2 rounded-full bg-black/20 hover:bg-black/40 text-primary transition-colors backdrop-blur-sm border border-white/10 shadow-lg cursor-pointer"
+					title="Options"
+				>
+					<IoSettingsSharp size={24} />
+				</button>
 			</div>
 
 			{/* Palette Area */}
-			<div className="h-60 border-t border-slate-700 bg-slate-800 flex flex-col z-10">
+			<div className="h-60 border-t border-palette bg-palette flex flex-col z-10">
 				<div className="pt-3 px-4 pb-1 flex items-center justify-between">
-					<h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-						Palette
+					<h2 className="text-xs font-bold uppercase tracking-wider text-secondary">
+						Elements
 					</h2>
-					<span className="text-[10px] text-slate-500">
-						{discovered.length} Discovered • Page {currentPage + 1}/{pages.length}
+					<span className="text-[10px] text-tertiary">
+						{discovered.length}/{totalElementsCount} Discovered
 					</span>
 				</div>
 
@@ -451,29 +518,38 @@ export const App = () => {
 						}}
 					>
 						{pages.map((page, pageIdx) => (
-							<div key={pageIdx} className="min-w-full grid grid-cols-4 grid-rows-3 gap-1.5 px-4 pb-2">
+							<div key={pageIdx} className="min-w-full grid grid-cols-6 grid-rows-3 gap-1.5 px-4 pb-2">
 								{page.map((name) => {
 									const colorClass = ELEMENT_COLORS[name] ?? 'bg-gray-300 border-gray-500';
 									const weightMatch = colorClass.match(/-(\d{3})/);
 									const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-									const textColor = weight < 500 ? 'text-black/70' : 'text-white/90';
 									const Icon = ELEMENT_ICONS[name];
 
 									return (
 										<div
 											key={`${pageIdx}-${name}`}
-											className={`relative flex flex-col h-11 items-center justify-end pb-1 rounded-lg border-2 text-[10px] font-black shadow-sm active:scale-95 select-none overflow-hidden ${colorClass} ${textColor}`}
+											className={`relative flex flex-col h-11 items-center justify-end rounded-lg border-2 text-[10px] font-black shadow-sm active:scale-95 select-none overflow-hidden ${colorClass}`}
 											onPointerDown={(e) => {
 												e.stopPropagation();
 												onPaletteDown(e, name);
 											}}
 										>
 											{Icon && (
-												<div className={`absolute inset-x-0 top-0.5 flex justify-center opacity-30 pointer-events-none ${weight < 500 ? 'text-black' : 'text-white'}`}>
-													<Icon size={24} />
+												<div className={`absolute inset-0 flex items-center justify-center pointer-events-none pb-2`}>
+													{typeof Icon === 'string' ? (
+														Icon.startsWith('/') || Icon.startsWith('http') ? (
+															<img src={Icon} alt="" className="w-9 h-9 object-contain drop-shadow-md" />
+														) : (
+															<span className="text-[34px] leading-none drop-shadow-md">{Icon}</span>
+														)
+													) : (
+														<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
+															<Icon size={30} />
+														</div>
+													)}
 												</div>
 											)}
-											<span className="relative z-10 px-1 text-center truncate w-full drop-shadow-sm leading-[1.1]">{name}</span>
+											<span className="relative z-10 px-1 text-center truncate w-full bg-black/40 py-0.5 text-[10px] backdrop-blur-sm text-white/95">{name}</span>
 										</div>
 									);
 								})}
@@ -482,11 +558,13 @@ export const App = () => {
 					</div>
 				</div>
 
-				<div className="flex justify-center gap-2 pb-3">
-					{pages.map((_, i) => (
-						<div key={i} className={`w-2 h-2 rounded-full transition-colors ${i === currentPage ? 'bg-orange-500' : 'bg-slate-700'}`} />
-					))}
-				</div>
+				{pages.length > 1 && (
+					<div className="flex justify-center gap-2 pb-3">
+						{pages.map((_, i) => (
+							<div key={i} className={`w-2 h-2 rounded-full transition-colors ${i === currentPage ? 'palette-dot-active' : 'palette-dot'}`} />
+						))}
+					</div>
+				)}
 			</div>
 
 			{/* Elements Layer */}
@@ -500,22 +578,41 @@ export const App = () => {
 					// Quick contrast fix: parse the tailwind weight (e.g., 200, 600)
 					const weightMatch = colorClass.match(/-(\d{3})/);
 					const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-					const textColor = weight < 500 ? 'text-black/70' : 'text-white/90';
-					const Icon = ELEMENT_ICONS[el.name];
+					const Icon = el.icon ?? ELEMENT_ICONS[el.name];
+					const isExploding = explodingIDs[el.id];
+					const pushVector = pushedElements[el.id];
 
 					return (
 						<div
 							key={el.id}
-							className={`absolute flex flex-col h-16 w-20 ml-[-40px] mt-[-32px] cursor-grab items-center justify-end pb-1.5 rounded-lg border-2 text-[13px] font-black shadow-lg pointer-events-auto select-none touch-none transition-shadow overflow-hidden ${colorClass} ${textColor} ${isDragging ? 'z-[100] scale-110 cursor-grabbing' : 'z-50'} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-slate-900 animate-pulse' : ''} ${isShaking ? 'animate-shake' : ''} ${!isDragging ? 'transition-[left,top,box-shadow,ring,transform] duration-300 ease-out' : ''}`}
-							style={{ left: el.x, top: el.y }}
+							className={`absolute flex flex-col h-20 w-20 ml-[-40px] mt-[-40px] cursor-grab items-center justify-end rounded-xl border-2 text-[11px] font-bold shadow-2xl pointer-events-auto select-none touch-none overflow-hidden ${colorClass} ${isDragging ? 'z-[100] scale-110 cursor-grabbing' : 'z-50'} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : ''} ${isShaking ? 'animate-shake' : ''} ${isExploding ? 'animate-explode-shake z-[150]' : ''} ${pushVector ? 'animate-push-out' : ''} ${!isDragging && !isExploding && !pushVector ? 'element-transition' : ''}`}
+							style={{
+								left: el.x,
+								top: el.y,
+								'--push-x': pushVector ? `${pushVector.x}px` : '0px',
+								'--push-y': pushVector ? `${pushVector.y}px` : '0px',
+							} as any}
 							onPointerDown={(e) => handlePointerDown(e, el.id)}
 						>
+							{/* Background Darkener for contrast */}
+							<div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />
+
 							{Icon && (
-								<div className={`absolute inset-x-0 top-1.5 flex justify-center opacity-30 pointer-events-none ${weight < 500 ? 'text-black' : 'text-white'}`}>
-									<Icon size={36} />
+								<div className="absolute inset-x-0 top-0 bottom-6 flex items-center justify-center pointer-events-none">
+									{typeof Icon === 'string' ? (
+										Icon.startsWith('/') || Icon.startsWith('http') ? (
+											<img src={Icon} alt="" className="w-14 h-14 object-contain drop-shadow-xl" />
+										) : (
+											<span className="text-[52px] leading-none drop-shadow-xl">{Icon}</span>
+										)
+									) : (
+										<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
+											<Icon size={44} />
+										</div>
+									)}
 								</div>
 							)}
-							<span className="relative z-10 px-1 text-center drop-shadow-sm leading-tight">{el.name}</span>
+							<span className="relative z-10 px-1 py-0.5 text-center bg-black/40 backdrop-blur-md w-full text-white/95 truncate leading-tight border-t border-white/5">{el.name}</span>
 						</div>
 					);
 				})}
@@ -529,6 +626,191 @@ export const App = () => {
 					/>
 				)}
 			</div>
+
+			{showOptions && (
+				<div
+					className="absolute inset-0 z-[1000] flex items-center justify-center bg-[var(--overlay-bg)] backdrop-blur-md animate-fade-in"
+					onPointerDown={(e) => e.stopPropagation()}
+				>
+					<div
+						className="relative w-full max-w-sm rounded-2xl bg-[var(--card-bg)] p-8 shadow-2xl border border-white/10 animate-scale-in"
+						onPointerDown={(e) => e.stopPropagation()}
+					>
+						<button
+							onClick={() => {
+								setShowOptions(false);
+								setConfirmWipe(false);
+							}}
+							className="absolute right-4 top-4 p-2 text-tertiary hover:text-primary transition-colors cursor-pointer"
+						>
+							<IoCloseSharp size={28} />
+						</button>
+
+						<h2 className="mb-6 text-2xl font-bold text-primary">Options</h2>
+
+						<div className="space-y-6">
+							<div className="flex flex-col gap-1">
+								<span className="text-sm font-medium text-secondary">Author</span>
+								<span className="text-lg font-bold text-primary">Elegar</span>
+							</div>
+
+							<div className="h-px bg-white/10" />
+
+							<div className="space-y-3">
+								<button
+									onClick={() => {
+										if (!confirmWipe) {
+											setConfirmWipe(true);
+											return;
+										}
+										const basic = ['air', 'fire', 'earth', 'water'];
+										setDiscovered(basic);
+										setElements([]);
+										setCurrentPage(0);
+										localStorage.setItem(STORAGE_KEYS.DISCOVERED, JSON.stringify(basic));
+										localStorage.setItem(STORAGE_KEYS.ELEMENTS, JSON.stringify([]));
+										localStorage.setItem(STORAGE_KEYS.PAGE, '0');
+										trpc.progress.save.mutate(basic).catch(console.error);
+										setShowOptions(false);
+										setConfirmWipe(false);
+									}}
+									onMouseLeave={() => setConfirmWipe(false)}
+									className={`w-full rounded-xl py-3 font-bold text-white transition-all hover:scale-[1.02] active:scale-95 shadow-lg ${confirmWipe
+										? 'bg-orange-600 hover:bg-orange-700 animate-pulse'
+										: 'bg-[var(--button-danger)] hover:bg-[var(--button-danger-hover)]'
+										}`}
+								>
+									{confirmWipe ? 'Are you sure? Click again' : 'Wipe All Progress'}
+								</button>
+
+								{username === 'Elegar' && (
+									<button
+										onClick={() => {
+											const allElements = Object.keys(ELEMENT_COLORS);
+											setDiscovered(allElements);
+											trpc.progress.save.mutate(allElements).catch(console.error);
+											setShowOptions(false);
+										}}
+										className="w-full rounded-xl bg-[var(--button-primary)] py-3 font-bold text-white transition-all hover:bg-[var(--button-primary-hover)] hover:scale-[1.02] active:scale-95 shadow-lg"
+									>
+										Unlock All Elements
+									</button>
+								)}
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Discovery Popup */}
+			{discoveryPopup && (
+				<div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-xl animate-fade-in">
+					<div className="relative w-full max-w-md mx-4 rounded-3xl bg-slate-800 p-8 shadow-[0_0_50px_rgba(255,255,255,0.1)] border border-white/20 text-center animate-scale-in overflow-hidden">
+						{/* Celebrational Decor */}
+						<div className="absolute -top-24 -left-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl animate-pulse" />
+						<div className="absolute -bottom-24 -right-24 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl animate-pulse" />
+						<div className="absolute inset-0 border-2 border-dashed border-white/5 rounded-3xl m-2 pointer-events-none" />
+
+						<div className="relative z-10">
+							<div className="mb-2 text-sm font-bold uppercase tracking-widest text-blue-400">
+								New Key Item Discovered!
+							</div>
+							<h2 className="mb-6 text-4xl font-black text-white capitalize">{discoveryPopup.replace('-', ' ')}</h2>
+
+							<div className="flex justify-center mb-8 relative">
+								<div className="absolute inset-0 bg-white/10 blur-2xl rounded-full scale-150 animate-pulse" />
+								<div
+									className={`relative flex h-32 w-32 items-center justify-center rounded-2xl border-4 ${ELEMENT_COLORS[discoveryPopup] ?? 'bg-gray-300 border-gray-500'} shadow-2xl rotate-3`}
+								>
+									{(() => {
+										const Icon =
+											discoveryPopup === 'human' ? HUMAN_ICONS[0] : ELEMENT_ICONS[discoveryPopup];
+										const colorClass = ELEMENT_COLORS[discoveryPopup] ?? 'bg-gray-300 border-gray-500';
+										const weightMatch = colorClass.match(/-(\d{3})/);
+										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
+										if (typeof Icon === 'string') {
+											if (Icon.startsWith('/') || Icon.startsWith('http')) {
+												return <img src={Icon} alt="" className="w-20 h-20 object-contain" />;
+											}
+											return <span className="text-7xl leading-none drop-shadow-2xl">{Icon}</span>;
+										} else if (Icon) {
+											return (
+												<Icon size={80} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+											);
+										}
+										return null;
+									})()}
+								</div>
+							</div>
+
+							<div className="space-y-4 mb-8 px-2">
+								<p className="text-lg text-white font-medium leading-relaxed italic">
+									"{KEY_ITEMS_DATA[discoveryPopup]?.description}"
+								</p>
+								<p className="text-blue-200 text-sm opacity-90 leading-snug">
+									{KEY_ITEMS_DATA[discoveryPopup]?.motivation}
+								</p>
+							</div>
+
+							<button
+								onClick={() => setDiscoveryPopup(null)}
+								className="w-full rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 py-4 font-black text-white transition-all hover:scale-[1.02] active:scale-95 shadow-[0_4px_20px_rgba(59,130,246,0.5)] cursor-pointer"
+							>
+								AWESOME!
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Info Popup */}
+			{infoPopup && (
+				<div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/40 backdrop-blur-md animate-fade-in">
+					<div className="relative w-full max-w-sm mx-4 rounded-2xl bg-slate-900 p-6 shadow-xl border border-white/10 text-center animate-scale-in">
+						<div className="relative z-10">
+							<div className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+								Discovery Note
+							</div>
+							<h3 className="mb-4 text-2xl font-bold text-white capitalize">{infoPopup.replace('-', ' ')}</h3>
+
+							<div className="flex justify-center mb-6">
+								<div
+									className={`flex h-20 w-20 items-center justify-center rounded-xl border-2 ${ELEMENT_COLORS[infoPopup] ?? 'bg-gray-300 border-gray-500'} shadow-lg`}
+								>
+									{(() => {
+										const Icon = ELEMENT_ICONS[infoPopup];
+										const colorClass = ELEMENT_COLORS[infoPopup] ?? 'bg-gray-300 border-gray-500';
+										const weightMatch = colorClass.match(/-(\d{3})/);
+										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
+										if (typeof Icon === 'string') {
+											if (Icon.startsWith('/') || Icon.startsWith('http')) {
+												return <img src={Icon} alt="" className="w-12 h-12 object-contain" />;
+											}
+											return <span className="text-4xl leading-none drop-shadow-lg">{Icon}</span>;
+										} else if (Icon) {
+											return (
+												<Icon size={40} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+											);
+										}
+										return null;
+									})()}
+								</div>
+							</div>
+
+							<p className="text-sm text-slate-300 leading-relaxed mb-6 px-4">
+								{ELEMENT_MESSAGES[infoPopup]}
+							</p>
+
+							<button
+								onClick={() => setInfoPopup(null)}
+								className="w-full rounded-xl bg-slate-800 py-3 font-bold text-white transition-all hover:bg-slate-700 active:scale-95 border border-white/5 cursor-pointer"
+							>
+								Understood
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 };
