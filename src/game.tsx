@@ -209,16 +209,21 @@ export const App = () => {
 
 			// Start explosion sequence after shake
 			setTimeout(() => {
-				// Flash at the explosion site
-				setFlash({ x: explodeEl.x, y: explodeEl.y, id: ++flashCounter.current });
-
 				setElements(currentElements => {
+					// Get current position of explode element
+					const currentExplodeEl = currentElements.find(el => el.id === currentExplodeId);
+					const explosionX = currentExplodeEl?.x ?? explodeEl.x;
+					const explosionY = currentExplodeEl?.y ?? explodeEl.y;
+
+					// Flash at the current explosion site
+					setFlash({ x: explosionX, y: explosionY, id: ++flashCounter.current });
+
 					// Calculate push vectors for ALL elements currently on table
 					const pushData: Record<string, { x: number, y: number }> = {};
 					currentElements.forEach(el => {
 						if (el.id === currentExplodeId) return;
-						const dx = el.x - explodeEl.x;
-						const dy = el.y - explodeEl.y;
+						const dx = el.x - explosionX;
+						const dy = el.y - explosionY;
 						const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 						const force = 1000;
 						pushData[el.id] = {
@@ -227,7 +232,7 @@ export const App = () => {
 						};
 					});
 					setPushedElements(pushData);
-					return [...currentElements]; // Return new array to ensure re-render
+					return [...currentElements];
 				});
 
 				// Final cleanup: remove everything after animation
@@ -717,8 +722,9 @@ export const App = () => {
 												onPaletteDown(e, name);
 											}}
 										>
+											<div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />
 											{Icon && (
-												<div className={`absolute inset-0 flex items-center justify-center pointer-events-none pb-2`}>
+												<div className={`absolute inset-0 flex items-center justify-center pointer-events-none pb-2 z-[1]`}>
 													{(() => {
 														const displayIcon = Array.isArray(Icon) ? Icon[0] : Icon;
 														if (typeof displayIcon === 'string') {
@@ -886,6 +892,7 @@ export const App = () => {
 								<span className="text-sm font-medium text-secondary">Author</span>
 								<span className="text-lg font-bold text-primary">Elegar</span>
 							</div>
+							<a href="https://www.flaticon.com/free-icons/sand" title="sand icons">Sand icons created by Freepik - Flaticon</a>
 
 							<div className="h-px bg-white/10" />
 

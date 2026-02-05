@@ -1,34 +1,56 @@
-## Devvit Vibe Coding Template
+# Overview
 
-> Experimental! Template may change!
+Welcome to **AlchemyGame** — a fast, satisfying discovery game where you start with just four basic elements and build an entire world by combining them.
 
-A starter to build web applications on Reddit's developer platform
+There are no tutorials, no hand-holding, and no "correct path".
+Just pure experimentation: try ideas, test logic, and unlock surprises.
 
-- [Devvit](https://developers.reddit.com/): A way to build and deploy immersive games on Reddit
-- [Vite](https://vite.dev/): For compiling the webView
-- [React](https://react.dev/): For UI
-- [Hono](https://hono.dev/): For backend logic
-- [TRPC](https://trpc.io/): Type safe RPCs from server to client
-- [Tailwind](https://tailwindcss.com/): For styles
-- [Typescript](https://www.typescriptlang.org/): For type safety
+- Some combinations will feel obvious.
+- Some will feel ridiculous.
+- And some will unlock things you didn't even know the game could do.
 
-## Getting Started
+If you enjoy games like Little Alchemy, crafting systems, or puzzle discovery — this is for you.
 
-> Make sure you have Node 22 downloaded on your machine before running!
+## How to Play
 
-1. Run `npm create devvit@latest --template=vibe-coding`
-2. Go through the installation wizard. You will need to create a Reddit account and connect it to Reddit developers
-3. Copy the command on the success page into your terminal
+### 🧩 Combine elements
 
-## Commands
+- Drag an element onto another element to combine them.
+- If the combination makes sense, you'll create something new.
+- Some reactions can produce multiple results.
+- Some elements are dead-ends
 
-- `npm run dev`: Starts a development server where you can develop your application live on Reddit.
-- `npm run build`: Builds your client and server projects
-- `npm run deploy`: Uploads a new version of your app
-- `npm run launch`: Publishes your app for review
-- `npm run login`: Logs your CLI into Reddit
-- `npm run check`: Type checks, lints, and prettifies your app
+### 🔍 Explore and expand
 
-## MCP Integration
+- Every new element you discover becomes part of your growing toolbox.
+- Use newly unlocked elements to discover even more.
 
-If you'd like to use the Devvit MCP server, please visit: https://developers.reddit.com/docs/next/guides/ai
+### ✨ Unlock hidden features
+
+- Some elements don't just expand the list — they can unlock new mechanics and features in the game.
+- You'll know when it happens.
+
+## Controls
+
+### Mouse / Touch
+
+- Drag elements to move them around.
+- Drop one element onto another to combine them.
+- Drag an element back into the palette to delete it and clear space.
+
+### Keyboard (Desktop)
+
+- Press any key to start filtering elements by typing their name.
+- This makes it easy to quickly find what you already discovered.
+
+## Tips
+
+- Think in chains: one discovery often leads to several more.
+- Try mixing "living" things with "materials" and "tools".
+- When stuck, go back to basics and combine new things with the original four elements.
+
+## Goal
+
+There is no final boss. No ending screen. The goal is simple:
+
+**Keep discovering. Keep experimenting. Keep building.**

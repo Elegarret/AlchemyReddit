@@ -12,37 +12,40 @@ export const Splash = () => {
 	const [progress, setProgress] = useState<{ discovered: number; total: number } | null>(null);
 
 	useEffect(() => {
-		const loadProgress = async () => {
-			let discoveredCount = 0;
-			const totalItems = Object.keys(ELEMENT_COLORS).length;
+		const totalItems = Object.keys(ELEMENT_COLORS).length;
 
-			// 1. Try Local Storage
-			try {
-				const saved = localStorage.getItem(STORAGE_KEY);
-				if (saved) {
-					const discoveredItems = JSON.parse(saved) as string[];
-					discoveredCount = discoveredItems.length;
+		// 1. Immediately show local storage data
+		try {
+			const saved = localStorage.getItem(STORAGE_KEY);
+			if (saved) {
+				const discoveredItems = JSON.parse(saved) as string[];
+				if (discoveredItems.length > 0) {
+					setProgress({ discovered: discoveredItems.length, total: totalItems });
 				}
-			} catch (e) {
-				console.error('Failed to load local progress', e);
 			}
+		} catch (e) {
+			console.error('Failed to load local progress', e);
+		}
 
-			// 2. Try Reddit Progress (Remote)
+		// 2. Then update with Reddit progress if greater
+		const loadRemoteProgress = async () => {
 			try {
 				const response = await trpc.init.get.query();
-				if (response.redditDiscovered && response.redditDiscovered.length > discoveredCount) {
-					discoveredCount = response.redditDiscovered.length;
+				if (response.redditDiscovered && response.redditDiscovered.length > 0) {
+					setProgress((prev) => {
+						const localCount = prev?.discovered ?? 0;
+						if (response.redditDiscovered!.length > localCount) {
+							return { discovered: response.redditDiscovered!.length, total: totalItems };
+						}
+						return prev;
+					});
 				}
 			} catch (e) {
 				console.error('Failed to load remote progress', e);
 			}
-
-			if (discoveredCount > 0) {
-				setProgress({ discovered: discoveredCount, total: totalItems });
-			}
 		};
 
-		loadProgress();
+		loadRemoteProgress();
 	}, []);
 
 	return (
