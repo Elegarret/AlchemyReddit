@@ -62,8 +62,11 @@ export const Splash = () => {
 					<div className="w-14 h-14 rounded-xl bg-stone-500 border-2 border-stone-700 flex items-center justify-center text-3xl shadow-lg ring-4 ring-[var(--ring-offset)]/50">⛰️</div>
 				</div>
 
-				{/* Centered Decorative Blur */}
-				<div className="absolute inset-0 bg-primary/5 blur-3xl rounded-full scale-75 -z-10" />
+				{/* Centered Mercury Symbol with Glow */}
+				<div className="absolute inset-0 flex items-center justify-center">
+					<div className="absolute w-24 h-24 mercury-glow blur-2xl rounded-full" />
+					<span className="text-6xl mercury-symbol">☿</span>
+				</div>
 			</div>
 
 			<div className="flex flex-col items-center gap-2 mt-4 text-center">

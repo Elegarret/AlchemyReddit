@@ -786,7 +786,7 @@ export const App = () => {
 							} as any}
 							onPointerDown={(e) => handlePointerDown(e, el.id)}
 						>
-							<div className={`absolute inset-0 flex flex-col items-center justify-end rounded-xl border-2 text-[11px] font-bold shadow-2xl overflow-hidden ${colorClass} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : ''}`}>
+							<div className={`absolute inset-0 flex flex-col items-center justify-end rounded-xl border-2 text-[11px] font-bold shadow-2xl drop-shadow-2xl overflow-hidden ${colorClass} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : ''}`}>
 								{/* Background Darkener for contrast */}
 								<div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />
 

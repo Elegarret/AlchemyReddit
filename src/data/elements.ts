@@ -303,4 +303,6 @@ export const ELEMENT_MESSAGES: Record<string, string> = {
 		'Oh no! You just killed somebody. What will you do with the body?',
 	dragon:
 		'Ooops! Instead of burning, the dino turned into a terrible dragon!',
+	time:
+		'For many items there is both a (almost) scientific and magical way to obtain them!',
 };
