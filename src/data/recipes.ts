@@ -32,6 +32,8 @@ export const RECIPES: Record<string, string[]> = {
 	'bacteria+plankton': ['fish'],
 	'bacteria+mud': ['worm', 'sulfur'],
 	'stone+plankton': ['shells'],
+	'time+shells': ['sand'],
+	'water+shells': ['sand'],
 	'plankton+fish': ['whale'],
 	'earth+plankton': ['worm'],
 	'air+worm': ['butterfly'],
@@ -83,12 +85,12 @@ export const RECIPES: Record<string, string[]> = {
 	'ghost+corpse': ['zombie'],
 	'blood+human': ['vampire'],
 	'vampire+human': ['vampire', 'vampire'],
-	'vampire+animal': ['vampire', 'werewolf'],
 	'dinosaur+fire': ['dragon'],
 	'fire+lizard': ['salamander'],
 	'fire+bird': ['phoenix'],
 	'metal+human': ['tool', 'human'],
 	'stone+human': ['tool', 'human'],
+	'warrior+wood': ['shield'],
 	'tree+tool': ['wood', 'tool'],
 	'earth+tool': ['field'],
 	'tool+wool': ['fabric', 'tool'],
@@ -160,12 +162,9 @@ export const RECIPES: Record<string, string[]> = {
 	'book+human': ['scientist'],
 	'hunter+dinosaur': ['dinosaur', 'corpse', 'blood'],
 	'warrior+dinosaur': ['warrior', 'blood', 'meat'],
-	'hunter+turtle': ['blood', 'meat', 'shell'],
-	'shell+tool': ['shield'],
-	'hunter+shield': ['warrior'],
-	'human+weapon': ['warrior'],
+	'hunter+weapon': ['warrior'],
 	'lava+human': ['lava', 'corpse'],
-	'shell+lizard': ['turtle'],
+	'shells+lizard': ['turtle'],
 	'bread+roasted-meat': ['hamburger'],
 	'milk+tool': ['butter'],
 	'bread+butter': ['sandwich'],
@@ -185,11 +184,21 @@ export const RECIPES: Record<string, string[]> = {
 	'dinosaur+earth': ['oil'],
 	'cart+oil': ['car'],
 	'car+firearm': ['tank'],
-	'oil+fire': ['fire', 'fire', 'fire'],
+	'oil+fire': ['fire', 'fire', 'fire']
 };
 
 export const getRecipeResult = (a: string, b: string): string[] | null => {
 	const key1 = `${a}+${b}`;
 	const key2 = `${b}+${a}`;
 	return RECIPES[key1] ?? RECIPES[key2] ?? null;
+};
+
+export const getRecipesForElement = (elementName: string): string[][] => {
+	const results: string[][] = [];
+	for (const [key, outputs] of Object.entries(RECIPES)) {
+		if (outputs.includes(elementName)) {
+			results.push(key.split('+'));
+		}
+	}
+	return results;
 };

@@ -3,7 +3,7 @@ import './index.css';
 import { StrictMode, useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ELEMENT_COLORS, ELEMENT_ICONS, KEY_ITEMS, KEY_ITEMS_DATA, ELEMENT_MESSAGES } from './data/elements';
-import { getRecipeResult, RECIPES } from './data/recipes';
+import { getRecipeResult, RECIPES, getRecipesForElement } from './data/recipes';
 import { IoSettingsSharp, IoCloseSharp, IoSearchSharp } from 'react-icons/io5';
 import { trpc } from './trpc';
 
@@ -15,6 +15,8 @@ type Element = {
 	icon?: any;
 	hint?: string;
 };
+
+const STARTING_ELEMENTS = ['air', 'fire', 'earth', 'water'];
 
 // No longer needed, icons moved to elements.ts
 
@@ -29,19 +31,32 @@ const createElementId = () => `el-${++elementIdCounter}`;
 
 export const App = () => {
 	const [discovered, setDiscovered] = useState<string[]>(() => {
+		const allResults = new Set<string>();
+		Object.values(RECIPES).forEach(outputs => outputs.forEach(out => allResults.add(out)));
+
+		const getValidDiscovered = (items: string[]) => {
+			const filtered = items.filter(item => STARTING_ELEMENTS.includes(item) || allResults.has(item));
+			return Array.from(new Set([...STARTING_ELEMENTS, ...filtered]));
+		};
+
 		try {
 			const saved = localStorage.getItem(STORAGE_KEYS.DISCOVERED);
-			return saved ? JSON.parse(saved) : ['air', 'fire', 'earth', 'water'];
+			const items = saved ? JSON.parse(saved) : STARTING_ELEMENTS;
+			return getValidDiscovered(items);
 		} catch {
-			return ['air', 'fire', 'earth', 'water'];
+			return STARTING_ELEMENTS;
 		}
 	});
 
 	const [elements, setElements] = useState<Element[]>(() => {
+		const allResults = new Set<string>();
+		Object.values(RECIPES).forEach(outputs => outputs.forEach(out => allResults.add(out)));
+		const isValid = (name: string) => STARTING_ELEMENTS.includes(name) || allResults.has(name);
+
 		try {
 			const saved = localStorage.getItem(STORAGE_KEYS.ELEMENTS);
 			if (saved) {
-				const parsed = JSON.parse(saved) as Element[];
+				const parsed = (JSON.parse(saved) as Element[]).filter(el => isValid(el.name));
 				const maxId = parsed.reduce((max, el) => {
 					const idNum = parseInt(el.id.replace('el-', ''));
 					return isNaN(idNum) ? max : Math.max(max, idNum);
@@ -86,6 +101,7 @@ export const App = () => {
 	const [discoveryPopup, setDiscoveryPopup] = useState<string | null>(null);
 	const [confirmWipe, setConfirmWipe] = useState(false);
 	const [infoPopup, setInfoPopup] = useState<string | null>(null);
+	const [computerPopup, setComputerPopup] = useState<string | null>(null);
 	const [filterQuery, setFilterQuery] = useState('');
 	const [showMobileFilter, setShowMobileFilter] = useState(false);
 
@@ -158,8 +174,12 @@ export const App = () => {
 
 				if (remoteDiscovered && remoteDiscovered.length > 0) {
 					setDiscovered((prev) => {
-						const combined = Array.from(new Set([...prev, ...remoteDiscovered]));
-						return combined;
+						const allResults = new Set<string>();
+						Object.values(RECIPES).forEach(outputs => outputs.forEach(out => allResults.add(out)));
+						const isValid = (name: string) => STARTING_ELEMENTS.includes(name) || allResults.has(name);
+
+						const combined = Array.from(new Set([...STARTING_ELEMENTS, ...prev, ...remoteDiscovered]));
+						return combined.filter(isValid);
 					});
 				}
 				if (response.username) {
@@ -384,6 +404,14 @@ export const App = () => {
 		});
 
 		if (targetEl) {
+			const isComputerAction = draggedEl.name === 'computer' || targetEl.name === 'computer';
+			if (isComputerAction) {
+				const elementToShow = draggedEl.name === 'computer' ? targetEl.name : draggedEl.name;
+				if (elementToShow !== 'computer') {
+					setComputerPopup(elementToShow);
+				}
+			}
+
 			const result = getRecipeResult(draggedEl.name, targetEl.name);
 			if (result) {
 				const midX = (draggedEl.x + targetEl.x) / 2;
@@ -471,7 +499,7 @@ export const App = () => {
 				} else if (newResultElements.length === 1) {
 					// Just shift by a tiny bit to trigger transition if needed or keep at center
 				}
-			} else {
+			} else if (!isComputerAction) {
 				// 1. Trigger shake first at current position
 				setShakingIDs({ [draggedEl.id]: true, [targetEl.id]: true });
 
@@ -495,6 +523,24 @@ export const App = () => {
 					);
 					setShakingIDs({});
 				}, 400);
+			} else {
+				// Computer action but no result - just bounce back without shake
+				const dx = draggedEl.x - targetEl.x;
+				const dy = draggedEl.y - targetEl.y;
+				const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+				const pushForce = 40;
+				const moveX = (dx / dist) * pushForce;
+				const moveY = (dy / dist) * pushForce;
+
+				setTimeout(() => {
+					setElements((prev) =>
+						prev.map((el) => {
+							if (el.id === draggedEl.id) return { ...el, x: el.x + moveX, y: el.y + moveY };
+							if (el.id === targetEl.id) return { ...el, x: el.x - moveX, y: el.y - moveY };
+							return el;
+						})
+					);
+				}, 50);
 			}
 		}
 
@@ -999,6 +1045,111 @@ export const App = () => {
 							>
 								AWESOME!
 							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Computer Popup */}
+			{computerPopup && (
+				<div className="absolute inset-0 z-[3000] flex items-center justify-center bg-black/70 backdrop-blur-xl animate-fade-in">
+					<div className="relative w-full max-w-lg mx-4 rounded-[2rem] bg-[#0f172a] p-8 shadow-[0_0_100px_rgba(30,144,255,0.2)] border border-blue-500/20 animate-scale-in text-white">
+						{/* Glow effects */}
+						<div className="absolute -top-32 -left-32 w-64 h-64 bg-blue-600/10 rounded-full blur-[100px]" />
+						<div className="absolute -bottom-32 -right-32 w-64 h-64 bg-cyan-600/10 rounded-full blur-[100px]" />
+
+						<button
+							onClick={() => setComputerPopup(null)}
+							className="absolute right-6 top-6 p-2 text-blue-300/50 hover:text-white transition-colors cursor-pointer z-20"
+						>
+							<IoCloseSharp size={28} />
+						</button>
+
+						<div className="relative z-10">
+							<div className="flex items-center justify-center gap-6 mb-8">
+								<div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-blue-900/30 border border-blue-400/30 shadow-[0_0_20px_rgba(59,130,246,0.2)]">
+									<span className="text-5xl drop-shadow-lg">💻</span>
+								</div>
+								<div className="h-px w-8 bg-blue-400/20" />
+								<div
+									className={`flex h-20 w-20 items-center justify-center rounded-2xl border-2 ${ELEMENT_COLORS[computerPopup] ?? 'bg-gray-300 border-gray-500'} shadow-xl`}
+								>
+									{(() => {
+										const rawIcon = ELEMENT_ICONS[computerPopup];
+										const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
+										const colorClass = ELEMENT_COLORS[computerPopup] ?? 'bg-gray-300 border-gray-500';
+										const weightMatch = colorClass.match(/-(\d{3})/);
+										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
+										if (typeof Icon === 'string') {
+											if (Icon.startsWith('/') || Icon.startsWith('http')) {
+												return <img src={Icon} alt="" className="w-12 h-12 object-contain" />;
+											}
+											return <span className="text-4xl leading-none drop-shadow-lg">{Icon}</span>;
+										} else if (Icon) {
+											const IconComp = Icon;
+											return (
+												<IconComp size={40} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+											);
+										}
+										return null;
+									})()}
+								</div>
+							</div>
+
+							<h3 className="text-center text-3xl font-black mb-1 capitalize tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-cyan-200">
+								{computerPopup.replace(/-/g, ' ')}
+							</h3>
+							<p className="text-center text-blue-300/60 text-sm font-medium uppercase tracking-[0.2em] mb-8">
+								Reaction Database
+							</p>
+
+							<div className="bg-black/40 rounded-2xl border border-white/5 overflow-hidden max-h-[300px] overflow-y-auto custom-scrollbar">
+								<div className="divide-y divide-white/5">
+									{getRecipesForElement(computerPopup).length === 0 && (
+										<div className="py-12 px-6 text-center">
+											<p className="text-blue-300/40 text-sm font-bold uppercase tracking-widest italic">
+												Primary Elemental Force
+											</p>
+											<p className="text-blue-400/20 text-[10px] mt-2">
+												This element exists since the beginning of time.<br />No synthesis patterns detected.
+											</p>
+										</div>
+									)}
+									{getRecipesForElement(computerPopup).map((recipe, idx) => {
+										const a = recipe[0];
+										const b = recipe[1];
+										if (!a || !b) return null;
+
+										const aFound = discovered.includes(a);
+										const bFound = discovered.includes(b);
+
+										return (
+											<div key={idx} className="flex items-center justify-center gap-3 py-4 px-6 hover:bg-white/5 transition-colors">
+												<div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${aFound ? (ELEMENT_COLORS[a] ?? 'bg-slate-700 border-slate-600') : 'bg-slate-900/50 border-slate-800'} text-xs font-bold`}>
+													<span className="capitalize">{aFound ? a.replace(/-/g, ' ') : '???'}</span>
+												</div>
+												<span className="text-blue-400/50 font-black">+</span>
+												<div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${bFound ? (ELEMENT_COLORS[b] ?? 'bg-slate-700 border-slate-600') : 'bg-slate-900/50 border-slate-800'} text-xs font-bold`}>
+													<span className="capitalize">{bFound ? b.replace(/-/g, ' ') : '???'}</span>
+												</div>
+												<span className="text-blue-400/50 font-black">=</span>
+												<div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${ELEMENT_COLORS[computerPopup] ?? 'bg-slate-700 border-slate-600'} text-xs font-bold`}>
+													<span className="capitalize">{computerPopup.replace(/-/g, ' ')}</span>
+												</div>
+											</div>
+										);
+									})}
+								</div>
+							</div>
+
+							<div className="mt-8">
+								<button
+									onClick={() => setComputerPopup(null)}
+									className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 py-4 font-bold text-white shadow-lg shadow-blue-900/40 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
+								>
+									CLOSE DATABASE
+								</button>
+							</div>
 						</div>
 					</div>
 				</div>

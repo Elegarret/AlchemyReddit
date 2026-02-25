@@ -88,6 +88,10 @@ export const Splash = () => {
 			>
 				{progress ? 'Continue discovery' : 'Play Now'}
 			</button>
+
+			<div className="absolute bottom-4 right-4 text-[10px] font-mono text-white/20 select-none tracking-wider uppercase">
+				Build {__BUILD_NUMBER__}
+			</div>
 		</div>
 	);
 };

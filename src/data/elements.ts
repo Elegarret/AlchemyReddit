@@ -63,7 +63,6 @@ export const ELEMENT_COLORS: Record<string, string> = {
 	zombie: 'bg-emerald-300 border-emerald-500',
 	blood: 'bg-red-700 border-red-900',
 	vampire: 'bg-indigo-950 border-indigo-900',
-	werewolf: 'bg-stone-900 border-stone-800',
 	dragon: 'bg-red-800 border-red-950',
 	salamander: 'bg-orange-500 border-orange-700',
 	phoenix: 'bg-orange-600 border-orange-800',
@@ -112,7 +111,6 @@ export const ELEMENT_COLORS: Record<string, string> = {
 	hero: 'bg-yellow-400 border-yellow-600',
 	tank: 'bg-emerald-950 border-green-900',
 	scientist: 'bg-sky-100 border-sky-400',
-	shell: 'bg-orange-100 border-orange-300',
 	shield: 'bg-zinc-300 border-zinc-500',
 	hamburger: 'bg-amber-200 border-amber-400',
 	butter: 'bg-yellow-200 border-yellow-400',
@@ -123,6 +121,7 @@ export const ELEMENT_COLORS: Record<string, string> = {
 	explode: 'bg-orange-600 border-red-600',
 	oil: 'bg-zinc-800 border-black',
 	car: 'bg-blue-600 border-blue-800',
+	computer: 'bg-sky-100 border-sky-400',
 };
 
 export const ELEMENT_ICONS: Record<string, any> = {
@@ -168,7 +167,7 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	turtle: '🐢',
 	animal: ['🐂', '🐂', '🦌', '🦔', '🦨'],
 	monkey: '🐒',
-	human: ['👤', '🙋', '🙋🏻'],
+	human: ['👤', '🙋🏻‍♂️', '🙋🏼‍♀️'],
 	golem: '🗿',
 	poison: '🧪',
 	corpse: '💀',
@@ -187,7 +186,6 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	zombie: '🧟',
 	blood: '🩸',
 	vampire: ['🧛‍♂️'],
-	werewolf: '🐺',
 	dragon: '🐲',
 	salamander: '🦎',
 	phoenix: '🐦‍🔥',
@@ -236,7 +234,6 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	hero: '🦸',
 	tank: '/tank.png',
 	scientist: ['🧑‍🔬'],
-	shell: '🐚',
 	shield: '🛡️',
 	hamburger: '🍔',
 	butter: '🧈',
