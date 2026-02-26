@@ -299,6 +299,48 @@ export const App = () => {
 		return rawIcon[1 + Math.floor(Math.random() * (rawIcon.length - 1))];
 	};
 
+	const renderElementWidget = (name: string, size: 'small' | 'large' = 'small', isHidden: boolean = false, isReactive: boolean = false) => {
+		const colorClass = isHidden ? 'bg-slate-900 border-slate-800' : (ELEMENT_COLORS[name] ?? 'bg-gray-300 border-gray-500');
+		const weightMatch = colorClass.match(/-(\d{3})/);
+		const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
+		const Icon = isHidden ? null : ELEMENT_ICONS[name];
+		const displayName = isHidden ? '???' : name;
+
+		const sizeClasses = size === 'small'
+			? 'h-full w-full rounded-lg border-2 text-[10px] pb-0'
+			: 'h-full w-full rounded-xl border-2 text-[11px] pb-0';
+
+		const reactiveClasses = isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : '';
+
+		return (
+			<div className={`relative flex flex-col items-center justify-end select-none overflow-hidden ${sizeClasses} ${colorClass} ${reactiveClasses}`}>
+				{!isHidden && <div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />}
+				{Icon && (
+					<div className={`absolute inset-0 flex items-center justify-center pointer-events-none z-[1] ${size === 'small' ? 'pb-3' : 'pb-5'}`}>
+						{(() => {
+							const displayIcon = Array.isArray(Icon) ? Icon[0] : Icon;
+							if (typeof displayIcon === 'string') {
+								if (displayIcon.startsWith('/') || displayIcon.startsWith('http')) {
+									return <img src={displayIcon} alt="" className={`${size === 'small' ? 'w-9 h-9' : 'w-14 h-14'} object-contain drop-shadow-md`} />;
+								}
+								return <span className={`${size === 'small' ? 'text-[34px]' : 'text-[52px]'} leading-none drop-shadow-md`}>{displayIcon}</span>;
+							}
+							const IconComp = displayIcon;
+							return (
+								<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
+									<IconComp size={size === 'small' ? 30 : 44} />
+								</div>
+							);
+						})()}
+					</div>
+				)}
+				<span className={`relative z-10 text-center truncate w-full bg-black/40 py-0.5 backdrop-blur-sm text-white/95 leading-tight ${size === 'small' ? 'text-[10px]' : 'text-[11px] font-bold border-t border-white/5'}`}>
+					{displayName}
+				</span>
+			</div>
+		);
+	};
+
 	const getRandomHint = (currentDiscovered: string[] = discovered) => {
 		const possible: string[] = [];
 		for (const [key, outputs] of Object.entries(RECIPES)) {
@@ -366,7 +408,7 @@ export const App = () => {
 					return Math.sqrt(dx * dx + dy * dy) < MERGE_DISTANCE;
 				});
 
-				if (targetEl && getRecipeResult(draggedEl.name, targetEl.name)) {
+				if (targetEl && (getRecipeResult(draggedEl.name, targetEl.name) || draggedEl.name === 'computer' || targetEl.name === 'computer')) {
 					if (!reactiveIDs.includes(draggedEl.id) || !reactiveIDs.includes(targetEl.id)) {
 						setReactiveIDs([draggedEl.id, targetEl.id]);
 					}
@@ -407,9 +449,7 @@ export const App = () => {
 			const isComputerAction = draggedEl.name === 'computer' || targetEl.name === 'computer';
 			if (isComputerAction) {
 				const elementToShow = draggedEl.name === 'computer' ? targetEl.name : draggedEl.name;
-				if (elementToShow !== 'computer') {
-					setComputerPopup(elementToShow);
-				}
+				setComputerPopup(elementToShow);
 			}
 
 			const result = getRecipeResult(draggedEl.name, targetEl.name);
@@ -665,7 +705,7 @@ export const App = () => {
 			</div>
 
 			{/* Palette Area */}
-			<div className="h-60 border-t border-palette bg-palette flex flex-col z-10">
+			<div className="h-60 border-t border-palette bg-palette flex flex-col z-10 overflow-hidden">
 				<div className="pt-3 px-4 pb-1 relative">
 					{showMobileFilter ? (
 						<div
@@ -736,6 +776,7 @@ export const App = () => {
 
 				<div
 					className="flex-1 overflow-hidden relative"
+					style={{ height: 0 }}
 					onPointerDown={(e) => onPaletteDown(e)}
 					onPointerMove={onPaletteMove}
 					onPointerUp={onPaletteUp}
@@ -753,45 +794,18 @@ export const App = () => {
 								className="min-w-full h-full grid grid-rows-3 gap-1.5 px-4 pb-2"
 								style={{ gridTemplateColumns: `repeat(${layoutCols}, minmax(0, 1fr))` }}
 							>
-								{page.map((name) => {
-									const colorClass = ELEMENT_COLORS[name] ?? 'bg-gray-300 border-gray-500';
-									const weightMatch = colorClass.match(/-(\d{3})/);
-									const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-									const Icon = ELEMENT_ICONS[name];
-
-									return (
-										<div
-											key={`${pageIdx}-${name}`}
-											className={`relative flex flex-col h-full items-center justify-end rounded-lg border-2 text-[10px] font-black shadow-sm active:scale-95 select-none overflow-hidden ${colorClass}`}
-											onPointerDown={(e) => {
-												e.stopPropagation();
-												onPaletteDown(e, name);
-											}}
-										>
-											<div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />
-											{Icon && (
-												<div className={`absolute inset-0 flex items-center justify-center pointer-events-none pb-2 z-[1]`}>
-													{(() => {
-														const displayIcon = Array.isArray(Icon) ? Icon[0] : Icon;
-														if (typeof displayIcon === 'string') {
-															if (displayIcon.startsWith('/') || displayIcon.startsWith('http')) {
-																return <img src={displayIcon} alt="" className="w-9 h-9 object-contain drop-shadow-md" />;
-															}
-															return <span className="text-[34px] leading-none drop-shadow-md">{displayIcon}</span>;
-														}
-														const IconComp = displayIcon;
-														return (
-															<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
-																<IconComp size={30} />
-															</div>
-														);
-													})()}
-												</div>
-											)}
-											<span className="relative z-10 text-center truncate w-full bg-black/40 py-0.5 text-[10px] backdrop-blur-sm text-white/95">{name}</span>
-										</div>
-									);
-								})}
+								{page.map((name) => (
+									<div
+										key={`${pageIdx}-${name}`}
+										className="relative h-full active:scale-95 cursor-pointer"
+										onPointerDown={(e) => {
+											e.stopPropagation();
+											onPaletteDown(e, name);
+										}}
+									>
+										{renderElementWidget(name)}
+									</div>
+								))}
 								{pageIdx === 0 && discovered.length >= 6 && discovered.length < 12 && (
 									<div className="col-span-6 row-start-3 flex items-center justify-center pointer-events-none opacity-30 text-[9px] font-bold uppercase tracking-[0.2em] text-primary italic">
 										drag elements here to discard them
@@ -817,12 +831,6 @@ export const App = () => {
 					const isDragging = dragging === el.id;
 					const isReactive = reactiveIDs.includes(el.id);
 					const isShaking = shakingIDs[el.id];
-					const colorClass = ELEMENT_COLORS[el.name] ?? 'bg-gray-300 border-gray-500';
-
-					// Quick contrast fix: parse the tailwind weight (e.g., 200, 600)
-					const weightMatch = colorClass.match(/-(\d{3})/);
-					const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-					const Icon = el.icon ?? ELEMENT_ICONS[el.name];
 					const isExploding = explodingIDs[el.id];
 					const pushVector = pushedElements[el.id];
 
@@ -838,31 +846,7 @@ export const App = () => {
 							} as any}
 							onPointerDown={(e) => handlePointerDown(e, el.id)}
 						>
-							<div className={`absolute inset-0 flex flex-col items-center justify-end rounded-xl border-2 text-[11px] font-bold shadow-2xl drop-shadow-2xl overflow-hidden ${colorClass} ${isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : ''}`}>
-								{/* Background Darkener for contrast */}
-								<div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />
-
-								{Icon && (
-									<div className="absolute inset-x-0 top-0 bottom-6 flex items-center justify-center pointer-events-none">
-										{(() => {
-											const displayIcon = Array.isArray(Icon) ? Icon[0] : Icon;
-											if (typeof displayIcon === 'string') {
-												if (displayIcon.startsWith('/') || displayIcon.startsWith('http')) {
-													return <img src={displayIcon} alt="" className="w-14 h-14 object-contain drop-shadow-xl" />;
-												}
-												return <span className="text-[52px] leading-none drop-shadow-xl">{displayIcon}</span>;
-											}
-											const IconComp = displayIcon;
-											return (
-												<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
-													<IconComp size={44} />
-												</div>
-											);
-										})()}
-									</div>
-								)}
-								<span className="relative z-10 px-1 py-0.5 text-center bg-black/40 backdrop-blur-md w-full text-white/95 truncate leading-tight border-t border-white/5">{el.name}</span>
-							</div>
+							{renderElementWidget(el.name, 'large', false, isReactive)}
 
 							{/* Scientist Hint Bubble */}
 							{el.hint && el.name === 'scientist' && (
@@ -1053,7 +1037,7 @@ export const App = () => {
 			{/* Computer Popup */}
 			{computerPopup && (
 				<div className="absolute inset-0 z-[3000] flex items-center justify-center bg-black/70 backdrop-blur-xl animate-fade-in">
-					<div className="relative w-full max-w-lg mx-4 rounded-[2rem] bg-[#0f172a] p-8 shadow-[0_0_100px_rgba(30,144,255,0.2)] border border-blue-500/20 animate-scale-in text-white">
+					<div className="relative w-full max-w-lg mx-4 max-h-[90vh] rounded-[2rem] bg-[#0f172a] p-8 shadow-[0_0_100px_rgba(30,144,255,0.2)] border border-blue-500/20 animate-scale-in text-white flex flex-col">
 						{/* Glow effects */}
 						<div className="absolute -top-32 -left-32 w-64 h-64 bg-blue-600/10 rounded-full blur-[100px]" />
 						<div className="absolute -bottom-32 -right-32 w-64 h-64 bg-cyan-600/10 rounded-full blur-[100px]" />
@@ -1065,84 +1049,88 @@ export const App = () => {
 							<IoCloseSharp size={28} />
 						</button>
 
-						<div className="relative z-10">
-							<div className="flex items-center justify-center gap-6 mb-8">
-								<div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-blue-900/30 border border-blue-400/30 shadow-[0_0_20px_rgba(59,130,246,0.2)]">
-									<span className="text-5xl drop-shadow-lg">💻</span>
-								</div>
-								<div className="h-px w-8 bg-blue-400/20" />
-								<div
-									className={`flex h-20 w-20 items-center justify-center rounded-2xl border-2 ${ELEMENT_COLORS[computerPopup] ?? 'bg-gray-300 border-gray-500'} shadow-xl`}
-								>
-									{(() => {
-										const rawIcon = ELEMENT_ICONS[computerPopup];
-										const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
-										const colorClass = ELEMENT_COLORS[computerPopup] ?? 'bg-gray-300 border-gray-500';
-										const weightMatch = colorClass.match(/-(\d{3})/);
-										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-										if (typeof Icon === 'string') {
-											if (Icon.startsWith('/') || Icon.startsWith('http')) {
-												return <img src={Icon} alt="" className="w-12 h-12 object-contain" />;
+						<div className="relative z-10 flex flex-col h-full overflow-hidden">
+							<div className="flex-shrink-0">
+								<div className="flex items-center justify-center gap-6 mb-8">
+									<div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-blue-900/30 border border-blue-400/30 shadow-[0_0_20px_rgba(59,130,246,0.2)]">
+										<span className="text-5xl drop-shadow-lg">💻</span>
+									</div>
+									<div className="h-px w-8 bg-blue-400/20" />
+									<div
+										className={`flex h-20 w-20 items-center justify-center rounded-2xl border-2 ${ELEMENT_COLORS[computerPopup] ?? 'bg-gray-300 border-gray-500'} shadow-xl`}
+									>
+										{(() => {
+											const rawIcon = ELEMENT_ICONS[computerPopup];
+											const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
+											const colorClass = ELEMENT_COLORS[computerPopup] ?? 'bg-gray-300 border-gray-500';
+											const weightMatch = colorClass.match(/-(\d{3})/);
+											const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
+											if (typeof Icon === 'string') {
+												if (Icon.startsWith('/') || Icon.startsWith('http')) {
+													return <img src={Icon} alt="" className="w-12 h-12 object-contain" />;
+												}
+												return <span className="text-4xl leading-none drop-shadow-lg">{Icon}</span>;
+											} else if (Icon) {
+												const IconComp = Icon;
+												return (
+													<IconComp size={40} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+												);
 											}
-											return <span className="text-4xl leading-none drop-shadow-lg">{Icon}</span>;
-										} else if (Icon) {
-											const IconComp = Icon;
-											return (
-												<IconComp size={40} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
-											);
-										}
-										return null;
-									})()}
+											return null;
+										})()}
+									</div>
 								</div>
+
+								<h3 className="text-center text-3xl font-black mb-1 capitalize tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-cyan-200">
+									{computerPopup.replace(/-/g, ' ')}
+								</h3>
+								<p className="text-center text-blue-300/60 text-sm font-medium uppercase tracking-[0.2em] mb-8">
+									Reaction Database
+								</p>
 							</div>
 
-							<h3 className="text-center text-3xl font-black mb-1 capitalize tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-cyan-200">
-								{computerPopup.replace(/-/g, ' ')}
-							</h3>
-							<p className="text-center text-blue-300/60 text-sm font-medium uppercase tracking-[0.2em] mb-8">
-								Reaction Database
-							</p>
-
-							<div className="bg-black/40 rounded-2xl border border-white/5 overflow-hidden max-h-[300px] overflow-y-auto custom-scrollbar">
-								<div className="divide-y divide-white/5">
-									{getRecipesForElement(computerPopup).length === 0 && (
-										<div className="py-12 px-6 text-center">
-											<p className="text-blue-300/40 text-sm font-bold uppercase tracking-widest italic">
-												Primary Elemental Force
-											</p>
-											<p className="text-blue-400/20 text-[10px] mt-2">
-												This element exists since the beginning of time.<br />No synthesis patterns detected.
-											</p>
-										</div>
-									)}
-									{getRecipesForElement(computerPopup).map((recipe, idx) => {
-										const a = recipe[0];
-										const b = recipe[1];
-										if (!a || !b) return null;
-
-										const aFound = discovered.includes(a);
-										const bFound = discovered.includes(b);
-
-										return (
-											<div key={idx} className="flex items-center justify-center gap-3 py-4 px-6 hover:bg-white/5 transition-colors">
-												<div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${aFound ? (ELEMENT_COLORS[a] ?? 'bg-slate-700 border-slate-600') : 'bg-slate-900/50 border-slate-800'} text-xs font-bold`}>
-													<span className="capitalize">{aFound ? a.replace(/-/g, ' ') : '???'}</span>
-												</div>
-												<span className="text-blue-400/50 font-black">+</span>
-												<div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${bFound ? (ELEMENT_COLORS[b] ?? 'bg-slate-700 border-slate-600') : 'bg-slate-900/50 border-slate-800'} text-xs font-bold`}>
-													<span className="capitalize">{bFound ? b.replace(/-/g, ' ') : '???'}</span>
-												</div>
-												<span className="text-blue-400/50 font-black">=</span>
-												<div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${ELEMENT_COLORS[computerPopup] ?? 'bg-slate-700 border-slate-600'} text-xs font-bold`}>
-													<span className="capitalize">{computerPopup.replace(/-/g, ' ')}</span>
-												</div>
+							<div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+								<div className="bg-black/40 rounded-2xl border border-white/5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+									<div className="divide-y divide-white/5">
+										{getRecipesForElement(computerPopup).length === 0 && (
+											<div className="py-12 px-6 text-center">
+												<p className="text-blue-300/40 text-sm font-bold uppercase tracking-widest italic">
+													Primary Elemental Force
+												</p>
+												<p className="text-blue-400/20 text-[10px] mt-2">
+													This element exists since the beginning of time.<br />No synthesis patterns detected.
+												</p>
 											</div>
-										);
-									})}
+										)}
+										{getRecipesForElement(computerPopup).map((recipe, idx) => {
+											const a = recipe[0];
+											const b = recipe[1];
+											if (!a || !b) return null;
+
+											const aFound = discovered.includes(a);
+											const bFound = discovered.includes(b);
+
+											return (
+												<div key={idx} className="flex items-center justify-center gap-4 py-8 px-4 hover:bg-white/5 transition-colors">
+													<div className="h-16 w-16">
+														{renderElementWidget(a, 'small', !aFound)}
+													</div>
+													<span className="text-blue-400 font-black text-2xl drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]">+</span>
+													<div className="h-16 w-16">
+														{renderElementWidget(b, 'small', !bFound)}
+													</div>
+													<span className="text-blue-400 font-black text-2xl drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]">=</span>
+													<div className="h-16 w-16">
+														{renderElementWidget(computerPopup, 'small')}
+													</div>
+												</div>
+											);
+										})}
+									</div>
 								</div>
 							</div>
 
-							<div className="mt-8">
+							<div className="flex-shrink-0 mt-8">
 								<button
 									onClick={() => setComputerPopup(null)}
 									className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 py-4 font-bold text-white shadow-lg shadow-blue-900/40 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"

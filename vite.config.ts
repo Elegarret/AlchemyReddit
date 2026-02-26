@@ -6,6 +6,6 @@ import { devvit } from '@devvit/start/vite';
 export default defineConfig({
 	plugins: [react(), tailwind(), devvit()],
 	define: {
-		__BUILD_NUMBER__: JSON.stringify(new Date().toISOString().slice(0, 10).replace(/-/g, '.')),
+		__BUILD_NUMBER__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),
 	},
 });
