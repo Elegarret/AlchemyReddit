@@ -122,6 +122,16 @@ export const ELEMENT_COLORS: Record<string, string> = {
 	oil: 'bg-zinc-800 border-black',
 	car: 'bg-blue-600 border-blue-800',
 	computer: 'bg-sky-100 border-sky-400',
+	light: 'bg-yellow-50 border-yellow-200',
+	lens: 'bg-sky-100 border-sky-300',
+	telescope: 'bg-gray-400 border-gray-600',
+	space: 'bg-slate-900 border-slate-700',
+	planet: 'bg-indigo-300 border-indigo-500',
+	star: 'bg-yellow-200 border-yellow-400',
+	meteor: 'bg-stone-600 border-stone-800',
+	jet: 'bg-slate-200 border-slate-400',
+	rocket: 'bg-red-100 border-red-300',
+	astronaut: 'bg-white border-gray-300',
 };
 
 export const ELEMENT_ICONS: Record<string, any> = {
@@ -246,9 +256,19 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	car: '🚗',
 	computer: '💻',
 	nest: '🪺',
+	light: '✨',
+	lens: '🔍',
+	telescope: '🔭',
+	space: '🌌',
+	planet: '🪐',
+	star: '⭐',
+	meteor: '☄️',
+	jet: '✈️',
+	rocket: '🚀',
+	astronaut: '👨‍🚀',
 };
 
-export const KEY_ITEMS = ['energy', 'life', 'dinosaur', 'human', 'livestock', 'field', 'tool', 'steam-engine'];
+export const KEY_ITEMS = ['energy', 'life', 'dinosaur', 'human', 'livestock', 'field', 'tool', 'steam-engine', 'space'];
 
 export const KEY_ITEMS_DATA: Record<string, { description: string; motivation: string }> = {
 	energy: {
@@ -290,6 +310,10 @@ export const KEY_ITEMS_DATA: Record<string, { description: string; motivation: s
 	'computer': {
 		description: 'A programmable electronic device that can store, retrieve, and process data.',
 		motivation: 'The digital age begins! Logic and information will transform the world.',
+	},
+	'space': {
+		description: 'The vast, seemingly infinite expanse that exists beyond our world.',
+		motivation: 'Did you create it or it always was there?',
 	},
 };
 

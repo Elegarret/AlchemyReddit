@@ -257,7 +257,7 @@ export const App = () => {
 
 				// Final cleanup: remove everything after animation
 				setTimeout(() => {
-					setElements([]);
+					setElements(currentElements => currentElements.filter(el => el.name === 'space'));
 					setExplodingIDs({});
 					setPushedElements({});
 					setFlash(null);
@@ -311,9 +311,10 @@ export const App = () => {
 			: 'h-full w-full rounded-xl border-2 text-[11px] pb-0';
 
 		const reactiveClasses = isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : '';
+		const lightGlow = name === 'light' && !isHidden ? 'shadow-[0_0_40px_15px_rgba(255,255,150,0.8)] z-20' : '';
 
 		return (
-			<div className={`relative flex flex-col items-center justify-end select-none overflow-hidden ${sizeClasses} ${colorClass} ${reactiveClasses}`}>
+			<div className={`relative flex flex-col items-center justify-end select-none overflow-hidden ${sizeClasses} ${colorClass} ${reactiveClasses} ${lightGlow}`}>
 				{!isHidden && <div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />}
 				{Icon && (
 					<div className={`absolute inset-0 flex items-center justify-center pointer-events-none z-[1] ${size === 'small' ? 'pb-3' : 'pb-5'}`}>
@@ -658,6 +659,14 @@ export const App = () => {
 	const nextKeyItem = KEY_ITEMS.find((item) => !discovered.includes(item));
 	const totalElementsCount = Object.keys(ELEMENT_COLORS).length;
 
+	const starDrops = useRef(Array.from({ length: 20 }).map(() => ({
+		top: `${Math.random() * 100}%`,
+		left: `${Math.random() * 100}%`,
+		width: `${Math.random() * 3 + 2}px`,
+		height: `${Math.random() * 3 + 2}px`,
+		animationDelay: `${Math.random() * 2}s`
+	})));
+	const hasStar = elements.some(el => el.name === 'star');
 
 	return (
 		<div
@@ -670,6 +679,17 @@ export const App = () => {
 				ref={containerRef}
 				className="relative flex-1 bg-table-gradient"
 			>
+				{hasStar && (
+					<div className="absolute inset-0 pointer-events-none overflow-hidden mix-blend-screen">
+						{starDrops.current.map((style, i) => (
+							<div
+								key={`star-${i}`}
+								className="absolute bg-white rounded-full animate-pulse shadow-[0_0_10px_2px_rgba(255,255,255,0.8)]"
+								style={style}
+							/>
+						))}
+					</div>
+				)}
 				{/* Background Decoration */}
 				<div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none overflow-hidden mt-[-10%]">
 					<span className="text-[60vh] font-serif leading-none">☿</span>
