@@ -82,12 +82,20 @@ export const Splash = () => {
 				)}
 			</div>
 
-			<button
-				className="mt-6 cursor-pointer rounded-full bg-[#ff4500] px-10 py-4 text-white font-bold text-lg shadow-xl transition-all hover:scale-105 active:scale-95 hover:bg-[#ff5500] ring-4 ring-orange-500/20 animate-pulsate"
-				onClick={(e) => requestExpandedMode(e.nativeEvent, 'game')}
-			>
-				{progress ? 'Continue discovery' : 'Play Now'}
-			</button>
+			<div className="mt-6 flex w-full max-w-sm flex-col gap-3 px-4">
+				<button
+					className="cursor-pointer rounded-full bg-[#ff4500] px-10 py-4 text-white font-bold text-lg shadow-xl transition-all hover:scale-105 active:scale-95 hover:bg-[#ff5500] ring-4 ring-orange-500/20 animate-pulsate"
+					onClick={(e) => requestExpandedMode(e.nativeEvent, 'game')}
+				>
+					{progress ? 'Continue discovery' : 'Play Now'}
+				</button>
+				<button
+					className="cursor-pointer rounded-full border border-cyan-300/30 bg-cyan-400/12 px-10 py-4 text-cyan-50 font-bold text-lg shadow-xl transition-all hover:scale-105 active:scale-95 hover:bg-cyan-400/20"
+					onClick={(e) => requestExpandedMode(e.nativeEvent, 'mod-editor')}
+				>
+					Create a Mod
+				</button>
+			</div>
 
 			<div className="absolute bottom-4 right-4 text-[10px] font-mono text-white/20 select-none tracking-wider uppercase">
 				Build {__BUILD_NUMBER__}

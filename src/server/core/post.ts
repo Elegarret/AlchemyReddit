@@ -1,7 +1,8 @@
-import { reddit } from '@devvit/web/server';
+import { reddit, settings } from '@devvit/web/server';
 
 export const createPost = async () => {
-  return await reddit.submitCustomPost({
-    title: 'alchemygame',
-  });
+	const postTitle = (await settings.get<string>('postTitle')) || 'Alchemy - combine elements to discover all of them 🔥💧🦖💩';
+	return await reddit.submitCustomPost({
+		title: postTitle,
+	});
 };

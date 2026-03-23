@@ -10,6 +10,9 @@
       },
       "game": {
         "entry": "src/game.html"
+      },
+      "mod-editor": {
+        "entry": "src/mod-editor.html"
       }
     }
   },
@@ -23,15 +26,25 @@
   "menu": {
     "items": [
       {
-        "label": "Create a new post",
-        "description": "alchemygame",
+        "label": "Create game post",
+        "description": "Creates a new playable alchemy game post",
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/post-create"
       }
     ]
   },
+  "settings": {
+    "subreddit": {
+      "postTitle": {
+        "type": "string",
+        "label": "Game Post Title",
+        "defaultValue": "Play Alchemy Game"
+      }
+    }
+  },
   "permissions": {
+    "redis": true,
     "reddit": {
       "enable": true,
       "asUser": [

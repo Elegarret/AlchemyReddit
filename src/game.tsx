@@ -1,10 +1,19 @@
 import './index.css';
 
-import { StrictMode, useState, useRef, useEffect } from 'react';
+import { StrictMode, useState, useRef, useEffect, type ComponentType, type CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ELEMENT_COLORS, ELEMENT_ICONS, KEY_ITEMS, KEY_ITEMS_DATA, ELEMENT_MESSAGES } from './data/elements';
-import { getRecipeResult, RECIPES, getRecipesForElement } from './data/recipes';
+import { context, requestExpandedMode } from '@devvit/web/client';
 import { IoSettingsSharp, IoCloseSharp, IoSearchSharp } from 'react-icons/io5';
+import { BASE_RULESET } from './modding/base-ruleset';
+import {
+	getLocalStorageKeys,
+	getProgressScope,
+	getRecipeResultForRuleset,
+	getRecipesForElementInRuleset,
+	getValidDiscoveredItems,
+	PLAYTEST_RULESET_STORAGE_KEY,
+} from './modding/runtime';
+import type { ActiveRuleset } from './modding/types';
 import { trpc } from './trpc';
 
 type Element = {
@@ -12,51 +21,149 @@ type Element = {
 	name: string;
 	x: number;
 	y: number;
-	icon?: any;
+	icon?: ElementIcon;
 	hint?: string;
 };
 
-const STARTING_ELEMENTS = ['air', 'fire', 'earth', 'water'];
+type ElementIcon = string | ComponentType<{ size?: number }>;
+
+type SnowBackdropFlakeStyle = CSSProperties & {
+	'--snow-opacity': string;
+	'--snow-mid-x': string;
+	'--snow-mid-y': string;
+	'--snow-end-x': string;
+	'--snow-end-y': string;
+	'--snow-scale-start': string;
+	'--snow-scale-peak': string;
+	'--snow-scale-end': string;
+};
+
+const createSnowBackdropFlakes = (): SnowBackdropFlakeStyle[] =>
+	Array.from({ length: 34 }, () => {
+		const size = 3 + Math.random() * 5;
+		const blur = Math.random() * 1.1;
+
+		return {
+			left: `${Math.random() * 100}%`,
+			top: `${8 + Math.random() * 76}%`,
+			width: `${size}px`,
+			height: `${size}px`,
+			filter: `blur(${blur.toFixed(2)}px)`,
+			animationDelay: `${(-1 * Math.random() * 26).toFixed(2)}s`,
+			animationDuration: `${18 + Math.random() * 18}s`,
+			'--snow-opacity': `${(0.28 + Math.random() * 0.4).toFixed(2)}`,
+			'--snow-mid-x': `${(-18 + Math.random() * 36).toFixed(1)}px`,
+			'--snow-mid-y': `${(10 + Math.random() * 18).toFixed(1)}px`,
+			'--snow-end-x': `${(-28 + Math.random() * 56).toFixed(1)}px`,
+			'--snow-end-y': `${(28 + Math.random() * 34).toFixed(1)}px`,
+			'--snow-scale-start': `${(0.74 + Math.random() * 0.18).toFixed(2)}`,
+			'--snow-scale-peak': `${(0.96 + Math.random() * 0.22).toFixed(2)}`,
+			'--snow-scale-end': `${(0.82 + Math.random() * 0.16).toFixed(2)}`,
+		};
+	});
+
+const createSnowPaletteHills = (): CSSProperties[] => [
+	{
+		left: '-8%',
+		width: '33%',
+		height: '58px',
+		animationDelay: '0s',
+		animationDuration: '24s',
+	},
+	{
+		left: '15%',
+		width: '29%',
+		height: '44px',
+		animationDelay: '0.24s',
+		animationDuration: '21s',
+	},
+	{
+		left: '35%',
+		width: '36%',
+		height: '68px',
+		animationDelay: '0.08s',
+		animationDuration: '26s',
+	},
+	{
+		left: '60%',
+		width: '26%',
+		height: '48px',
+		animationDelay: '0.32s',
+		animationDuration: '23s',
+	},
+	{
+		right: '-7%',
+		width: '30%',
+		height: '56px',
+		animationDelay: '0.14s',
+		animationDuration: '25s',
+	},
+];
 
 // No longer needed, icons moved to elements.ts
-
-const STORAGE_KEYS = {
-	DISCOVERED: 'alchemy-discovered',
-	ELEMENTS: 'alchemy-table-elements',
-	PAGE: 'alchemy-current-page',
-};
 
 let elementIdCounter = 0;
 const createElementId = () => `el-${++elementIdCounter}`;
 
-export const App = () => {
+type GameSessionProps = {
+	ruleset: ActiveRuleset;
+	initialUsername: string | null;
+	initialDiscovered: string[];
+	progressScope: string;
+	isPlaytest: boolean;
+};
+
+const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === 'object' && value !== null;
+
+const isRulesetRecord = (value: unknown): value is ActiveRuleset => {
+	if (!isUnknownRecord(value)) {
+		return false;
+	}
+
+	return (
+		typeof value.rulesetId === 'string' &&
+		typeof value.storageScope === 'string' &&
+		Array.isArray(value.startingElements) &&
+		isUnknownRecord(value.recipes) &&
+		isUnknownRecord(value.elementStyles) &&
+		isUnknownRecord(value.elementIcons)
+	);
+};
+
+const readPlaytestRuleset = () => {
+	try {
+		const saved = localStorage.getItem(PLAYTEST_RULESET_STORAGE_KEY);
+		if (!saved) {
+			return null;
+		}
+
+		const parsed = JSON.parse(saved);
+		return isRulesetRecord(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+};
+
+const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScope, isPlaytest }: GameSessionProps) => {
+	const storageKeys = getLocalStorageKeys(ruleset);
 	const [discovered, setDiscovered] = useState<string[]>(() => {
-		const allResults = new Set<string>();
-		Object.values(RECIPES).forEach(outputs => outputs.forEach(out => allResults.add(out)));
-
-		const getValidDiscovered = (items: string[]) => {
-			const filtered = items.filter(item => STARTING_ELEMENTS.includes(item) || allResults.has(item));
-			return Array.from(new Set([...STARTING_ELEMENTS, ...filtered]));
-		};
-
 		try {
-			const saved = localStorage.getItem(STORAGE_KEYS.DISCOVERED);
-			const items = saved ? JSON.parse(saved) : STARTING_ELEMENTS;
-			return getValidDiscovered(items);
+			const saved = localStorage.getItem(storageKeys.discovered);
+			const items = saved ? JSON.parse(saved) : ruleset.startingElements;
+			return getValidDiscoveredItems(ruleset, [...items, ...initialDiscovered]);
 		} catch {
-			return STARTING_ELEMENTS;
+			return getValidDiscoveredItems(ruleset, initialDiscovered);
 		}
 	});
 
 	const [elements, setElements] = useState<Element[]>(() => {
-		const allResults = new Set<string>();
-		Object.values(RECIPES).forEach(outputs => outputs.forEach(out => allResults.add(out)));
-		const isValid = (name: string) => STARTING_ELEMENTS.includes(name) || allResults.has(name);
+		const validNames = new Set(Object.keys(ruleset.elementStyles));
 
 		try {
-			const saved = localStorage.getItem(STORAGE_KEYS.ELEMENTS);
+			const saved = localStorage.getItem(storageKeys.elements);
 			if (saved) {
-				const parsed = (JSON.parse(saved) as Element[]).filter(el => isValid(el.name));
+				const parsed = (JSON.parse(saved) as Element[]).filter(el => validNames.has(el.name));
 				const maxId = parsed.reduce((max, el) => {
 					const idNum = parseInt(el.id.replace('el-', ''));
 					return isNaN(idNum) ? max : Math.max(max, idNum);
@@ -69,9 +176,6 @@ export const App = () => {
 		}
 		return [];
 	});
-
-	const [loadingReddit, setLoadingReddit] = useState(true);
-	const [syncComplete, setSyncComplete] = useState(false);
 	const [layoutCols, setLayoutCols] = useState(6);
 
 	useEffect(() => {
@@ -97,13 +201,15 @@ export const App = () => {
 	const [explodingIDs, setExplodingIDs] = useState<Record<string, boolean>>({});
 	const [pushedElements, setPushedElements] = useState<Record<string, { x: number, y: number }>>({});
 	const [showOptions, setShowOptions] = useState(false);
-	const [username, setUsername] = useState<string | null>(null);
+	const username = initialUsername;
 	const [discoveryPopup, setDiscoveryPopup] = useState<string | null>(null);
 	const [confirmWipe, setConfirmWipe] = useState(false);
 	const [infoPopup, setInfoPopup] = useState<string | null>(null);
 	const [computerPopup, setComputerPopup] = useState<string | null>(null);
 	const [filterQuery, setFilterQuery] = useState('');
 	const [showMobileFilter, setShowMobileFilter] = useState(false);
+	const [isQuaking, setIsQuaking] = useState(false);
+	const [stormFlashVisible, setStormFlashVisible] = useState(false);
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -127,11 +233,21 @@ export const App = () => {
 	const dragOffset = useRef({ x: 0, y: 0 });
 	const containerRef = useRef<HTMLDivElement>(null);
 	const flashCounter = useRef(0);
+	const wheelTimeout = useRef<number | null>(null);
+	const elementsRef = useRef<Element[]>(elements);
+	const explosionStartTimeouts = useRef<Record<string, number>>({});
+	const explosionCleanupTimeouts = useRef<Record<string, number>>({});
+	const quakeTimeout = useRef<number | null>(null);
+	const stormLoopTimeout = useRef<number | null>(null);
+	const stormFlashTimeouts = useRef<number[]>([]);
+	const hadStorm = useRef(false);
+	const previousEarthquakeIds = useRef<Set<string>>(new Set());
+	const initializedEarthquakeTracking = useRef(false);
 
 	// Palette Swipe State
 	const [currentPage, setCurrentPage] = useState(() => {
 		try {
-			const saved = localStorage.getItem(STORAGE_KEYS.PAGE);
+			const saved = localStorage.getItem(storageKeys.page);
 			return saved ? parseInt(saved, 10) : 0;
 		} catch {
 			return 0;
@@ -142,6 +258,7 @@ export const App = () => {
 	const gestureStart = useRef({ x: 0, y: 0, name: '' });
 
 	const itemsPerPage = layoutCols * 3;
+	const hasStorm = elements.some(el => el.name === 'storm');
 	const pagesCount = Math.ceil(discovered.length / itemsPerPage);
 	const prevPagesCount = useRef(pagesCount);
 	const prevDiscoveredLen = useRef(discovered.length);
@@ -162,63 +279,117 @@ export const App = () => {
 
 	// Persistence Effects
 	useEffect(() => {
-		localStorage.setItem(STORAGE_KEYS.DISCOVERED, JSON.stringify(discovered));
+		localStorage.setItem(storageKeys.discovered, JSON.stringify(discovered));
 	}, [discovered]);
-
-	// Reddit Progress Fetch
-	useEffect(() => {
-		const loadRedditProgress = async () => {
-			try {
-				const response = await trpc.init.get.query();
-				const remoteDiscovered = response.redditDiscovered;
-
-				if (remoteDiscovered && remoteDiscovered.length > 0) {
-					setDiscovered((prev) => {
-						const allResults = new Set<string>();
-						Object.values(RECIPES).forEach(outputs => outputs.forEach(out => allResults.add(out)));
-						const isValid = (name: string) => STARTING_ELEMENTS.includes(name) || allResults.has(name);
-
-						const combined = Array.from(new Set([...STARTING_ELEMENTS, ...prev, ...remoteDiscovered]));
-						return combined.filter(isValid);
-					});
-				}
-				if (response.username) {
-					setUsername(response.username);
-				}
-			} catch (err) {
-				console.error('[Sync] Load failed:', err);
-			} finally {
-				// We Mark sync as complete even on error so that the user can still play
-				setLoadingReddit(false);
-				setSyncComplete(true);
-			}
-		};
-		loadRedditProgress();
-	}, []);
 
 	// Reddit Progress Save (Discovery only)
 	const prevDiscoveredCount = useRef(discovered.length);
 	useEffect(() => {
-		// CRITICAL: Never save back to reddit until we've finished the initial load/merge
-		if (!syncComplete || loadingReddit) return;
+		if (isPlaytest) return;
 
-		// Only save to reddit if we have more items than before
 		if (discovered.length > prevDiscoveredCount.current) {
 			console.log('[Sync] New discovery, saving to Reddit...');
-			trpc.progress.save.mutate(discovered).catch((err) => {
+			trpc.progress.save.mutate({ discovered, progressScope }).catch((err) => {
 				console.error('[Sync] Save failed:', err);
 			});
 			prevDiscoveredCount.current = discovered.length;
 		}
-	}, [discovered, syncComplete, loadingReddit]);
+	}, [discovered, isPlaytest, progressScope]);
 
 	useEffect(() => {
-		localStorage.setItem(STORAGE_KEYS.ELEMENTS, JSON.stringify(elements));
+		localStorage.setItem(storageKeys.elements, JSON.stringify(elements));
 	}, [elements]);
 
 	useEffect(() => {
-		localStorage.setItem(STORAGE_KEYS.PAGE, currentPage.toString());
+		localStorage.setItem(storageKeys.page, currentPage.toString());
 	}, [currentPage]);
+
+	useEffect(() => {
+		elementsRef.current = elements;
+	}, [elements]);
+
+	useEffect(() => {
+		const currentEarthquakeIds = new Set(
+			elements.filter((el) => el.name === 'earthquake').map((el) => el.id)
+		);
+
+		if (!initializedEarthquakeTracking.current) {
+			previousEarthquakeIds.current = currentEarthquakeIds;
+			initializedEarthquakeTracking.current = true;
+			return;
+		}
+
+		const hasNewEarthquake = [...currentEarthquakeIds].some(
+			(id) => !previousEarthquakeIds.current.has(id)
+		);
+
+		previousEarthquakeIds.current = currentEarthquakeIds;
+
+		if (hasNewEarthquake) {
+			triggerTableEarthquake();
+		}
+	}, [elements]);
+
+	const clearExplosionTimeouts = (id: string) => {
+		const startTimeout = explosionStartTimeouts.current[id];
+		if (startTimeout !== undefined) {
+			window.clearTimeout(startTimeout);
+			delete explosionStartTimeouts.current[id];
+		}
+
+		const cleanupTimeout = explosionCleanupTimeouts.current[id];
+		if (cleanupTimeout !== undefined) {
+			window.clearTimeout(cleanupTimeout);
+			delete explosionCleanupTimeouts.current[id];
+		}
+	};
+
+	const cancelExplosion = (id: string) => {
+		clearExplosionTimeouts(id);
+		setExplodingIDs(prev => {
+			if (!prev[id]) return prev;
+			const next = { ...prev };
+			delete next[id];
+			return next;
+		});
+		setPushedElements({});
+		setFlash(null);
+	};
+
+	const triggerTableEarthquake = () => {
+		if (quakeTimeout.current !== null) {
+			window.clearTimeout(quakeTimeout.current);
+		}
+
+		setIsQuaking(true);
+		quakeTimeout.current = window.setTimeout(() => {
+			setIsQuaking(false);
+			quakeTimeout.current = null;
+		}, 2000);
+	};
+
+	const clearStormTimeouts = () => {
+		if (stormLoopTimeout.current !== null) {
+			window.clearTimeout(stormLoopTimeout.current);
+			stormLoopTimeout.current = null;
+		}
+
+		stormFlashTimeouts.current.forEach((timeoutId) => {
+			window.clearTimeout(timeoutId);
+		});
+		stormFlashTimeouts.current = [];
+	};
+
+	const triggerStormFlash = (duration = 150) => {
+		setStormFlashVisible(true);
+
+		const timeoutId = window.setTimeout(() => {
+			setStormFlashVisible(false);
+			stormFlashTimeouts.current = stormFlashTimeouts.current.filter((activeId) => activeId !== timeoutId);
+		}, duration);
+
+		stormFlashTimeouts.current.push(timeoutId);
+	};
 
 	// Explosion Effect Logic
 	useEffect(() => {
@@ -228,35 +399,43 @@ export const App = () => {
 			setExplodingIDs(prev => ({ ...prev, [currentExplodeId]: true }));
 
 			// Start explosion sequence after shake
-			setTimeout(() => {
-				setElements(currentElements => {
-					// Get current position of explode element
-					const currentExplodeEl = currentElements.find(el => el.id === currentExplodeId);
-					const explosionX = currentExplodeEl?.x ?? explodeEl.x;
-					const explosionY = currentExplodeEl?.y ?? explodeEl.y;
+			explosionStartTimeouts.current[currentExplodeId] = window.setTimeout(() => {
+				const currentExplodeEl = elementsRef.current.find(el => el.id === currentExplodeId);
+				if (!currentExplodeEl) {
+					cancelExplosion(currentExplodeId);
+					return;
+				}
 
-					// Flash at the current explosion site
-					setFlash({ x: explosionX, y: explosionY, id: ++flashCounter.current });
+				const explosionX = currentExplodeEl.x;
+				const explosionY = currentExplodeEl.y;
 
-					// Calculate push vectors for ALL elements currently on table
-					const pushData: Record<string, { x: number, y: number }> = {};
-					currentElements.forEach(el => {
-						if (el.id === currentExplodeId) return;
-						const dx = el.x - explosionX;
-						const dy = el.y - explosionY;
-						const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-						const force = 1000;
-						pushData[el.id] = {
-							x: (dx / dist) * force,
-							y: (dy / dist) * force
-						};
-					});
-					setPushedElements(pushData);
-					return [...currentElements];
+				// Flash at the current explosion site
+				setFlash({ x: explosionX, y: explosionY, id: ++flashCounter.current });
+
+				// Calculate push vectors for ALL elements currently on table
+				const pushData: Record<string, { x: number, y: number }> = {};
+				elementsRef.current.forEach(el => {
+					if (el.id === currentExplodeId) return;
+					const dx = el.x - explosionX;
+					const dy = el.y - explosionY;
+					const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+					const force = 1000;
+					pushData[el.id] = {
+						x: (dx / dist) * force,
+						y: (dy / dist) * force
+					};
 				});
+				setPushedElements(pushData);
 
 				// Final cleanup: remove everything after animation
-				setTimeout(() => {
+				explosionCleanupTimeouts.current[currentExplodeId] = window.setTimeout(() => {
+					const stillExists = elementsRef.current.some(el => el.id === currentExplodeId);
+					if (!stillExists) {
+						cancelExplosion(currentExplodeId);
+						return;
+					}
+
+					clearExplosionTimeouts(currentExplodeId);
 					setElements(currentElements => currentElements.filter(el => el.name === 'space'));
 					setExplodingIDs({});
 					setPushedElements({});
@@ -265,6 +444,65 @@ export const App = () => {
 			}, 1500);
 		}
 	}, [elements, explodingIDs]);
+
+	useEffect(() => {
+		Object.keys(explodingIDs).forEach(id => {
+			if (!elements.some(el => el.id === id)) {
+				cancelExplosion(id);
+			}
+		});
+	}, [elements, explodingIDs]);
+
+	useEffect(() => {
+		return () => {
+			Object.keys(explosionStartTimeouts.current).forEach(id => {
+				window.clearTimeout(explosionStartTimeouts.current[id]);
+			});
+			Object.keys(explosionCleanupTimeouts.current).forEach(id => {
+				window.clearTimeout(explosionCleanupTimeouts.current[id]);
+			});
+			if (quakeTimeout.current !== null) {
+				window.clearTimeout(quakeTimeout.current);
+			}
+			clearStormTimeouts();
+		};
+	}, []);
+
+	useEffect(() => {
+		if (!hasStorm) {
+			hadStorm.current = false;
+			setStormFlashVisible(false);
+			clearStormTimeouts();
+			return;
+		}
+
+		clearStormTimeouts();
+
+		if (!hadStorm.current) {
+			[180, 620].forEach((delay) => {
+				const timeoutId = window.setTimeout(() => {
+					triggerStormFlash();
+				}, delay);
+				stormFlashTimeouts.current.push(timeoutId);
+			});
+		}
+
+		hadStorm.current = true;
+
+		const scheduleAmbientFlash = (delay: number) => {
+			stormLoopTimeout.current = window.setTimeout(() => {
+				triggerStormFlash(130);
+				scheduleAmbientFlash(7000 + Math.random() * 6000);
+			}, delay);
+		};
+
+		scheduleAmbientFlash(7000);
+
+		return () => {
+			clearStormTimeouts();
+			setStormFlashVisible(false);
+		};
+	}, [hasStorm]);
 
 	const bringToFront = (id: string) => {
 		setElements((prev) => {
@@ -292,18 +530,24 @@ export const App = () => {
 	};
 
 	const getRandomTableIcon = (name: string) => {
-		const rawIcon = ELEMENT_ICONS[name];
+		const rawIcon = ruleset.elementIcons[name];
 		if (!Array.isArray(rawIcon)) return undefined;
 		if (rawIcon.length <= 1) return rawIcon[0];
 		// Pick a random icon starting from index 1
 		return rawIcon[1 + Math.floor(Math.random() * (rawIcon.length - 1))];
 	};
 
-	const renderElementWidget = (name: string, size: 'small' | 'large' = 'small', isHidden: boolean = false, isReactive: boolean = false) => {
-		const colorClass = isHidden ? 'bg-slate-900 border-slate-800' : (ELEMENT_COLORS[name] ?? 'bg-gray-300 border-gray-500');
+	const renderElementWidget = (
+		name: string,
+		size: 'small' | 'large' = 'small',
+		isHidden: boolean = false,
+		isReactive: boolean = false,
+		iconOverride?: ElementIcon,
+	) => {
+		const colorClass = isHidden ? 'bg-slate-900 border-slate-800' : (ruleset.elementStyles[name] ?? 'bg-gray-300 border-gray-500');
 		const weightMatch = colorClass.match(/-(\d{3})/);
 		const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-		const Icon = isHidden ? null : ELEMENT_ICONS[name];
+		const Icon = isHidden ? null : (iconOverride ?? ruleset.elementIcons[name]);
 		const displayName = isHidden ? '???' : name;
 
 		const sizeClasses = size === 'small'
@@ -327,6 +571,9 @@ export const App = () => {
 								return <span className={`${size === 'small' ? 'text-[34px]' : 'text-[52px]'} leading-none drop-shadow-md`}>{displayIcon}</span>;
 							}
 							const IconComp = displayIcon;
+							if (!IconComp) {
+								return null;
+							}
 							return (
 								<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
 									<IconComp size={size === 'small' ? 30 : 44} />
@@ -344,7 +591,7 @@ export const App = () => {
 
 	const getRandomHint = (currentDiscovered: string[] = discovered) => {
 		const possible: string[] = [];
-		for (const [key, outputs] of Object.entries(RECIPES)) {
+		for (const [key, outputs] of Object.entries(ruleset.recipes)) {
 			const [a, b] = key.split('+');
 			if (a && b && currentDiscovered.includes(a) && currentDiscovered.includes(b)) {
 				for (const out of outputs) {
@@ -380,8 +627,8 @@ export const App = () => {
 			name,
 			x: e.clientX,
 			y: e.clientY,
-			icon,
 			...(hint ? { hint } : {}),
+			...(icon ? { icon } : {}),
 		};
 
 		setElements((prev) => [...prev, newElement]);
@@ -409,7 +656,7 @@ export const App = () => {
 					return Math.sqrt(dx * dx + dy * dy) < MERGE_DISTANCE;
 				});
 
-				if (targetEl && (getRecipeResult(draggedEl.name, targetEl.name) || draggedEl.name === 'computer' || targetEl.name === 'computer')) {
+				if (targetEl && (getRecipeResultForRuleset(ruleset, draggedEl.name, targetEl.name) || draggedEl.name === 'computer' || targetEl.name === 'computer')) {
 					if (!reactiveIDs.includes(draggedEl.id) || !reactiveIDs.includes(targetEl.id)) {
 						setReactiveIDs([draggedEl.id, targetEl.id]);
 					}
@@ -453,7 +700,7 @@ export const App = () => {
 				setComputerPopup(elementToShow);
 			}
 
-			const result = getRecipeResult(draggedEl.name, targetEl.name);
+			const result = getRecipeResultForRuleset(ruleset, draggedEl.name, targetEl.name);
 			if (result) {
 				const midX = (draggedEl.x + targetEl.x) / 2;
 				const midY = (draggedEl.y + targetEl.y) / 2;
@@ -473,9 +720,9 @@ export const App = () => {
 				result.forEach((name) => {
 					if (!nextDiscovered.includes(name)) {
 						nextDiscovered.push(name);
-						if (KEY_ITEMS.includes(name)) {
+						if (ruleset.keyItems.includes(name)) {
 							newlyDiscoveredKeyItem = name;
-						} else if (ELEMENT_MESSAGES[name]) {
+						} else if (ruleset.elementMessages[name]) {
 							newlyDiscoveredInfoItem = name;
 						}
 					}
@@ -500,8 +747,8 @@ export const App = () => {
 						name,
 						x: midX,
 						y: midY,
-						icon,
 						...(hint ? { hint } : {}),
+						...(icon ? { icon } : {}),
 					};
 				});
 
@@ -643,6 +890,23 @@ export const App = () => {
 		isGesturingPalette.current = 'none';
 	};
 
+	const onPaletteWheel = (e: React.WheelEvent) => {
+		if (pages.length <= 1) return;
+		if (wheelTimeout.current !== null) return;
+
+		const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+		
+		if (Math.abs(delta) > 5) {
+			if (delta > 0 && currentPage < pages.length - 1) {
+				setCurrentPage((p) => p + 1);
+				wheelTimeout.current = window.setTimeout(() => { wheelTimeout.current = null; }, 250);
+			} else if (delta < 0 && currentPage > 0) {
+				setCurrentPage((p) => p - 1);
+				wheelTimeout.current = window.setTimeout(() => { wheelTimeout.current = null; }, 250);
+			}
+		}
+	};
+
 	// Chunk elements into pages
 	const filteredDiscovered = filterQuery
 		? discovered.filter((name) => name.toLowerCase().startsWith(filterQuery))
@@ -656,8 +920,8 @@ export const App = () => {
 		pages.push([]);
 	}
 
-	const nextKeyItem = KEY_ITEMS.find((item) => !discovered.includes(item));
-	const totalElementsCount = Object.keys(ELEMENT_COLORS).length;
+	const nextKeyItem = ruleset.keyItems.find((item) => !discovered.includes(item));
+	const totalElementsCount = Object.keys(ruleset.elementStyles).length;
 
 	const starDrops = useRef(Array.from({ length: 20 }).map(() => ({
 		top: `${Math.random() * 100}%`,
@@ -666,7 +930,10 @@ export const App = () => {
 		height: `${Math.random() * 3 + 2}px`,
 		animationDelay: `${Math.random() * 2}s`
 	})));
+	const snowBackdropFlakes = useRef<SnowBackdropFlakeStyle[]>(createSnowBackdropFlakes());
+	const snowPaletteHills = useRef<CSSProperties[]>(createSnowPaletteHills());
 	const hasStar = elements.some(el => el.name === 'star');
+	const hasSnow = elements.some(el => el.name === 'snow');
 
 	return (
 		<div
@@ -674,11 +941,40 @@ export const App = () => {
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 		>
+			{isPlaytest && (
+				<div className="absolute inset-x-0 top-0 z-[5000] flex items-center justify-between gap-3 bg-indigo-500/90 px-4 py-3 text-sm font-bold text-white backdrop-blur-sm">
+					<span>Playtesting draft mod</span>
+					<button
+						onClick={(event) => {
+							localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+							requestExpandedMode(event.nativeEvent, 'mod-editor');
+						}}
+						className="rounded-full bg-white/15 px-3 py-1.5 text-xs uppercase tracking-wide"
+					>
+						Return to Editor
+					</button>
+				</div>
+			)}
 			{/* Worktable Area */}
 			<div
 				ref={containerRef}
-				className="relative flex-1 bg-table-gradient"
+				className={`relative flex-1 bg-table-gradient ${isPlaytest ? 'pt-12' : ''}`}
 			>
+				{hasStorm && (
+					<div className="absolute inset-0 z-[1] pointer-events-none bg-slate-950/35 transition-opacity duration-700" />
+				)}
+				{hasSnow && (
+					<div className="absolute inset-0 z-[2] pointer-events-none overflow-hidden">
+						<div className="snow-backdrop-mist absolute inset-0" />
+						{snowBackdropFlakes.current.map((style, i) => (
+							<div
+								key={`snow-bg-${i}`}
+								className="snow-backdrop-flake absolute rounded-full"
+								style={style}
+							/>
+						))}
+					</div>
+				)}
 				{hasStar && (
 					<div className="absolute inset-0 pointer-events-none overflow-hidden mix-blend-screen">
 						{starDrops.current.map((style, i) => (
@@ -690,10 +986,26 @@ export const App = () => {
 						))}
 					</div>
 				)}
+				{stormFlashVisible && (
+					<div className="storm-flash absolute inset-0 z-10 pointer-events-none" />
+				)}
 				{/* Background Decoration */}
 				<div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none overflow-hidden mt-[-10%]">
 					<span className="text-[60vh] font-serif leading-none">☿</span>
 				</div>
+				{hasSnow && (
+					<div className="absolute inset-x-0 bottom-0 z-[8] h-24 pointer-events-none overflow-visible">
+						<div className="snow-palette-glow absolute inset-x-0 bottom-0 h-16" />
+						<div className="snow-palette-ridge absolute inset-x-0 bottom-0 h-3" />
+						{snowPaletteHills.current.map((style, i) => (
+							<div
+								key={`snow-hill-${i}`}
+								className="snow-palette-hill absolute bottom-0"
+								style={style}
+							/>
+						))}
+					</div>
+				)}
 				<div className="absolute inset-x-0 top-12 flex flex-col items-center pointer-events-none z-10 text-center px-6 opacity-50">
 					{discovered.length === 4 ? (
 						<h2 className="text-2xl font-black tracking-tight text-primary animate-bounce-subtle">
@@ -725,8 +1037,8 @@ export const App = () => {
 			</div>
 
 			{/* Palette Area */}
-			<div className="h-60 border-t border-palette bg-palette flex flex-col z-10 overflow-hidden">
-				<div className="pt-3 px-4 pb-1 relative">
+			<div className="relative h-60 border-t border-palette bg-palette flex flex-col z-10 overflow-hidden">
+				<div className="pt-3 px-4 pb-1 relative z-10">
 					{showMobileFilter ? (
 						<div
 							className="flex items-center gap-1 pb-1 w-full"
@@ -795,11 +1107,12 @@ export const App = () => {
 				</div>
 
 				<div
-					className="flex-1 overflow-hidden relative"
+					className="flex-1 overflow-hidden relative z-10"
 					style={{ height: 0 }}
 					onPointerDown={(e) => onPaletteDown(e)}
 					onPointerMove={onPaletteMove}
 					onPointerUp={onPaletteUp}
+					onWheel={onPaletteWheel}
 				>
 					<div
 						className={`flex h-full transition-transform duration-300 ease-out`}
@@ -837,7 +1150,7 @@ export const App = () => {
 				</div>
 
 				{pages.length > 1 && (
-					<div className="flex justify-center gap-2 pb-3">
+					<div className="relative z-10 flex justify-center gap-2 pb-3">
 						{pages.map((_, i) => (
 							<div key={i} className={`w-2 h-2 rounded-full transition-colors ${i === currentPage ? 'palette-dot-active' : 'palette-dot'}`} />
 						))}
@@ -853,11 +1166,20 @@ export const App = () => {
 					const isShaking = shakingIDs[el.id];
 					const isExploding = explodingIDs[el.id];
 					const pushVector = pushedElements[el.id];
+					const motionClass = isExploding
+						? 'animate-explode-shake z-[150]'
+						: pushVector
+							? 'animate-push-out'
+							: isQuaking
+								? 'animate-earthquake'
+								: isShaking
+									? 'animate-shake'
+									: '';
 
 					return (
 						<div
 							key={el.id}
-							className={`absolute h-20 w-20 ml-[-40px] mt-[-40px] pointer-events-auto select-none touch-none ${isDragging ? 'z-[100] cursor-grabbing scale-110' : 'z-50 cursor-grab'} ${isShaking ? 'animate-shake' : ''} ${isExploding ? 'animate-explode-shake z-[150]' : ''} ${pushVector ? 'animate-push-out' : ''} ${!isDragging && !isExploding && !pushVector ? 'element-transition' : ''}`}
+							className={`absolute h-20 w-20 ml-[-40px] mt-[-40px] pointer-events-auto select-none touch-none ${isDragging ? 'z-[100] cursor-grabbing scale-110' : 'z-50 cursor-grab'} ${motionClass} ${!isDragging && !isExploding && !pushVector ? 'element-transition' : ''}`}
 							style={{
 								left: el.x,
 								top: el.y,
@@ -866,7 +1188,7 @@ export const App = () => {
 							} as any}
 							onPointerDown={(e) => handlePointerDown(e, el.id)}
 						>
-							{renderElementWidget(el.name, 'large', false, isReactive)}
+							{renderElementWidget(el.name, 'large', false, isReactive, el.icon)}
 
 							{/* Scientist Hint Bubble */}
 							{el.hint && el.name === 'scientist' && (
@@ -953,14 +1275,16 @@ export const App = () => {
 											setConfirmWipe(true);
 											return;
 										}
-										const basic = ['air', 'fire', 'earth', 'water'];
+										const basic = ruleset.startingElements;
 										setDiscovered(basic);
 										setElements([]);
 										setCurrentPage(0);
-										localStorage.setItem(STORAGE_KEYS.DISCOVERED, JSON.stringify(basic));
-										localStorage.setItem(STORAGE_KEYS.ELEMENTS, JSON.stringify([]));
-										localStorage.setItem(STORAGE_KEYS.PAGE, '0');
-										trpc.progress.save.mutate(basic).catch(console.error);
+										localStorage.setItem(storageKeys.discovered, JSON.stringify(basic));
+										localStorage.setItem(storageKeys.elements, JSON.stringify([]));
+										localStorage.setItem(storageKeys.page, '0');
+										if (!isPlaytest) {
+											trpc.progress.save.mutate({ discovered: basic, progressScope }).catch(console.error);
+										}
 										setShowOptions(false);
 										setConfirmWipe(false);
 									}}
@@ -973,12 +1297,12 @@ export const App = () => {
 									{confirmWipe ? 'Are you sure? Click again' : 'Wipe All Progress'}
 								</button>
 
-								{username === 'Elegar' && (
+								{username === 'Elegar' && ruleset.kind === 'base' && (
 									<button
 										onClick={() => {
-											const allElements = Object.keys(ELEMENT_COLORS);
+											const allElements = Object.keys(ruleset.elementStyles);
 											setDiscovered(allElements);
-											trpc.progress.save.mutate(allElements).catch(console.error);
+											trpc.progress.save.mutate({ discovered: allElements, progressScope }).catch(console.error);
 											setShowOptions(false);
 										}}
 										className="w-full rounded-xl bg-[var(--button-primary)] py-3 font-bold text-white transition-all hover:bg-[var(--button-primary-hover)] hover:scale-[1.02] active:scale-95 shadow-lg"
@@ -1010,12 +1334,12 @@ export const App = () => {
 							<div className="flex justify-center mb-8 relative">
 								<div className="absolute inset-0 bg-white/10 blur-2xl rounded-full scale-150 animate-pulse" />
 								<div
-									className={`relative flex h-32 w-32 items-center justify-center rounded-2xl border-4 ${ELEMENT_COLORS[discoveryPopup] ?? 'bg-gray-300 border-gray-500'} shadow-2xl rotate-3`}
+									className={`relative flex h-32 w-32 items-center justify-center rounded-2xl border-4 ${ruleset.elementStyles[discoveryPopup] ?? 'bg-gray-300 border-gray-500'} shadow-2xl rotate-3`}
 								>
 									{(() => {
-										const rawIcon = ELEMENT_ICONS[discoveryPopup];
+										const rawIcon = ruleset.elementIcons[discoveryPopup];
 										const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
-										const colorClass = ELEMENT_COLORS[discoveryPopup] ?? 'bg-gray-300 border-gray-500';
+										const colorClass = ruleset.elementStyles[discoveryPopup] ?? 'bg-gray-300 border-gray-500';
 										const weightMatch = colorClass.match(/-(\d{3})/);
 										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
 										if (typeof Icon === 'string') {
@@ -1026,7 +1350,9 @@ export const App = () => {
 										} else if (Icon) {
 											const IconComp = Icon;
 											return (
-												<IconComp size={80} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+												<div className={weight < 500 ? 'text-black/50' : 'text-white/50'}>
+													<IconComp size={80} />
+												</div>
 											);
 										}
 										return null;
@@ -1036,10 +1362,10 @@ export const App = () => {
 
 							<div className="space-y-4 mb-8 px-2">
 								<p className="text-lg text-white font-medium leading-relaxed italic">
-									"{KEY_ITEMS_DATA[discoveryPopup]?.description}"
+									"{ruleset.keyItemData[discoveryPopup]?.description}"
 								</p>
 								<p className="text-blue-200 text-sm opacity-90 leading-snug">
-									{KEY_ITEMS_DATA[discoveryPopup]?.motivation}
+									{ruleset.keyItemData[discoveryPopup]?.motivation}
 								</p>
 							</div>
 
@@ -1077,12 +1403,12 @@ export const App = () => {
 									</div>
 									<div className="h-px w-8 bg-blue-400/20" />
 									<div
-										className={`flex h-20 w-20 items-center justify-center rounded-2xl border-2 ${ELEMENT_COLORS[computerPopup] ?? 'bg-gray-300 border-gray-500'} shadow-xl`}
+										className={`flex h-20 w-20 items-center justify-center rounded-2xl border-2 ${ruleset.elementStyles[computerPopup] ?? 'bg-gray-300 border-gray-500'} shadow-xl`}
 									>
 										{(() => {
-											const rawIcon = ELEMENT_ICONS[computerPopup];
+											const rawIcon = ruleset.elementIcons[computerPopup];
 											const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
-											const colorClass = ELEMENT_COLORS[computerPopup] ?? 'bg-gray-300 border-gray-500';
+											const colorClass = ruleset.elementStyles[computerPopup] ?? 'bg-gray-300 border-gray-500';
 											const weightMatch = colorClass.match(/-(\d{3})/);
 											const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
 											if (typeof Icon === 'string') {
@@ -1093,7 +1419,9 @@ export const App = () => {
 											} else if (Icon) {
 												const IconComp = Icon;
 												return (
-													<IconComp size={40} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+													<div className={weight < 500 ? 'text-black/50' : 'text-white/50'}>
+														<IconComp size={40} />
+													</div>
 												);
 											}
 											return null;
@@ -1112,7 +1440,7 @@ export const App = () => {
 							<div className="flex-1 overflow-hidden min-h-0 flex flex-col">
 								<div className="bg-black/40 rounded-2xl border border-white/5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
 									<div className="divide-y divide-white/5">
-										{getRecipesForElement(computerPopup).length === 0 && (
+										{getRecipesForElementInRuleset(ruleset, computerPopup).length === 0 && (
 											<div className="py-12 px-6 text-center">
 												<p className="text-blue-300/40 text-sm font-bold uppercase tracking-widest italic">
 													Primary Elemental Force
@@ -1122,7 +1450,7 @@ export const App = () => {
 												</p>
 											</div>
 										)}
-										{getRecipesForElement(computerPopup).map((recipe, idx) => {
+										{getRecipesForElementInRuleset(ruleset, computerPopup).map((recipe, idx) => {
 											const a = recipe[0];
 											const b = recipe[1];
 											if (!a || !b) return null;
@@ -1175,12 +1503,12 @@ export const App = () => {
 
 							<div className="flex justify-center mb-6">
 								<div
-									className={`flex h-20 w-20 items-center justify-center rounded-xl border-2 ${ELEMENT_COLORS[infoPopup] ?? 'bg-gray-300 border-gray-500'} shadow-lg`}
+									className={`flex h-20 w-20 items-center justify-center rounded-xl border-2 ${ruleset.elementStyles[infoPopup] ?? 'bg-gray-300 border-gray-500'} shadow-lg`}
 								>
 									{(() => {
-										const rawIcon = ELEMENT_ICONS[infoPopup];
+										const rawIcon = ruleset.elementIcons[infoPopup];
 										const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
-										const colorClass = ELEMENT_COLORS[infoPopup] ?? 'bg-gray-300 border-gray-500';
+										const colorClass = ruleset.elementStyles[infoPopup] ?? 'bg-gray-300 border-gray-500';
 										const weightMatch = colorClass.match(/-(\d{3})/);
 										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
 										if (typeof Icon === 'string') {
@@ -1191,7 +1519,9 @@ export const App = () => {
 										} else if (Icon) {
 											const IconComp = Icon;
 											return (
-												<IconComp size={40} className={weight < 500 ? 'text-black/50' : 'text-white/50'} />
+												<div className={weight < 500 ? 'text-black/50' : 'text-white/50'}>
+													<IconComp size={40} />
+												</div>
 											);
 										}
 										return null;
@@ -1200,7 +1530,7 @@ export const App = () => {
 							</div>
 
 							<p className="text-sm text-slate-300 leading-relaxed mb-6 px-4">
-								{ELEMENT_MESSAGES[infoPopup]}
+								{ruleset.elementMessages[infoPopup]}
 							</p>
 
 							<button
@@ -1217,8 +1547,109 @@ export const App = () => {
 	);
 };
 
+const GameRoot = () => {
+	const [state, setState] = useState<
+		| {
+				status: 'loading';
+		  }
+		| {
+				status: 'unavailable';
+				message: string;
+		  }
+		| {
+				status: 'ready';
+				ruleset: ActiveRuleset;
+				username: string | null;
+				redditDiscovered: string[];
+				progressScope: string;
+				isPlaytest: boolean;
+		  }
+	>({ status: 'loading' });
+
+	useEffect(() => {
+		const playtestRuleset = readPlaytestRuleset();
+		if (playtestRuleset) {
+			setState({
+				status: 'ready',
+				ruleset: playtestRuleset,
+				username: context.username ?? null,
+				redditDiscovered: [],
+				progressScope: getProgressScope(playtestRuleset),
+				isPlaytest: true,
+			});
+			return;
+		}
+
+		trpc.init.get
+			.query()
+			.then((response) => {
+				if (response.rulesetUnavailableReason) {
+					setState({
+						status: 'unavailable',
+						message: response.rulesetUnavailableReason,
+					});
+					return;
+				}
+
+				setState({
+					status: 'ready',
+					ruleset: response.activeRuleset ?? BASE_RULESET,
+					username: response.username ?? null,
+					redditDiscovered: response.redditDiscovered ?? [],
+					progressScope: response.progressScope,
+					isPlaytest: false,
+				});
+			})
+			.catch((error) => {
+				console.error(error);
+				setState({
+					status: 'ready',
+					ruleset: BASE_RULESET,
+					username: context.username ?? null,
+					redditDiscovered: [],
+					progressScope: 'base',
+					isPlaytest: false,
+				});
+			});
+	}, []);
+
+	if (state.status === 'loading') {
+		return (
+			<div className="flex min-h-screen items-center justify-center bg-main text-white">
+				<div className="rounded-3xl border border-white/10 bg-white/6 px-6 py-5 text-center backdrop-blur-xl">
+					<div className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-200/60">Alchemy</div>
+					<div className="mt-2 text-lg font-black">Loading ruleset...</div>
+				</div>
+			</div>
+		);
+	}
+
+	if (state.status === 'unavailable') {
+		return (
+			<div className="flex min-h-screen items-center justify-center bg-main px-4 text-white">
+				<div className="max-w-md rounded-3xl border border-white/10 bg-white/6 p-8 text-center backdrop-blur-xl">
+					<div className="text-xs font-bold uppercase tracking-[0.24em] text-amber-200/70">Mod Unavailable</div>
+					<h1 className="mt-2 text-3xl font-black">This shared mod cannot be loaded here.</h1>
+					<p className="mt-4 text-sm leading-relaxed text-white/70">{state.message}</p>
+				</div>
+			</div>
+		);
+	}
+
+	return (
+		<GameSession
+			key={state.ruleset.storageScope}
+			ruleset={state.ruleset}
+			initialUsername={state.username}
+			initialDiscovered={state.redditDiscovered}
+			progressScope={state.progressScope}
+			isPlaytest={state.isPlaytest}
+		/>
+	);
+};
+
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>
-		<App />
+		<GameRoot />
 	</StrictMode>
 );

@@ -9,6 +9,8 @@
   },
   "include": [
     "../src/server/**/*",
+    "../src/modding/**/*",
+    "../src/data/**/*",
     "../src/transformer.ts",
     "../src/global.d.ts",
     "../vite.config.ts",

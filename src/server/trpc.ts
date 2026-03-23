@@ -4,12 +4,25 @@ import { Context } from './context';
 import { context, reddit } from '@devvit/web/server';
 import { countDecrement, countGet, countIncrement } from './core/count';
 import { z } from 'zod';
+import { saveDraftInputSchema } from '../modding/types';
 
 /**
  * Initialization of tRPC backend
  * Should be done only once per backend!
  */
 import { getDiscoveredElements, saveDiscoveredElements } from './core/progress';
+import {
+	createSharePostForMod,
+	getEditableModForUser,
+	getPublishedMod,
+	hidePublishedMod,
+	listCatalogMods,
+	listModsForUser,
+	publishDraftForUser,
+	resolveRulesetFromPostData,
+	saveDraftForUser,
+	validateDraftInput,
+} from './core/mods';
 
 /**
  * Initialization of tRPC backend
@@ -29,31 +42,99 @@ export const publicProcedure = t.procedure;
 export const appRouter = t.router({
 	init: t.router({
 		get: publicProcedure.query(async () => {
-			const [count, username, userId] = await Promise.all([
+			const [count, username, userId, resolvedRuleset] = await Promise.all([
 				countGet(),
 				reddit.getCurrentUsername(),
 				context.userId,
+				resolveRulesetFromPostData(),
 			]);
 
-			const redditDiscovered = userId ? await getDiscoveredElements(userId) : [];
+			const redditDiscovered = userId
+				? await getDiscoveredElements(userId, resolvedRuleset.progressScope)
+				: [];
 
 			return {
 				count,
 				postId: context.postId,
 				username,
 				redditDiscovered,
+				activeRuleset: resolvedRuleset.ruleset,
+				progressScope: resolvedRuleset.progressScope,
+				rulesetUnavailableReason: resolvedRuleset.unavailableReason,
 			};
 		}),
 	}),
 	progress: t.router({
 		save: publicProcedure
-			.input(z.array(z.string()))
+			.input(z.object({ discovered: z.array(z.string()), progressScope: z.string().min(1).max(128) }))
 			.mutation(async ({ input }) => {
 				const userId = context.userId;
 				if (userId) {
-					await saveDiscoveredElements(userId, input);
+					await saveDiscoveredElements(userId, input.progressScope, input.discovered);
 				}
 				return { success: true };
+			}),
+	}),
+	mods: t.router({
+		listCatalog: publicProcedure.query(async () => await listCatalogMods()),
+		listMine: publicProcedure.query(async () => {
+			if (!context.userId) {
+				return [];
+			}
+			return await listModsForUser(context.userId);
+		}),
+		getDraft: publicProcedure
+			.input(z.string().min(1).max(64))
+			.query(async ({ input }) => {
+				if (!context.userId) {
+					throw new Error('You must be logged in.');
+				}
+				return await getEditableModForUser(context.userId, input);
+			}),
+		getPublished: publicProcedure
+			.input(z.string().min(1).max(64))
+			.query(async ({ input }) => await getPublishedMod(input)),
+		validateDraft: publicProcedure
+			.input(saveDraftInputSchema)
+			.mutation(async ({ input }) => validateDraftInput(input)),
+		saveDraft: publicProcedure
+			.input(saveDraftInputSchema)
+			.mutation(async ({ input }) => {
+				if (!context.userId) {
+					throw new Error('You must be logged in.');
+				}
+
+				const username = await reddit.getCurrentUsername();
+				if (!username) {
+					throw new Error('You must be logged in.');
+				}
+
+				return await saveDraftForUser(context.userId, username, input);
+			}),
+		publish: publicProcedure
+			.input(z.string().min(1).max(64))
+			.mutation(async ({ input }) => {
+				if (!context.userId) {
+					throw new Error('You must be logged in.');
+				}
+				return await publishDraftForUser(context.userId, input);
+			}),
+		createSharePost: publicProcedure
+			.input(z.string().min(1).max(64))
+			.mutation(async ({ input }) => {
+				if (!context.userId) {
+					throw new Error('You must be logged in.');
+				}
+				return await createSharePostForMod(context.userId, input);
+			}),
+		hide: publicProcedure
+			.input(z.string().min(1).max(64))
+			.mutation(async ({ input }) => {
+				if (!context.userId) {
+					throw new Error('You must be logged in.');
+				}
+
+				return await hidePublishedMod(context.userId, await reddit.getCurrentUsername(), input);
 			}),
 	}),
 	counter: t.router({
