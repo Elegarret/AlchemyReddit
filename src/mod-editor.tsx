@@ -1,9 +1,9 @@
 import './index.css';
 
 import { navigateTo, requestExpandedMode, showToast } from '@devvit/web/client';
-import { StrictMode, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { StrictMode, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { IoAddSharp, IoCheckmarkCircleSharp, IoCloseSharp, IoCopyOutline, IoPlaySharp, IoRocketSharp, IoSaveSharp, IoShareOutline } from 'react-icons/io5';
+import { IoAddSharp, IoCloseSharp, IoCopyOutline, IoPlaySharp, IoRocketSharp, IoSaveSharp, IoShareOutline, IoChevronDownSharp } from 'react-icons/io5';
 import {
 	DEFAULT_MOD_BG_COLOR_TOKEN,
 	DEFAULT_MOD_FRAME_COLOR_TOKEN,
@@ -27,6 +27,7 @@ type ReactionWidgetProps = {
 	elements: ModElement[];
 	onCommit: (index: number, leftName: string, rightName: string, outputNames: string[]) => void;
 	onDelete: (index: number) => void;
+	onNewReaction?: () => void;
 };
 
 const ELEMENT_DATALIST_ID = 'alchemy-mod-elements';
@@ -123,16 +124,150 @@ const ensureElementInDraft = (draft: SaveDraftInput, rawName: string) => {
 	};
 };
 
-const ElementPreview = ({ element }: { element: ModElement }) => (
-	<div className={`flex h-14 w-14 flex-col items-center justify-end overflow-hidden rounded-xl border-2 ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}>
-		<div className="flex flex-1 items-center justify-center text-2xl font-black text-white/90">{element.emoji}</div>
-		<div className="w-full bg-black/25 py-1 text-center text-[9px] font-bold uppercase tracking-[0.12em] text-white">
-			{element.name.slice(0, 8)}
-		</div>
-	</div>
-);
+const ElementPreview = ({ element, onChangeEmoji, draggable }: { element: ModElement; onChangeEmoji?: (emoji: string) => void; draggable?: boolean }) => {
+	const handleDragStart = (e: React.DragEvent) => {
+		if (draggable) {
+			e.dataTransfer.setData('text/plain', element.name);
+			e.dataTransfer.effectAllowed = 'copy';
+		}
+	};
 
-const ReactionWidget = ({ index, reaction, elements, onCommit, onDelete }: ReactionWidgetProps) => {
+	return (
+		<div 
+			draggable={draggable}
+			onDragStart={handleDragStart}
+			className={`relative flex flex-col items-center justify-end overflow-hidden rounded-xl border-2 ${getModElementClasses(element.bgColorToken, element.frameColorToken)} w-12 h-12 shrink-0 ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+		>
+			{onChangeEmoji ? (
+				<input 
+					value={element.emoji} 
+					onChange={(e) => onChangeEmoji(e.target.value)} 
+					maxLength={2} 
+					className="absolute top-0 left-0 w-full h-[calc(100%-12px)] bg-transparent text-center text-xl font-black text-white/90 outline-none z-10" 
+				/>
+			) : (
+				<div className="flex flex-1 items-center justify-center text-xl font-black text-white/90 pb-0.5">{element.emoji}</div>
+			)}
+			<div className="w-full bg-black/25 text-center text-[7px] font-bold uppercase tracking-[0.1em] text-white z-0 h-3 flex items-center justify-center leading-none">
+				{element.name.slice(0, 8)}
+			</div>
+		</div>
+	);
+};
+
+const ColorPicker = ({ value, onChange, type }: { value: string; onChange: (value: string) => void; type: 'bg' | 'frame' }) => {
+	const [isOpen, setIsOpen] = useState(false);
+	const ref = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const handleClickOutside = (event: globalThis.MouseEvent) => {
+			if (ref.current && !ref.current.contains(event.target as Node)) {
+				setIsOpen(false);
+			}
+		};
+		document.addEventListener('mousedown', handleClickOutside);
+		return () => document.removeEventListener('mousedown', handleClickOutside);
+	}, []);
+
+	const activeOption = MOD_COLOR_OPTIONS.find((opt) => opt.value === value) || MOD_COLOR_OPTIONS[0]!;
+
+	return (
+		<div className="relative" ref={ref}>
+			<button
+				onClick={() => setIsOpen(!isOpen)}
+				className={`relative h-8 w-8 rounded-lg border-2 ${activeOption.swatchClass} flex items-end justify-end overflow-hidden outline-none hover:opacity-90 transition-opacity shrink-0`}
+			>
+				<div className="absolute right-0 bottom-0 bg-black/50 rounded-tl p-0.5">
+					<IoChevronDownSharp size={10} className="text-white" />
+				</div>
+			</button>
+			
+			{isOpen && (
+				<div className="absolute right-0 top-full mt-2 z-50 w-40 rounded-xl border border-white/10 bg-slate-900 p-2 shadow-2xl">
+					<div className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-2 px-1">{type} Color</div>
+					<div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
+						{MOD_COLOR_OPTIONS.map((option) => (
+							<button
+								key={option.value}
+								onClick={() => { onChange(option.value); setIsOpen(false); }}
+								className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/10 ${value === option.value ? 'bg-white/10' : ''}`}
+							>
+								<div className={`h-4 w-4 rounded-sm border ${option.swatchClass}`} />
+								<span className="text-white/80">{option.label}</span>
+							</button>
+						))}
+					</div>
+				</div>
+			)}
+		</div>
+	);
+};
+
+const DroppableInput = ({
+	value,
+	onChange,
+	onBlur,
+	onClear,
+	placeholder,
+	className,
+	onEnter,
+}: {
+	value: string;
+	onChange: (val: string) => void;
+	onBlur?: (() => void) | undefined;
+	onClear?: (() => void) | undefined;
+	placeholder: string;
+	className?: string | undefined;
+	onEnter?: (() => void) | undefined;
+}) => {
+	const [dragOver, setDragOver] = useState(false);
+
+	const handleDrop = (e: React.DragEvent) => {
+		e.preventDefault();
+		setDragOver(false);
+		const data = e.dataTransfer.getData('text/plain');
+		if (data) {
+			onChange(data);
+			if (onBlur) setTimeout(onBlur, 50);
+		}
+	};
+
+	return (
+		<div className={`relative flex items-center min-w-0 flex-1 ${dragOver ? 'ring-2 ring-cyan-400' : ''} rounded-lg ${className}`}>
+			<input
+				list={ELEMENT_DATALIST_ID}
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				onBlur={onBlur}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter' && onEnter) {
+						e.preventDefault();
+						onEnter();
+					}
+				}}
+				onDragOver={(e) => {
+					e.preventDefault();
+					setDragOver(true);
+				}}
+				onDragLeave={() => setDragOver(false)}
+				onDrop={handleDrop}
+				placeholder={placeholder}
+				className={`w-full bg-transparent outline-none px-2.5 py-1.5 text-sm ${onClear ? 'pr-7' : ''}`}
+			/>
+			{onClear && value && (
+				<button
+					type="button"
+					onClick={onClear}
+					className="absolute right-1.5 p-0.5 text-white/40 hover:text-white/80 shrink-0 bg-slate-800/50 rounded-md"
+				>
+					<IoCloseSharp size={12} />
+				</button>
+			)}
+		</div>
+	);
+};
+
+const ReactionWidget = ({ index, reaction, elements, onCommit, onDelete, onNewReaction }: ReactionWidgetProps) => {
 	const outputRefs = useRef<Array<HTMLInputElement | null>>([]);
 	const [pendingFocusIndex, setPendingFocusIndex] = useState<number | null>(null);
 
@@ -172,85 +307,72 @@ const ReactionWidget = ({ index, reaction, elements, onCommit, onDelete }: React
 		onCommit(index, nextLeftText, nextRightText, nextOutputTexts);
 	};
 
-	const handleEnter = (
-		event: KeyboardEvent<HTMLInputElement>,
-		nextLeftText: string = leftText,
-		nextRightText: string = rightText,
-		nextOutputTexts: string[] = outputTexts
-	) => {
-		if (event.key !== 'Enter') {
-			return;
-		}
-
-		event.preventDefault();
-		commit(nextLeftText, nextRightText, nextOutputTexts);
+	const removeOutput = (outputIndex: number) => {
+		const next = outputTexts.filter((_, i) => i !== outputIndex);
+		if (next.length === 0) next.push('');
+		setOutputTexts(next);
+		commit(leftText, rightText, next);
 	};
 
 	return (
-		<div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-			<div className="mb-3 flex items-start justify-between gap-3">
-				<div className="min-w-0 flex-1">
-					<div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
-						<input
-							list={ELEMENT_DATALIST_ID}
-							value={leftText}
-							onChange={(event) => setLeftText(event.target.value)}
-							onBlur={() => commit()}
-							onKeyDown={(event) => handleEnter(event)}
-							placeholder="Element A"
-							className="rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2.5 text-sm outline-none"
-						/>
-						<div className="text-center text-lg font-black text-cyan-200">+</div>
-						<input
-							list={ELEMENT_DATALIST_ID}
-							value={rightText}
-							onChange={(event) => setRightText(event.target.value)}
-							onBlur={() => commit()}
-							onKeyDown={(event) => handleEnter(event)}
-							placeholder="Element B"
-							className="rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2.5 text-sm outline-none"
-						/>
-					</div>
-				</div>
-				<button onClick={() => onDelete(index)} className="rounded-full bg-white/10 p-2 text-white/70">
-					<IoCloseSharp />
+		<div className="rounded-xl border border-white/10 bg-black/20 p-2 overflow-hidden flex flex-col gap-2">
+			<div className="flex items-center gap-1.5 flex-nowrap w-full">
+				<DroppableInput
+					value={leftText}
+					onChange={setLeftText}
+					onBlur={() => commit()}
+					onClear={() => { setLeftText(''); commit('', rightText, outputTexts); }}
+					onEnter={() => commit()}
+					placeholder="A"
+					className="border border-white/10 bg-slate-950/50"
+				/>
+				<div className="text-center font-black text-cyan-200 shrink-0">+</div>
+				<DroppableInput
+					value={rightText}
+					onChange={setRightText}
+					onBlur={() => commit()}
+					onClear={() => { setRightText(''); commit(leftText, '', outputTexts); }}
+					onEnter={() => commit()}
+					placeholder="B"
+					className="border border-white/10 bg-slate-950/50"
+				/>
+				<button onClick={() => onDelete(index)} className="rounded bg-white/10 p-1 text-white/70 hover:bg-rose-500/20 hover:text-rose-300 shrink-0 ml-1">
+					<IoCloseSharp size={16} />
 				</button>
 			</div>
 
-			<div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
-				<div className="pt-2 text-xs font-bold uppercase tracking-[0.18em] text-white/40">Outputs</div>
-				<div className="space-y-2">
-					<div className="flex flex-wrap gap-2">
-						{outputTexts.map((outputText, outputIndex) => (
-							<input
-								key={`reaction-${index}-output-${outputIndex}`}
-								ref={(input) => {
-									outputRefs.current[outputIndex] = input;
-								}}
-								list={ELEMENT_DATALIST_ID}
-								value={outputText}
-								onChange={(event) => {
-									const next = [...outputTexts];
-									next[outputIndex] = event.target.value;
-									setOutputTexts(next);
-								}}
-								onBlur={() => commit(leftText, rightText, outputTexts)}
-								onKeyDown={(event) => handleEnter(event, leftText, rightText, outputTexts)}
-								placeholder={`Output ${outputIndex + 1}`}
-								className="min-w-[150px] flex-1 rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2.5 text-sm outline-none"
-							/>
-						))}
-						<button
-							onClick={() => {
-								setOutputTexts((current) => [...current, '']);
-								setPendingFocusIndex(outputTexts.length);
-							}}
-							className="rounded-full bg-cyan-400 px-3 py-2 text-sm font-black text-slate-950"
-						>
-							<IoAddSharp />
-						</button>
-					</div>
-				</div>
+			<div className="flex flex-wrap items-center gap-1.5 pl-1 w-full">
+				<div className="font-black text-emerald-300 shrink-0">=</div>
+				{outputTexts.map((outputText, outputIndex) => (
+					<DroppableInput
+						key={`reaction-${index}-output-${outputIndex}`}
+						value={outputText}
+						onChange={(val) => {
+							const next = [...outputTexts];
+							next[outputIndex] = val;
+							setOutputTexts(next);
+						}}
+						onBlur={() => commit(leftText, rightText, outputTexts)}
+						onClear={() => removeOutput(outputIndex)}
+						onEnter={() => {
+							commit(leftText, rightText, outputTexts);
+							if (outputIndex === outputTexts.length - 1 && onNewReaction) {
+								onNewReaction();
+							}
+						}}
+						placeholder={`Result ${outputIndex + 1}`}
+						className="min-w-[6rem] border border-white/10 bg-slate-950/50"
+					/>
+				))}
+				<button
+					onClick={() => {
+						setOutputTexts((current) => [...current, '']);
+						setPendingFocusIndex(outputTexts.length);
+					}}
+					className="rounded-lg bg-cyan-400 p-1 text-slate-950 shrink-0"
+				>
+					<IoAddSharp size={16} />
+				</button>
 			</div>
 		</div>
 	);
@@ -265,6 +387,7 @@ const App = () => {
 	const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
 	const [elementSearch, setElementSearch] = useState('');
 	const [reactionSearch, setReactionSearch] = useState('');
+	const [newStartingText, setNewStartingText] = useState('');
 
 	const validation = useMemo(() => validateModDraft(draft), [draft]);
 
@@ -305,9 +428,17 @@ const App = () => {
 					? {
 							...element,
 							name: nextName,
-							emoji: deriveElementGlyph(nextName),
 						}
 					: element
+			),
+		}));
+	};
+
+	const updateElementEmoji = (elementId: string, emoji: string) => {
+		updateDraft((current) => ({
+			...current,
+			elements: current.elements.map((element) =>
+				element.id === elementId ? { ...element, emoji } : element
 			),
 		}));
 	};
@@ -341,21 +472,21 @@ const App = () => {
 		}));
 	};
 
-	const toggleStarting = (elementId: string) => {
-		updateDraft((current) => {
-			const isStarting = current.startingElementIds.includes(elementId);
-			if (isStarting) {
-				return {
-					...current,
-					startingElementIds: current.startingElementIds.filter((id) => id !== elementId),
-				};
-			}
+	const addStartingElement = (name: string) => {
+		const trimmed = name.trim();
+		if (!trimmed) return;
+		const resolved = ensureElementInDraft(draft, trimmed);
+		updateDraft(() => ({
+			...resolved.draft,
+			startingElementIds: Array.from(new Set([...resolved.draft.startingElementIds, resolved.elementId])),
+		}));
+	};
 
-			return {
-				...current,
-				startingElementIds: [...current.startingElementIds, elementId],
-			};
-		});
+	const removeStartingElement = (elementId: string) => {
+		updateDraft((current) => ({
+			...current,
+			startingElementIds: current.startingElementIds.filter((id) => id !== elementId),
+		}));
 	};
 
 	const addReaction = () => {
@@ -365,6 +496,9 @@ const App = () => {
 			showToast('Add elements first');
 			return;
 		}
+		
+		const emptyReactionExists = draft.reactions.some(r => r.leftId === first && r.rightId === second && r.outputIds.length === 1 && r.outputIds[0] === first);
+		if (emptyReactionExists) return;
 
 		updateDraft((current) => ({
 			...current,
@@ -665,13 +799,13 @@ const App = () => {
 				{tab === 'editor' && (
 					<div className="flex flex-1 flex-col gap-4">
 						<div className="rounded-3xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl">
-							<div className="mb-4 flex flex-wrap items-start justify-between gap-4">
-								<div className="min-w-[260px] flex-1">
+							<div className="mb-4 flex flex-col gap-4">
+								<div className="w-full">
 									<div className="mb-2 text-[11px] font-bold uppercase tracking-[0.24em] text-cyan-200/60">Mod Info</div>
 									<input value={draft.title} onChange={(event) => updateDraft((current) => ({ ...current, title: event.target.value }))} className="mb-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-2xl font-black outline-none" />
 									<textarea value={draft.summary} onChange={(event) => updateDraft((current) => ({ ...current, summary: event.target.value }))} placeholder="Describe the mod" rows={2} className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none" />
 								</div>
-								<div className="flex flex-wrap gap-2">
+								<div className="flex flex-wrap items-center gap-2">
 									<button disabled={isBusy} onClick={playtestDraft} className="rounded-full bg-indigo-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"><IoPlaySharp className="mr-1 inline-block" />Playtest</button>
 									<button disabled={isBusy} onClick={saveDraft} className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><IoSaveSharp className="mr-1 inline-block" />Save</button>
 									<button disabled={isBusy} onClick={publishDraft} className="rounded-full bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"><IoRocketSharp className="mr-1 inline-block" />Publish</button>
@@ -683,22 +817,31 @@ const App = () => {
 								<div>
 									<div className="mb-2 flex items-center justify-between">
 										<div className="text-[11px] font-bold uppercase tracking-[0.24em] text-cyan-200/60">Starting Elements</div>
-										<div className="text-xs text-white/55">{draft.startingElementIds.length} selected</div>
+										<div className="text-xs text-white/55">{draft.startingElementIds.length}</div>
 									</div>
-									<div className="flex flex-wrap gap-2">
-										{draft.elements.map((element) => {
-											const isStarting = draft.startingElementIds.includes(element.id);
-											return (
-												<button
-													key={`starting-${element.id}`}
-													onClick={() => toggleStarting(element.id)}
-													className={`rounded-full border px-3 py-2 text-sm font-bold ${isStarting ? 'border-emerald-300 bg-emerald-400/18 text-emerald-50' : 'border-white/10 bg-black/15 text-white/75'}`}
-												>
-													{isStarting && <IoCheckmarkCircleSharp className="mr-1 inline-block" />}
-													{element.name}
-												</button>
-											);
+									<div className="flex flex-wrap items-center gap-2">
+										{draft.startingElementIds.map((id) => {
+											const el = draft.elements.find(e => e.id === id);
+											return el ? (
+												<div key={`starting-${id}`} className="flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-400/18 pl-2 pr-1 py-1 text-sm font-bold text-emerald-50">
+													<span>{el.name}</span>
+													<button onClick={() => removeStartingElement(id)} className="ml-0.5 text-emerald-200/70 hover:text-white"><IoCloseSharp size={16}/></button>
+												</div>
+											) : null;
 										})}
+										<div className="flex items-center ml-1">
+											<DroppableInput
+												value={newStartingText}
+												onChange={setNewStartingText}
+												onClear={newStartingText ? () => setNewStartingText('') : undefined}
+												placeholder="Add starter"
+												className="w-28 rounded-l-lg border border-white/10 bg-black/20"
+												onEnter={() => { addStartingElement(newStartingText); setNewStartingText(''); }}
+											/>
+											<button onClick={() => { addStartingElement(newStartingText); setNewStartingText(''); }} className="rounded-r-lg bg-cyan-400 px-2 py-1.5 text-slate-950 border border-cyan-400">
+												<IoAddSharp size={20} />
+											</button>
+										</div>
 									</div>
 								</div>
 
@@ -730,15 +873,51 @@ const App = () => {
 							</div>
 						</div>
 
-						<div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-							<div className="rounded-3xl border border-white/10 bg-white/6 p-4 backdrop-blur-xl">
+						<div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+							<div className="rounded-3xl border border-white/10 bg-white/6 p-3 lg:p-4 backdrop-blur-xl">
+								<div className="mb-4 flex items-center justify-between">
+									<div>
+										<div className="text-[11px] font-bold uppercase tracking-[0.24em] text-cyan-200/60">Elements</div>
+										<div className="text-sm text-white/70">{draft.elements.length} total</div>
+									</div>
+									<div className="flex items-center gap-2">
+										<input value={elementSearch} onChange={(event) => setElementSearch(event.target.value)} placeholder="Search elements" className="w-24 sm:w-32 lg:w-44 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none" />
+										<button onClick={addElement} className="rounded-full bg-cyan-400 p-2 text-slate-950"><IoAddSharp size={18} /></button>
+									</div>
+								</div>
+
+								<div className="space-y-3">
+									{filteredElements.map((element) => (
+										<div key={element.id} className="rounded-xl border border-white/10 bg-black/20 p-2">
+											<div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+												<ElementPreview element={element} onChangeEmoji={(val) => updateElementEmoji(element.id, val)} draggable={true} />
+												<div className="flex flex-1 items-center gap-1.5 min-w-[12rem] sm:min-w-0">
+													<input
+														value={element.name}
+														onChange={(event) => renameElement(element.id, event.target.value)}
+														placeholder="Name"
+														className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5 text-sm outline-none"
+													/>
+													<ColorPicker type="bg" value={element.bgColorToken} onChange={(val) => updateElementColors(element.id, { bgColorToken: val, frameColorToken: element.frameColorToken })} />
+													<ColorPicker type="frame" value={element.frameColorToken} onChange={(val) => updateElementColors(element.id, { bgColorToken: element.bgColorToken, frameColorToken: val })} />
+													<button onClick={() => removeElement(element.id)} className="rounded bg-white/10 p-1.5 text-white/70 hover:bg-rose-500/20 hover:text-rose-300 shrink-0">
+														<IoCloseSharp size={16} />
+													</button>
+												</div>
+											</div>
+										</div>
+									))}
+								</div>
+							</div>
+
+							<div className="rounded-3xl border border-white/10 bg-white/6 p-3 lg:p-4 backdrop-blur-xl">
 								<div className="mb-4 flex items-center justify-between">
 									<div>
 										<div className="text-[11px] font-bold uppercase tracking-[0.24em] text-cyan-200/60">Reactions</div>
 										<div className="text-sm text-white/70">{draft.reactions.length} total</div>
 									</div>
 									<div className="flex items-center gap-2">
-										<input value={reactionSearch} onChange={(event) => setReactionSearch(event.target.value)} placeholder="Search reactions" className="w-44 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none" />
+										<input value={reactionSearch} onChange={(event) => setReactionSearch(event.target.value)} placeholder="Search reactions" className="w-24 sm:w-32 lg:w-44 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none" />
 										<button onClick={addReaction} className="rounded-full bg-cyan-400 p-2 text-slate-950"><IoAddSharp size={18} /></button>
 									</div>
 								</div>
@@ -752,64 +931,15 @@ const App = () => {
 											elements={draft.elements}
 											onCommit={commitReaction}
 											onDelete={deleteReaction}
+											onNewReaction={addReaction}
 										/>
 									))}
 
 									{filteredReactions.length === 0 && (
-										<div className="rounded-2xl border border-dashed border-white/15 bg-white/4 p-8 text-center text-white/60">
+										<div className="rounded-xl border border-dashed border-white/15 bg-white/4 p-6 text-center text-sm text-white/60">
 											No reactions yet. Add one to make the mod playable.
 										</div>
 									)}
-								</div>
-							</div>
-
-							<div className="rounded-3xl border border-white/10 bg-white/6 p-4 backdrop-blur-xl">
-								<div className="mb-4 flex items-center justify-between">
-									<div>
-										<div className="text-[11px] font-bold uppercase tracking-[0.24em] text-cyan-200/60">Elements</div>
-										<div className="text-sm text-white/70">{draft.elements.length} total</div>
-									</div>
-									<div className="flex items-center gap-2">
-										<input value={elementSearch} onChange={(event) => setElementSearch(event.target.value)} placeholder="Search elements" className="w-44 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none" />
-										<button onClick={addElement} className="rounded-full bg-cyan-400 p-2 text-slate-950"><IoAddSharp size={18} /></button>
-									</div>
-								</div>
-
-								<div className="space-y-3">
-									{filteredElements.map((element) => (
-										<div key={element.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-											<div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_9rem_9rem_auto] md:items-center">
-												<ElementPreview element={element} />
-												<input
-													value={element.name}
-													onChange={(event) => renameElement(element.id, event.target.value)}
-													placeholder="Element name"
-													className="rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2.5 text-sm outline-none"
-												/>
-												<select
-													value={element.bgColorToken}
-													onChange={(event) => updateElementColors(element.id, { bgColorToken: event.target.value, frameColorToken: element.frameColorToken })}
-													className="rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2.5 text-sm"
-												>
-													{MOD_COLOR_OPTIONS.map((option) => (
-														<option key={`bg-${option.value}`} value={option.value}>{option.label} bg</option>
-													))}
-												</select>
-												<select
-													value={element.frameColorToken}
-													onChange={(event) => updateElementColors(element.id, { bgColorToken: element.bgColorToken, frameColorToken: event.target.value })}
-													className="rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2.5 text-sm"
-												>
-													{MOD_COLOR_OPTIONS.map((option) => (
-														<option key={`frame-${option.value}`} value={option.value}>{option.label} frame</option>
-													))}
-												</select>
-												<button onClick={() => removeElement(element.id)} className="rounded-full bg-white/10 p-2 text-white/70">
-													<IoCloseSharp />
-												</button>
-											</div>
-										</div>
-									))}
 								</div>
 							</div>
 						</div>
