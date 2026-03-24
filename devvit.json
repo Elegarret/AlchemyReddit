@@ -13,6 +13,14 @@
       },
       "mod-editor": {
         "entry": "src/mod-editor.html"
+      },
+      "mod-catalog": {
+        "inline": true,
+        "entry": "src/mod-catalog.html"
+      },
+      "mod-splash": {
+        "inline": true,
+        "entry": "src/mod-splash.html"
       }
     }
   },
@@ -31,6 +39,13 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/post-create"
+      },
+      {
+        "label": "Create catalog post",
+        "description": "Creates a post listing all published user mods",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/catalog-create"
       }
     ]
   },

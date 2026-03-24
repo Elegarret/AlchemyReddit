@@ -1,8 +1,9 @@
 import './index.css';
-
+import 'emoji-picker-element';
 import { navigateTo, requestExpandedMode, showToast } from '@devvit/web/client';
 import { StrictMode, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import { IoAddSharp, IoCloseSharp, IoCopyOutline, IoPlaySharp, IoRocketSharp, IoSaveSharp, IoShareOutline, IoChevronDownSharp } from 'react-icons/io5';
 import {
 	DEFAULT_MOD_BG_COLOR_TOKEN,
@@ -124,6 +125,83 @@ const ensureElementInDraft = (draft: SaveDraftInput, rawName: string) => {
 	};
 };
 
+const EmojiDropdown = ({ emoji, name, onChange }: { emoji: string; name: string; onChange: (emoji: string) => void }) => {
+	const [isOpen, setIsOpen] = useState(false);
+	const ref = useRef<HTMLDivElement>(null);
+	const pickerRef = useRef<any>(null);
+
+	useEffect(() => {
+		const handleClickOutside = (e: globalThis.MouseEvent) => {
+			if (pickerRef.current && pickerRef.current.contains(e.target as Node)) {
+				return;
+			}
+			if (ref.current && !ref.current.contains(e.target as Node)) {
+				setIsOpen(false);
+			}
+		};
+		if (isOpen) {
+			document.addEventListener('mousedown', handleClickOutside);
+		}
+		return () => document.removeEventListener('mousedown', handleClickOutside);
+	}, [isOpen]);
+
+	useEffect(() => {
+		const picker = pickerRef.current;
+		if (isOpen && picker) {
+			const handleEmoji = (event: any) => {
+				onChange(event.detail.unicode);
+				setIsOpen(false);
+			};
+			picker.addEventListener('emoji-click', handleEmoji);
+			return () => picker.removeEventListener('emoji-click', handleEmoji);
+		}
+	}, [isOpen, onChange]);
+
+	return (
+		<div className="absolute top-0 left-0 w-full h-[calc(100%-12px)] z-10" ref={ref}>
+			<button 
+				type="button"
+				onClick={(e) => {
+					e.stopPropagation();
+					setIsOpen(!isOpen);
+					if (!isOpen && name) {
+						setTimeout(() => {
+							const picker = pickerRef.current;
+							if (picker && picker.shadowRoot) {
+								const input = picker.shadowRoot.querySelector('input');
+								if (input) {
+									input.value = name;
+									input.dispatchEvent(new Event('input', { bubbles: true }));
+								}
+							}
+						}, 50);
+					}
+				}}
+				className="w-full h-full bg-transparent hover:bg-white/10 outline-none cursor-pointer flex items-center justify-center text-[26px] font-black text-white/90 pb-0.5"
+			>
+				{emoji}
+			</button>
+			
+			{isOpen && createPortal(
+				<div 
+					className="fixed inset-0 z-[99999] flex items-center justify-center pointer-events-none" 
+				>
+					<div 
+						className="shadow-2xl rounded-xl overflow-hidden pointer-events-auto"
+						onClick={(e) => e.stopPropagation()}
+						onPointerDown={(e) => e.stopPropagation()}
+						onDragStart={(e) => e.stopPropagation()}
+					>
+						{/* @ts-ignore - custom web component */}
+						<emoji-picker ref={pickerRef} class="dark" dataSource="/emoji-data.json" />
+					</div>
+				</div>,
+				document.body
+			)}
+		</div>
+	);
+};
+
 const ElementPreview = ({ element, onChangeEmoji, draggable }: { element: ModElement; onChangeEmoji?: (emoji: string) => void; draggable?: boolean }) => {
 	const handleDragStart = (e: React.DragEvent) => {
 		if (draggable) {
@@ -132,21 +210,20 @@ const ElementPreview = ({ element, onChangeEmoji, draggable }: { element: ModEle
 		}
 	};
 
+	const customBg = element.bgColorToken.startsWith('#') ? element.bgColorToken : undefined;
+	const customFrame = element.frameColorToken.startsWith('#') ? element.frameColorToken : undefined;
+
 	return (
 		<div 
 			draggable={draggable}
 			onDragStart={handleDragStart}
 			className={`relative flex flex-col items-center justify-end overflow-hidden rounded-xl border-2 ${getModElementClasses(element.bgColorToken, element.frameColorToken)} w-12 h-12 shrink-0 ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+			style={{ ...(customBg ? { backgroundColor: customBg } : {}), ...(customFrame ? { borderColor: customFrame } : {}) }}
 		>
 			{onChangeEmoji ? (
-				<input 
-					value={element.emoji} 
-					onChange={(e) => onChangeEmoji(e.target.value)} 
-					maxLength={2} 
-					className="absolute top-0 left-0 w-full h-[calc(100%-12px)] bg-transparent text-center text-xl font-black text-white/90 outline-none z-10" 
-				/>
+				<EmojiDropdown emoji={element.emoji} name={element.name} onChange={onChangeEmoji} />
 			) : (
-				<div className="flex flex-1 items-center justify-center text-xl font-black text-white/90 pb-0.5">{element.emoji}</div>
+				<div className="flex flex-1 items-center justify-center text-[26px] font-black text-white/90 pb-0.5">{element.emoji}</div>
 			)}
 			<div className="w-full bg-black/25 text-center text-[7px] font-bold uppercase tracking-[0.1em] text-white z-0 h-3 flex items-center justify-center leading-none">
 				{element.name.slice(0, 8)}
@@ -170,12 +247,14 @@ const ColorPicker = ({ value, onChange, type }: { value: string; onChange: (valu
 	}, []);
 
 	const activeOption = MOD_COLOR_OPTIONS.find((opt) => opt.value === value) || MOD_COLOR_OPTIONS[0]!;
+	const isCustom = value.startsWith('#');
 
 	return (
 		<div className="relative" ref={ref}>
 			<button
 				onClick={() => setIsOpen(!isOpen)}
-				className={`relative h-8 w-8 rounded-lg border-2 ${activeOption.swatchClass} flex items-end justify-end overflow-hidden outline-none hover:opacity-90 transition-opacity shrink-0`}
+				className={`relative h-8 w-8 rounded-lg border-2 ${isCustom ? 'border-white/20' : activeOption.swatchClass} flex items-end justify-end overflow-hidden outline-none hover:opacity-90 transition-opacity shrink-0`}
+				style={isCustom ? (type === 'bg' ? { backgroundColor: value } : { backgroundColor: 'transparent', borderColor: value }) : undefined}
 			>
 				<div className="absolute right-0 bottom-0 bg-black/50 rounded-tl p-0.5">
 					<IoChevronDownSharp size={10} className="text-white" />
@@ -184,7 +263,17 @@ const ColorPicker = ({ value, onChange, type }: { value: string; onChange: (valu
 			
 			{isOpen && (
 				<div className="absolute right-0 top-full mt-2 z-50 w-40 rounded-xl border border-white/10 bg-slate-900 p-2 shadow-2xl">
-					<div className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-2 px-1">{type} Color</div>
+					<div className="flex items-center justify-between mb-2 px-1">
+						<div className="text-[10px] font-bold uppercase tracking-widest text-white/50">{type} Color</div>
+						<div className="relative h-4 w-4 rounded overflow-hidden shadow-sm border border-white/20">
+							<input 
+								type="color" 
+								value={isCustom ? value : '#2ba6ff'} 
+								onChange={(e) => onChange(e.target.value)}
+								className="absolute -top-2 -left-2 w-8 h-8 cursor-pointer" 
+							/>
+						</div>
+					</div>
 					<div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
 						{MOD_COLOR_OPTIONS.map((option) => (
 							<button
@@ -388,6 +477,69 @@ const App = () => {
 	const [elementSearch, setElementSearch] = useState('');
 	const [reactionSearch, setReactionSearch] = useState('');
 	const [newStartingText, setNewStartingText] = useState('');
+	
+	const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
+	const [reactionText, setReactionText] = useState('');
+
+	const syncDraftFromText = (text: string) => {
+		updateDraft((currentDraft) => {
+			let nextDraft = currentDraft;
+			const newReactions: SaveDraftInput['reactions'] = [];
+
+			const lines = text.split('\n');
+			for (const line of lines) {
+				const parts = line.split('=');
+				if (parts.length >= 2) {
+					const inputsStr = parts[0]?.trim() || '';
+					const outputsStr = parts[1]?.trim() || '';
+					const inputParts = inputsStr.split('+').map(s => s.trim()).filter(Boolean);
+					const outputParts = outputsStr.split(',').map(s => s.trim()).filter(Boolean);
+					
+					if (inputParts.length > 0 && outputParts.length > 0) {
+						const leftName = inputParts[0] as string;
+						const rightName = (inputParts[1] || inputParts[0]) as string; 
+						
+						const leftResolved = ensureElementInDraft(nextDraft, leftName);
+						nextDraft = leftResolved.draft;
+						
+						const rightResolved = ensureElementInDraft(nextDraft, rightName);
+						nextDraft = rightResolved.draft;
+
+						const outputIds: string[] = [];
+						for (const outName of outputParts) {
+							const outResolved = ensureElementInDraft(nextDraft, outName);
+							nextDraft = outResolved.draft;
+							outputIds.push(outResolved.elementId);
+						}
+
+						newReactions.push({
+							leftId: leftResolved.elementId,
+							rightId: rightResolved.elementId,
+							outputIds: outputIds
+						});
+					}
+				}
+			}
+			
+			return { ...nextDraft, reactions: newReactions };
+		});
+	};
+
+	const toggleReactionView = () => {
+		if (reactionView === 'visual') {
+			const lines = draft.reactions.map(r => {
+				const left = draft.elements.find(e => e.id === r.leftId)?.name || '';
+				const right = draft.elements.find(e => e.id === r.rightId)?.name || '';
+				const outs = r.outputIds.map(oid => draft.elements.find(e => e.id === oid)?.name || '').join(', ');
+				return `${left} + ${right} = ${outs}`;
+			});
+			setReactionText(lines.join('\n') + (lines.length > 0 ? '\n' : ''));
+			setReactionView('text');
+		} else {
+			syncDraftFromText(reactionText);
+			setReactionView('visual');
+		}
+	};
 
 	const validation = useMemo(() => validateModDraft(draft), [draft]);
 
@@ -881,17 +1033,26 @@ const App = () => {
 										<div className="text-sm text-white/70">{draft.elements.length} total</div>
 									</div>
 									<div className="flex items-center gap-2">
-										<input value={elementSearch} onChange={(event) => setElementSearch(event.target.value)} placeholder="Search elements" className="w-24 sm:w-32 lg:w-44 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none" />
-										<button onClick={addElement} className="rounded-full bg-cyan-400 p-2 text-slate-950"><IoAddSharp size={18} /></button>
+										<DroppableInput 
+											value={elementSearch} 
+											onChange={setElementSearch} 
+											onClear={elementSearch ? () => setElementSearch('') : undefined} 
+											placeholder="Search elements" 
+											className="w-24 sm:w-32 lg:w-44 border border-white/10 bg-black/20" 
+										/>
+										<button onClick={addElement} className="rounded-md bg-cyan-400 px-3 py-1.5 text-slate-950 font-bold shrink-0"><IoAddSharp size={18} /></button>
 									</div>
 								</div>
 
-								<div className="space-y-3">
+								<div className="space-y-3 h-[500px] overflow-y-auto custom-scrollbar pr-2 pb-6">
 									{filteredElements.map((element) => (
-										<div key={element.id} className="rounded-xl border border-white/10 bg-black/20 p-2">
+										<div key={element.id} className="relative rounded-xl border border-white/10 bg-black/20 p-2 pt-4">
+											<button onClick={() => removeElement(element.id)} className="absolute top-1 right-1 rounded-full bg-white/5 p-1 text-white/40 hover:bg-rose-500/20 hover:text-rose-300">
+												<IoCloseSharp size={12} />
+											</button>
 											<div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
 												<ElementPreview element={element} onChangeEmoji={(val) => updateElementEmoji(element.id, val)} draggable={true} />
-												<div className="flex flex-1 items-center gap-1.5 min-w-[12rem] sm:min-w-0">
+												<div className="flex flex-1 items-center gap-1.5 min-w-[12rem] sm:min-w-0 pr-1">
 													<input
 														value={element.name}
 														onChange={(event) => renameElement(element.id, event.target.value)}
@@ -900,9 +1061,6 @@ const App = () => {
 													/>
 													<ColorPicker type="bg" value={element.bgColorToken} onChange={(val) => updateElementColors(element.id, { bgColorToken: val, frameColorToken: element.frameColorToken })} />
 													<ColorPicker type="frame" value={element.frameColorToken} onChange={(val) => updateElementColors(element.id, { bgColorToken: element.bgColorToken, frameColorToken: val })} />
-													<button onClick={() => removeElement(element.id)} className="rounded bg-white/10 p-1.5 text-white/70 hover:bg-rose-500/20 hover:text-rose-300 shrink-0">
-														<IoCloseSharp size={16} />
-													</button>
 												</div>
 											</div>
 										</div>
@@ -912,18 +1070,32 @@ const App = () => {
 
 							<div className="rounded-3xl border border-white/10 bg-white/6 p-3 lg:p-4 backdrop-blur-xl">
 								<div className="mb-4 flex items-center justify-between">
-									<div>
+									<div className="flex items-center gap-3">
 										<div className="text-[11px] font-bold uppercase tracking-[0.24em] text-cyan-200/60">Reactions</div>
-										<div className="text-sm text-white/70">{draft.reactions.length} total</div>
+										<button onClick={toggleReactionView} className="rounded bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-white/80 hover:bg-white/20 transition-colors">
+											{reactionView === 'visual' ? 'Text Editor' : 'Visual Editor'}
+										</button>
+										<div className="text-sm text-white/70 hidden lg:block">{draft.reactions.length} total</div>
 									</div>
 									<div className="flex items-center gap-2">
-										<input value={reactionSearch} onChange={(event) => setReactionSearch(event.target.value)} placeholder="Search reactions" className="w-24 sm:w-32 lg:w-44 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none" />
-										<button onClick={addReaction} className="rounded-full bg-cyan-400 p-2 text-slate-950"><IoAddSharp size={18} /></button>
+										{reactionView === 'visual' && (
+											<>
+												<DroppableInput 
+													value={reactionSearch} 
+													onChange={setReactionSearch} 
+													onClear={reactionSearch ? () => setReactionSearch('') : undefined} 
+													placeholder="Search reactions" 
+													className="w-24 sm:w-32 lg:w-44 border border-white/10 bg-black/20" 
+												/>
+												<button onClick={addReaction} className="rounded-md bg-cyan-400 px-3 py-1.5 text-slate-950 font-bold shrink-0"><IoAddSharp size={18} /></button>
+											</>
+										)}
 									</div>
 								</div>
 
-								<div className="space-y-3">
-									{filteredReactions.map((reaction, index) => (
+								{reactionView === 'visual' ? (
+									<div className="space-y-3 h-[500px] overflow-y-auto custom-scrollbar pr-2 pb-6">
+										{filteredReactions.map((reaction, index) => (
 										<ReactionWidget
 											key={`${reaction.leftId}-${reaction.rightId}-${index}`}
 											index={index}
@@ -941,6 +1113,23 @@ const App = () => {
 										</div>
 									)}
 								</div>
+								) : (
+									<div className="h-[500px] pb-6">
+										<textarea
+											value={reactionText}
+											onChange={(e) => setReactionText(e.target.value)}
+											onBlur={() => syncDraftFromText(reactionText)}
+											onKeyDown={(e) => {
+												if (e.key === 'Enter') {
+													const val = e.currentTarget.value + '\n';
+													setTimeout(() => syncDraftFromText(val), 0);
+												}
+											}}
+											placeholder="Water + Fire = Steam, Fog&#10;Earth + Air = Dust"
+											className="w-full h-full rounded-xl border border-white/10 bg-black/30 p-4 text-sm font-mono text-white/80 outline-none custom-scrollbar resize-none font-bold"
+										/>
+									</div>
+								)}
 							</div>
 						</div>
 					</div>

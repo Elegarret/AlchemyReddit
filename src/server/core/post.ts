@@ -6,3 +6,10 @@ export const createPost = async () => {
 		title: postTitle,
 	});
 };
+
+export const createCatalogPost = async () => {
+	return await reddit.submitCustomPost({
+		title: 'Alchemy Mods Catalog',
+		entry: 'mod-catalog',
+	});
+};

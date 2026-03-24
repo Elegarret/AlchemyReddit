@@ -19,6 +19,7 @@ import {
 	listCatalogMods,
 	listModsForUser,
 	publishDraftForUser,
+	resolveRulesetForModId,
 	resolveRulesetFromPostData,
 	saveDraftForUser,
 	validateDraftInput,
@@ -41,28 +42,36 @@ export const publicProcedure = t.procedure;
 
 export const appRouter = t.router({
 	init: t.router({
-		get: publicProcedure.query(async () => {
-			const [count, username, userId, resolvedRuleset] = await Promise.all([
-				countGet(),
-				reddit.getCurrentUsername(),
-				context.userId,
-				resolveRulesetFromPostData(),
-			]);
+		get: publicProcedure
+			.input(z.object({ modId: z.string().optional() }).optional())
+			.query(async ({ input }) => {
+				const [count, username, userId] = await Promise.all([
+					countGet(),
+					reddit.getCurrentUsername(),
+					context.userId,
+				]);
 
-			const redditDiscovered = userId
-				? await getDiscoveredElements(userId, resolvedRuleset.progressScope)
-				: [];
+				let resolvedRuleset;
+				if (input?.modId) {
+					resolvedRuleset = await resolveRulesetForModId(input.modId);
+				} else {
+					resolvedRuleset = await resolveRulesetFromPostData();
+				}
 
-			return {
-				count,
-				postId: context.postId,
-				username,
-				redditDiscovered,
-				activeRuleset: resolvedRuleset.ruleset,
-				progressScope: resolvedRuleset.progressScope,
-				rulesetUnavailableReason: resolvedRuleset.unavailableReason,
-			};
-		}),
+				const redditDiscovered = userId
+					? await getDiscoveredElements(userId, resolvedRuleset.progressScope)
+					: [];
+
+				return {
+					count,
+					postId: context.postId,
+					username,
+					redditDiscovered,
+					activeRuleset: resolvedRuleset.ruleset,
+					progressScope: resolvedRuleset.progressScope,
+					rulesetUnavailableReason: resolvedRuleset.unavailableReason,
+				};
+			}),
 	}),
 	progress: t.router({
 		save: publicProcedure

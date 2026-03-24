@@ -165,11 +165,11 @@ export const validateModDraft = (draft: {
 		}
 		elementNames.add(normalizedName);
 
-		if (!MOD_COLOR_TOKENS[element.bgColorToken]) {
+		if (!element.bgColorToken.startsWith('#') && !MOD_COLOR_TOKENS[element.bgColorToken]) {
 			errors.push(`Unknown background color for ${element.name}.`);
 		}
 
-		if (!MOD_COLOR_TOKENS[element.frameColorToken]) {
+		if (!element.frameColorToken.startsWith('#') && !MOD_COLOR_TOKENS[element.frameColorToken]) {
 			errors.push(`Unknown frame color for ${element.name}.`);
 		}
 	}
@@ -257,7 +257,9 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 		keyItemData: {},
 		elementMessages: {},
 		sourceModId: mod.id,
+		ownerUsername: mod.ownerUsername,
 		...(mod.publishedHash ? { publishedHash: mod.publishedHash } : {}),
+		...(mod.publishedAt ? { publishedAt: mod.publishedAt } : {}),
 	};
 };
 

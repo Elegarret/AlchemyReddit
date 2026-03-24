@@ -43,6 +43,7 @@ const serializeListItem = (mod: ModDoc): ModListItem => ({
 	updatedAt: mod.updatedAt,
 	publishedAt: mod.publishedAt,
 	publishedHash: mod.publishedHash,
+	sharePostId: mod.sharePostId,
 	status: mod.status,
 	elementCount: mod.elements.length,
 	reactionCount: mod.reactions.length,
@@ -73,7 +74,28 @@ const ensureModOwnership = (mod: ModDoc, userId: string) => {
 export const listCatalogMods = async () => {
 	const entries = await redis.zRange(catalogKey, 0, 99);
 	const items = await Promise.all(entries.map(async ({ member }) => parseListItem(await redis.get(getMetaKey(member)))));
-	return items.filter((item): item is ModListItem => item !== null && item.status === 'published');
+	const publishedItems = items.filter((item): item is ModListItem => item !== null && item.status === 'published');
+
+	try {
+		await Promise.all(
+			publishedItems.map(async (item) => {
+				if (item.sharePostId) {
+					try {
+						const redditPost = await reddit.getPostById(item.sharePostId as `t3_${string}`);
+						item.upvotes = redditPost.score;
+					} catch (e) {
+						item.upvotes = 0;
+					}
+				} else {
+					item.upvotes = 0;
+				}
+			})
+		);
+	} catch (e) {
+		console.error('Failed to fetch upvotes', e);
+	}
+
+	return publishedItems;
 };
 
 export const listModsForUser = async (userId: string) => {
@@ -242,7 +264,7 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
 	const parsedPostData = sharePostDataSchema.parse(postData);
 	const post = await reddit.submitCustomPost({
 		title: `${latest.title} [Alchemy Mod]`,
-		entry: 'game',
+		entry: 'mod-splash',
 		postData: parsedPostData,
 		runAs: 'USER',
 		userGeneratedContent: {
@@ -253,9 +275,31 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
 		},
 	});
 
+	latest.sharePostId = post.id;
+	await redis.set(getLatestKey(modId), JSON.stringify(latest));
+	await redis.set(getDraftKey(userId, modId), JSON.stringify({ ...latest, status: 'draft' }));
+	await saveMeta(latest);
+
 	return {
 		id: post.id,
 		url: `https://reddit.com/comments/${post.id}`,
+	};
+};
+
+export const resolveRulesetForModId = async (modId: string): Promise<{ ruleset: ActiveRuleset | null; progressScope: string; unavailableReason?: string; }> => {
+	const latest = await loadLatestMod(modId);
+	if (!latest || latest.status !== 'published') {
+		return {
+			ruleset: null,
+			progressScope: 'base',
+			unavailableReason: 'This mod is unavailable or has been removed.',
+		};
+	}
+
+	const ruleset = buildRulesetFromMod(latest);
+	return {
+		ruleset,
+		progressScope: ruleset.storageScope,
 	};
 };
 

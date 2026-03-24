@@ -545,6 +545,14 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		iconOverride?: ElementIcon,
 	) => {
 		const colorClass = isHidden ? 'bg-slate-900 border-slate-800' : (ruleset.elementStyles[name] ?? 'bg-gray-300 border-gray-500');
+		const customBg = !isHidden ? colorClass.split(' ').find(c => c.startsWith('bg-[_#'))?.replace('bg-[_', '').slice(0, -1) || colorClass.split(' ').find(c => c.startsWith('bg-[#'))?.slice(4, -1) : undefined;
+		const customFrame = !isHidden ? colorClass.split(' ').find(c => c.startsWith('border-[_#'))?.replace('border-[_', '').slice(0, -1) || colorClass.split(' ').find(c => c.startsWith('border-[#'))?.slice(8, -1) : undefined;
+		
+		const style: React.CSSProperties = {
+			...(customBg ? { backgroundColor: customBg } : {}),
+			...(customFrame ? { borderColor: customFrame } : {})
+		};
+
 		const weightMatch = colorClass.match(/-(\d{3})/);
 		const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
 		const Icon = isHidden ? null : (iconOverride ?? ruleset.elementIcons[name]);
@@ -558,7 +566,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		const lightGlow = name === 'light' && !isHidden ? 'shadow-[0_0_40px_15px_rgba(255,255,150,0.8)] z-20' : '';
 
 		return (
-			<div className={`relative flex flex-col items-center justify-end select-none overflow-hidden ${sizeClasses} ${colorClass} ${reactiveClasses} ${lightGlow}`}>
+			<div className={`relative flex flex-col items-center justify-end select-none overflow-hidden ${sizeClasses} ${colorClass} ${reactiveClasses} ${lightGlow}`} style={style}>
 				{!isHidden && <div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />}
 				{Icon && (
 					<div className={`absolute inset-0 flex items-center justify-center pointer-events-none z-[1] ${size === 'small' ? 'pb-3' : 'pb-5'}`}>
@@ -1580,8 +1588,15 @@ const GameRoot = () => {
 			return;
 		}
 
+		let overrideModId: string | undefined;
+		try {
+			overrideModId = localStorage.getItem('override-mod-id') ?? undefined;
+		} catch (e) {
+			// ignore
+		}
+
 		trpc.init.get
-			.query()
+			.query(overrideModId ? { modId: overrideModId } : undefined)
 			.then((response) => {
 				if (response.rulesetUnavailableReason) {
 					setState({

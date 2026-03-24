@@ -47,6 +47,7 @@ export const modDocSchema = z.object({
 	updatedAt: z.string().min(1).max(64),
 	publishedAt: z.string().min(1).max(64).optional(),
 	publishedHash: z.string().min(1).max(64).optional(),
+	sharePostId: z.string().min(1).max(64).optional(),
 });
 
 export type ModDoc = z.infer<typeof modDocSchema>;
@@ -59,9 +60,11 @@ export const modListItemSchema = z.object({
 	updatedAt: z.string().min(1).max(64),
 	publishedAt: z.string().min(1).max(64).optional(),
 	publishedHash: z.string().min(1).max(64).optional(),
+	sharePostId: z.string().min(1).max(64).optional(),
 	status: modStatusSchema,
 	elementCount: z.number().int().nonnegative(),
 	reactionCount: z.number().int().nonnegative(),
+	upvotes: z.number().int().optional(),
 });
 
 export type ModListItem = z.infer<typeof modListItemSchema>;
@@ -95,6 +98,8 @@ export type ActiveRuleset = {
 	elementMessages: Record<string, string>;
 	sourceModId?: string;
 	publishedHash?: string;
+	ownerUsername?: string;
+	publishedAt?: string;
 };
 
 export type ValidationResult = {

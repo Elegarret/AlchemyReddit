@@ -78,8 +78,8 @@ export const DEFAULT_MOD_FRAME_COLOR_TOKEN = 'ocean';
 export const DEFAULT_MOD_COLOR_TOKEN = DEFAULT_MOD_BG_COLOR_TOKEN;
 
 export const getModElementClasses = (bgColorToken: string, frameColorToken: string) => {
-	const background = MOD_COLOR_TOKENS[bgColorToken] ?? MOD_COLOR_TOKENS[DEFAULT_MOD_BG_COLOR_TOKEN];
-	const frame = MOD_COLOR_TOKENS[frameColorToken] ?? MOD_COLOR_TOKENS[DEFAULT_MOD_FRAME_COLOR_TOKEN];
+	const bgClass = bgColorToken.startsWith('#') ? `bg-[${bgColorToken}]` : (MOD_COLOR_TOKENS[bgColorToken]?.bgClass ?? 'bg-sky-200');
+	const frameClass = frameColorToken.startsWith('#') ? `border-[${frameColorToken}]` : (MOD_COLOR_TOKENS[frameColorToken]?.frameClass ?? 'border-sky-400');
 
-	return `${background?.bgClass ?? 'bg-sky-200'} ${frame?.frameClass ?? 'border-sky-400'}`;
+	return `${bgClass} ${frameClass}`;
 };
