@@ -2,12 +2,13 @@
 
 import './index.css';
 
-import { navigateTo, requestExpandedMode } from '@devvit/web/client';
-import { StrictMode, useEffect, useState } from 'react';
+import { navigateTo } from '@devvit/web/client';
+import { StrictMode, useEffect, useState, type MouseEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { IoEyeSharp, IoThumbsUpSharp } from 'react-icons/io5';
+import { IoAddSharp, IoAlbumsSharp, IoEyeSharp, IoThumbsUpSharp } from 'react-icons/io5';
 import { trpc } from './trpc';
 import type { ActiveRuleset, ModListItem } from './modding/types';
+import { openEntry } from './webview-navigation';
 
 export const ModSplash = () => {
   const [status, setStatus] = useState<'loading' | 'unavailable' | 'ready'>(
@@ -26,6 +27,7 @@ export const ModSplash = () => {
           setMessage(response.rulesetUnavailableReason);
           return;
         }
+
         setRuleset(response.activeRuleset || null);
         setModListing(response.activeModListing || null);
         setStatus('ready');
@@ -36,6 +38,29 @@ export const ModSplash = () => {
         setMessage('Failed to load the Realm.');
       });
   }, []);
+
+  const openGame = (event: MouseEvent<HTMLButtonElement>) => {
+    if (!ruleset) {
+      return;
+    }
+
+    if (ruleset.sourceModId) {
+      localStorage.setItem('override-mod-id', ruleset.sourceModId);
+    } else {
+      localStorage.removeItem('override-mod-id');
+    }
+
+    openEntry(event.nativeEvent, 'game');
+  };
+
+  const openEditor = (event: MouseEvent<HTMLButtonElement>) => {
+    localStorage.removeItem('override-mod-id');
+    openEntry(event.nativeEvent, 'mod-editor');
+  };
+
+  const openCatalog = (event: MouseEvent<HTMLButtonElement>) => {
+    openEntry(event.nativeEvent, 'mod-catalog');
+  };
 
   if (status === 'loading') {
     return (
@@ -79,26 +104,25 @@ export const ModSplash = () => {
 
   return (
     <div className="bg-table-gradient relative flex min-h-screen flex-col items-center justify-center gap-6 overflow-hidden">
-      {/* Decorative elements */}
       <div className="pointer-events-none absolute top-1/2 left-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/10 blur-3xl" />
       <div className="pointer-events-none absolute top-1/4 left-1/4 h-32 w-32 rounded-full bg-purple-500/10 blur-2xl" />
       <div className="pointer-events-none absolute right-1/4 bottom-1/4 h-48 w-48 rounded-full bg-blue-500/10 blur-2xl" />
 
       <div className="z-10 mt-4 flex w-full max-w-lg flex-col items-center gap-3 px-6 text-center">
         <div className="mb-2 text-sm font-bold tracking-[0.24em] text-cyan-300 uppercase drop-shadow-md">
-          User's Realm
+          User&apos;s Realm
         </div>
         <h1 className="mb-1 px-4 text-4xl leading-tight font-black tracking-tight text-white drop-shadow-xl sm:text-5xl">
           {ruleset.title}
         </h1>
 
         {ruleset.summary && (
-          <p className="mb-6 max-w-sm px-4 text-base leading-relaxed font-medium text-slate-300 drop-shadow-md sm:text-lg">
+          <p className="mb-4 max-w-sm px-4 text-base leading-relaxed font-medium text-slate-300 drop-shadow-md sm:text-lg">
             {ruleset.summary}
           </p>
         )}
 
-        <div className="mb-4 flex w-full max-w-[280px] flex-col items-center gap-1 rounded-2xl border border-white/10 bg-black/30 px-6 py-4 shadow-xl backdrop-blur-md">
+        <div className="mb-2 flex w-full max-w-[320px] flex-col items-center gap-1 rounded-2xl border border-white/10 bg-black/30 px-6 py-4 shadow-xl backdrop-blur-md">
           <div className="flex items-center gap-4 text-sm font-bold">
             <div className="flex items-center gap-1 text-orange-300">
               <IoThumbsUpSharp className="text-[14px]" />
@@ -116,7 +140,7 @@ export const ModSplash = () => {
               onClick={() =>
                 navigateTo(`https://www.reddit.com/user/${authorUsername}/`)
               }
-              className="font-bold text-white underline decoration-cyan-300/60 underline-offset-2 drop-shadow-sm"
+              className="cursor-pointer font-bold text-white underline decoration-cyan-300/60 underline-offset-2 drop-shadow-sm"
             >
               u/{authorUsername}
             </button>
@@ -127,27 +151,38 @@ export const ModSplash = () => {
         </div>
       </div>
 
-      <div className="z-10 mt-4 flex w-full max-w-[280px] px-4">
+      <div className="z-10 mt-2 flex w-full max-w-[320px] flex-col gap-3 px-4">
         <button
           className="w-full cursor-pointer rounded-full bg-gradient-to-tr from-cyan-600 to-blue-500 px-8 py-4 text-lg font-black tracking-[0.1em] text-white uppercase shadow-[0_0_40px_-10px_rgba(6,182,212,0.6)] ring-2 ring-cyan-400/30 transition-all hover:scale-105 active:scale-95 sm:text-xl"
-          onClick={(e) => {
-            if (ruleset.sourceModId) {
-              localStorage.setItem('override-mod-id', ruleset.sourceModId);
-            } else {
-              localStorage.removeItem('override-mod-id');
-            }
-            requestExpandedMode(e.nativeEvent, 'game');
-          }}
+          onClick={openGame}
         >
           Enter The Realm
         </button>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={openEditor}
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/12 px-4 py-3 text-sm font-black text-cyan-50 transition-all hover:scale-[1.02] hover:bg-cyan-400/20 active:scale-[0.98]"
+          >
+            <IoAddSharp />
+            Create My Realm
+          </button>
+          <button
+            type="button"
+            onClick={openCatalog}
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-orange-300/30 bg-orange-400/12 px-4 py-3 text-sm font-black text-orange-50 transition-all hover:scale-[1.02] hover:bg-orange-400/20 active:scale-[0.98]"
+          >
+            <IoAlbumsSharp />
+            More Realms
+          </button>
+        </div>
       </div>
 
       <div className="absolute right-4 bottom-4 z-10 font-mono text-[10px] tracking-wider text-white/30 uppercase select-none">
-            Build {__BUILD_NUMBER__}
-          </div>
-        </div>
-      );
+        Build {__BUILD_NUMBER__}
+      </div>
+    </div>
+  );
 };
 
 createRoot(document.getElementById('root')!).render(

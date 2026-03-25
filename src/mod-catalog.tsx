@@ -1,31 +1,51 @@
 import './index.css';
 
-import { navigateTo, requestExpandedMode } from '@devvit/web/client';
+import { navigateTo } from '@devvit/web/client';
 import {
   StrictMode,
   useEffect,
-  useState,
   useMemo,
+  useState,
   type MouseEvent,
 } from 'react';
 import { createRoot } from 'react-dom/client';
-import { IoEyeSharp, IoPlaySharp, IoThumbsUpSharp } from 'react-icons/io5';
+import {
+  IoCreateOutline,
+  IoEyeSharp,
+  IoPlaySharp,
+  IoThumbsUpSharp,
+} from 'react-icons/io5';
 import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
 import type { ModListItem } from './modding/types';
+import { openEntry, setEditorTargetModId } from './webview-navigation';
+
+const ALL_PAGE_SIZE = 15;
+
+const getSharePostUrl = (mod: ModListItem) => {
+  if (!mod.sharePostId) {
+    return null;
+  }
+
+  return `https://www.reddit.com/comments/${mod.sharePostId.replace('t3_', '')}`;
+};
 
 export const Catalog = () => {
   const [mods, setMods] = useState<ModListItem[]>([]);
+  const [myMods, setMyMods] = useState<ModListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [allPage, setAllPage] = useState(0);
-  const ALL_PAGE_SIZE = 15;
 
   useEffect(() => {
     const fetchMods = async () => {
       try {
-        const response = await trpc.mods.listCatalog.query();
-        setMods(response);
+        const [catalogMods, ownMods] = await Promise.all([
+          trpc.mods.listCatalog.query(),
+          trpc.mods.listMine.query(),
+        ]);
+        setMods(catalogMods);
+        setMyMods(ownMods);
       } catch (e) {
         console.error('Failed to load mods catalog', e);
       } finally {
@@ -36,46 +56,54 @@ export const Catalog = () => {
     void fetchMods();
   }, []);
 
-  const sortedByUpvotes = useMemo(() => {
-    return [...mods]
-      .sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0))
-      .slice(0, 10);
-  }, [mods]);
+  const sortedByUpvotes = useMemo(
+    () => [...mods].sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0)).slice(0, 10),
+    [mods]
+  );
 
-  const sortedByRecent = useMemo(() => {
-    return [...mods]
-      .sort(
+  const sortedByRecent = useMemo(
+    () =>
+      [...mods]
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        )
+        .slice(0, 10),
+    [mods]
+  );
+
+  const sortedMyMods = useMemo(
+    () =>
+      [...myMods].sort(
         (a, b) =>
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      )
-      .slice(0, 10);
-  }, [mods]);
+      ),
+    [myMods]
+  );
 
   const allModsFiltered = useMemo(() => {
-    if (!searchQuery) return mods;
+    if (!searchQuery) {
+      return mods;
+    }
+
+    const query = searchQuery.toLowerCase();
     return mods.filter(
-      (m) =>
-        m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.ownerUsername.toLowerCase().includes(searchQuery.toLowerCase())
+      (mod) =>
+        mod.title.toLowerCase().includes(query) ||
+        mod.ownerUsername.toLowerCase().includes(query)
     );
   }, [mods, searchQuery]);
 
-  const allModsPage = useMemo(() => {
-    return allModsFiltered.slice(
-      allPage * ALL_PAGE_SIZE,
-      (allPage + 1) * ALL_PAGE_SIZE
-    );
-  }, [allModsFiltered, allPage]);
+  const allModsPage = useMemo(
+    () =>
+      allModsFiltered.slice(
+        allPage * ALL_PAGE_SIZE,
+        (allPage + 1) * ALL_PAGE_SIZE
+      ),
+    [allModsFiltered, allPage]
+  );
 
   const totalPages = Math.ceil(allModsFiltered.length / ALL_PAGE_SIZE);
-
-  const getSharePostUrl = (mod: ModListItem) => {
-    if (!mod.sharePostId) {
-      return null;
-    }
-
-    return `https://www.reddit.com/comments/${mod.sharePostId.replace('t3_', '')}`;
-  };
 
   const openRealmPost = (url: string) => {
     navigateTo(url);
@@ -87,17 +115,17 @@ export const Catalog = () => {
   ) => {
     localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
     localStorage.setItem('override-mod-id', modId);
-    requestExpandedMode(event.nativeEvent, 'game');
+    openEntry(event.nativeEvent, 'game');
   };
 
-  const openEditor = (event: MouseEvent<HTMLButtonElement>) => {
-    requestExpandedMode(event.nativeEvent, 'mod-editor');
+  const openEditor = (event: MouseEvent<HTMLButtonElement>, modId?: string) => {
+    localStorage.removeItem('override-mod-id');
+    setEditorTargetModId(modId ?? null);
+    openEntry(event.nativeEvent, 'mod-editor');
   };
 
-  const renderModWidget = (mod: ModListItem) => {
+  const renderCatalogWidget = (mod: ModListItem) => {
     const url = getSharePostUrl(mod);
-    const titleClasses =
-      'block w-full border-b border-white/10 px-3 py-2 text-center text-sm font-black text-white transition-colors';
 
     return (
       <div
@@ -108,12 +136,12 @@ export const Catalog = () => {
           <button
             type="button"
             onClick={() => openRealmPost(url)}
-            className={`${titleClasses} hover:bg-white/5`}
+            className="block w-full cursor-pointer border-b border-white/10 px-3 py-2 text-center text-sm font-black text-white transition-colors hover:bg-white/5"
           >
             <span className="block truncate drop-shadow-sm">{mod.title}</span>
           </button>
         ) : (
-          <div className={titleClasses}>
+          <div className="block w-full border-b border-white/10 px-3 py-2 text-center text-sm font-black text-white">
             <span className="block truncate drop-shadow-sm">{mod.title}</span>
           </div>
         )}
@@ -138,11 +166,83 @@ export const Catalog = () => {
           <button
             type="button"
             onClick={(event) => playPublishedMod(event, mod.id)}
-            className="flex w-7 flex-shrink-0 items-center justify-center border-l border-white/10 bg-gradient-to-b from-[#ff5a1f] to-[#ff4500] text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
+            className="flex w-7 flex-shrink-0 cursor-pointer items-center justify-center border-l border-white/10 bg-gradient-to-b from-[#ff5a1f] to-[#ff4500] text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
             title="Play realm"
           >
             <IoPlaySharp className="text-[22px]" />
           </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMyModWidget = (mod: ModListItem) => {
+    const shareUrl = getSharePostUrl(mod);
+    const isPublished = mod.status === 'published';
+
+    return (
+      <div
+        key={`mine-${mod.id}`}
+        className="rounded-2xl border border-white/10 bg-black/35 p-4 shadow-md backdrop-blur-sm"
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={(event) => {
+              if (isPublished && shareUrl) {
+                openRealmPost(shareUrl);
+                return;
+              }
+
+              openEditor(event, mod.id);
+            }}
+            className="min-w-0 cursor-pointer text-left"
+          >
+            <div className="truncate text-lg font-black text-white">
+              {mod.title}
+            </div>
+            <div className="mt-1 text-sm text-white/65">
+              {mod.summary || 'No description provided.'}
+            </div>
+          </button>
+          <span
+            className={`rounded-full px-3 py-1 text-[10px] font-bold tracking-[0.18em] uppercase ${
+              isPublished
+                ? 'bg-emerald-400/20 text-emerald-200'
+                : 'bg-amber-300/20 text-amber-100'
+            }`}
+          >
+            {mod.status}
+          </span>
+        </div>
+        <div className="mb-3 flex items-center gap-3 text-[11px] font-bold">
+          <div className="flex items-center gap-1 text-orange-300">
+            <IoThumbsUpSharp className="text-[11px]" />
+            <span>{mod.upvotes || 0}</span>
+          </div>
+          <div className="flex items-center gap-1 text-cyan-200/70">
+            <IoEyeSharp className="text-[11px]" />
+            <span>{mod.playerCount || 0}</span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={(event) => openEditor(event, mod.id)}
+            className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950"
+          >
+            <IoCreateOutline />
+            Edit
+          </button>
+          {isPublished && (
+            <button
+              type="button"
+              onClick={(event) => playPublishedMod(event, mod.id)}
+              className="flex cursor-pointer items-center justify-center rounded-full bg-orange-500 px-4 py-2 text-sm font-bold text-white"
+            >
+              <IoPlaySharp />
+            </button>
+          )}
         </div>
       </div>
     );
@@ -156,8 +256,8 @@ export const Catalog = () => {
         </h1>
         <button
           type="button"
-          onClick={openEditor}
-          className="mt-3 rounded-full border border-cyan-300/30 bg-cyan-400/12 px-5 py-2 text-sm font-black text-cyan-50 transition-all hover:scale-[1.02] hover:bg-cyan-400/20 active:scale-[0.98]"
+          onClick={(event) => openEditor(event)}
+          className="mt-3 cursor-pointer rounded-full border border-cyan-300/30 bg-cyan-400/12 px-5 py-2 text-sm font-black text-cyan-50 transition-all hover:scale-[1.02] hover:bg-cyan-400/20 active:scale-[0.98]"
         >
           Create My Realm!
         </button>
@@ -181,7 +281,7 @@ export const Catalog = () => {
                     Best
                   </h2>
                   <div className="flex flex-col gap-1.5 sm:gap-3">
-                    {sortedByUpvotes.map(renderModWidget)}
+                    {sortedByUpvotes.map(renderCatalogWidget)}
                   </div>
                 </div>
               )}
@@ -192,11 +292,22 @@ export const Catalog = () => {
                     New
                   </h2>
                   <div className="flex flex-col gap-1.5 sm:gap-3">
-                    {sortedByRecent.map(renderModWidget)}
+                    {sortedByRecent.map(renderCatalogWidget)}
                   </div>
                 </div>
               )}
             </div>
+
+            {sortedMyMods.length > 0 && (
+              <div className="flex flex-col gap-3 border-t border-white/10 pt-6">
+                <h2 className="px-1 text-center text-lg font-black text-white uppercase drop-shadow-sm">
+                  My Mods
+                </h2>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {sortedMyMods.map(renderMyModWidget)}
+                </div>
+              </div>
+            )}
 
             <div className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-6">
               <div className="flex flex-col items-center gap-2 px-1">
@@ -222,13 +333,13 @@ export const Catalog = () => {
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3">
-                    {allModsPage.map(renderModWidget)}
+                    {allModsPage.map(renderCatalogWidget)}
                   </div>
                   {totalPages > 1 && (
                     <div className="mt-4 flex items-center justify-center gap-4">
                       <button
                         disabled={allPage === 0}
-                        onClick={() => setAllPage((p) => p - 1)}
+                        onClick={() => setAllPage((page) => page - 1)}
                         className="cursor-pointer rounded-lg bg-slate-800 px-4 py-1.5 text-sm font-bold text-white disabled:opacity-50"
                       >
                         Prev
@@ -238,7 +349,7 @@ export const Catalog = () => {
                       </span>
                       <button
                         disabled={allPage === totalPages - 1}
-                        onClick={() => setAllPage((p) => p + 1)}
+                        onClick={() => setAllPage((page) => page + 1)}
                         className="cursor-pointer rounded-lg bg-slate-800 px-4 py-1.5 text-sm font-bold text-white disabled:opacity-50"
                       >
                         Next

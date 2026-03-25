@@ -89,6 +89,14 @@ const indexPublishedMod = async (mod: ModDoc) => {
 const loadLatestMod = async (modId: string) =>
   parseMod(await redis.get(getLatestKey(modId)));
 
+const stripPublishedFields = (mod: ModDoc): ModDoc => {
+  const { publishedAt, publishedHash, sharePostId, ...draftState } = mod;
+  return draftState;
+};
+
+const buildSharePostTitle = (mod: Pick<ModDoc, 'title' | 'ownerUsername'>) =>
+  `${mod.title} (${mod.ownerUsername}'s realm)`;
+
 const ensureModOwnership = (mod: ModDoc, userId: string) => {
   if (mod.ownerUserId !== userId) {
     throw new Error('You do not own this mod.');
@@ -277,7 +285,11 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
   await saveMeta(published);
   await indexModForOwner(published);
   await indexPublishedMod(published);
-  return published;
+  const sharePost = await createSharePostForMod(userId, modId);
+  return {
+    mod: parseMod(await redis.get(getLatestKey(modId))) ?? published,
+    sharePost,
+  };
 };
 
 const isCurrentUserModerator = async (username: string | undefined) => {
@@ -323,6 +335,24 @@ export const hidePublishedMod = async (
   return hidden;
 };
 
+const removeSharePostIfPossible = async (sharePostId: string | undefined) => {
+  if (!sharePostId) {
+    return;
+  }
+
+  try {
+    const sharePost = await reddit.getPostById(sharePostId as `t3_${string}`);
+    await sharePost.delete();
+  } catch (deleteError) {
+    try {
+      await reddit.remove(sharePostId as `t3_${string}`, false);
+    } catch (removeError) {
+      console.warn('Failed to remove published share post', removeError);
+      console.warn('Delete attempt failed first', deleteError);
+    }
+  }
+};
+
 export const removeModForUser = async (userId: string, modId: string) => {
   const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
   const latest = await loadLatestMod(modId);
@@ -333,6 +363,7 @@ export const removeModForUser = async (userId: string, modId: string) => {
   }
 
   ensureModOwnership(target, userId);
+  await removeSharePostIfPossible(target.sharePostId);
 
   await redis.del(
     getDraftKey(userId, modId),
@@ -356,6 +387,13 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
     throw new Error('You must be logged in to share a mod.');
   }
 
+  if (latest.sharePostId) {
+    return {
+      id: latest.sharePostId,
+      url: getPostUrl(latest.sharePostId, context.subredditName),
+    };
+  }
+
   const slug = createSlug(latest.title);
   const postData: SharePostData = {
     modId: latest.id,
@@ -365,7 +403,7 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
   };
   const parsedPostData = sharePostDataSchema.parse(postData);
   const post = await reddit.submitCustomPost({
-    title: `${latest.title} [Alchemy Mod]`,
+    title: buildSharePostTitle(latest),
     entry: 'mod-splash',
     postData: parsedPostData,
     runAs: 'USER',
@@ -389,6 +427,39 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
     id: post.id,
     url: getPostUrl(post.id, context.subredditName),
   };
+};
+
+export const unpublishModForUser = async (userId: string, modId: string) => {
+  const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
+  const latest = await loadLatestMod(modId);
+  const source = latest ?? draft;
+
+  if (!source) {
+    throw new Error('Mod not found.');
+  }
+
+  ensureModOwnership(source, userId);
+
+  await removeSharePostIfPossible(latest?.sharePostId ?? draft?.sharePostId);
+
+  const now = new Date().toISOString();
+  const unpublished: ModDoc = {
+    ...stripPublishedFields({
+      ...(draft ?? latest ?? source),
+      status: 'draft',
+      updatedAt: now,
+    }),
+    status: 'draft',
+    updatedAt: now,
+  };
+
+  await redis.set(getLatestKey(modId), JSON.stringify(unpublished));
+  await redis.set(getDraftKey(userId, modId), JSON.stringify(unpublished));
+  await saveMeta(unpublished);
+  await indexModForOwner(unpublished);
+  await redis.zRem(catalogKey, [modId]);
+
+  return unpublished;
 };
 
 export const resolveRulesetForModId = async (

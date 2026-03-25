@@ -25,6 +25,7 @@ import {
   resolveRulesetForModId,
   resolveRulesetFromPostData,
   saveDraftForUser,
+  unpublishModForUser,
   validateDraftInput,
 } from './core/mods';
 
@@ -149,6 +150,14 @@ export const appRouter = t.router({
           throw new Error('You must be logged in.');
         }
         return await publishDraftForUser(context.userId, input);
+      }),
+    unpublish: publicProcedure
+      .input(z.string().min(1).max(64))
+      .mutation(async ({ input }) => {
+        if (!context.userId) {
+          throw new Error('You must be logged in.');
+        }
+        return await unpublishModForUser(context.userId, input);
       }),
     createSharePost: publicProcedure
       .input(z.string().min(1).max(64))

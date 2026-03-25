@@ -5,6 +5,7 @@ export const MAX_MOD_ELEMENTS = 128;
 export const MAX_MOD_REACTIONS = 512;
 export const MAX_REACTION_OUTPUTS = 4;
 export const PLAYTEST_RULESET_STORAGE_KEY = 'alchemy-playtest-ruleset';
+export const DEFAULT_MOD_TITLE = 'Untitled Mod';
 
 export const normalizeReactionKey = (leftId: string, rightId: string) =>
 	[leftId, rightId].sort((a, b) => a.localeCompare(b)).join('+');
@@ -134,9 +135,19 @@ export const validateModDraft = (draft: {
 }): ValidationResult => {
 	const errors: string[] = [];
 	const warnings: string[] = [];
+	const title = draft.title.trim();
+	const summary = draft.summary.trim();
 
-	if (!draft.title.trim()) {
+	if (!title) {
 		errors.push('A mod title is required.');
+	}
+
+	if (title.toLowerCase() === DEFAULT_MOD_TITLE.toLowerCase()) {
+		errors.push('Choose a custom mod title before publishing.');
+	}
+
+	if (!summary) {
+		errors.push('A mod description is required.');
 	}
 
 	if (draft.elements.length > MAX_MOD_ELEMENTS) {
@@ -153,11 +164,13 @@ export const validateModDraft = (draft: {
 
 	const elementIds = new Set<string>();
 	const elementNames = new Set<string>();
+	const elementNamesById = new Map<string, string>();
 	for (const element of draft.elements) {
 		if (elementIds.has(element.id)) {
 			errors.push(`Duplicate element id: ${element.id}`);
 		}
 		elementIds.add(element.id);
+		elementNamesById.set(element.id, element.name);
 
 		const normalizedName = element.name.trim().toLowerCase();
 		if (elementNames.has(normalizedName)) {
@@ -180,29 +193,42 @@ export const validateModDraft = (draft: {
 		}
 	}
 
+	const describeElement = (elementId: string) =>
+		elementNamesById.get(elementId) ?? elementId;
+
 	const seenReactions = new Set<string>();
 	for (const reaction of draft.reactions) {
 		if (!elementIds.has(reaction.leftId) || !elementIds.has(reaction.rightId)) {
-			errors.push(`Reaction ${reaction.leftId} + ${reaction.rightId} references a missing element.`);
+			errors.push(
+				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} references a missing element.`
+			);
 		}
 
 		if (reaction.outputIds.length === 0) {
-			errors.push(`Reaction ${reaction.leftId} + ${reaction.rightId} has no outputs.`);
+			errors.push(
+				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} has no outputs.`
+			);
 		}
 
 		if (reaction.outputIds.length > MAX_REACTION_OUTPUTS) {
-			errors.push(`Reaction ${reaction.leftId} + ${reaction.rightId} has too many outputs.`);
+			errors.push(
+				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} has too many outputs.`
+			);
 		}
 
 		for (const outputId of reaction.outputIds) {
 			if (!elementIds.has(outputId)) {
-				errors.push(`Reaction ${reaction.leftId} + ${reaction.rightId} outputs missing element ${outputId}.`);
+				errors.push(
+					`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} outputs missing element ${describeElement(outputId)}.`
+				);
 			}
 		}
 
 		const normalizedKey = normalizeReactionKey(reaction.leftId, reaction.rightId);
 		if (seenReactions.has(normalizedKey)) {
-			errors.push(`Duplicate reaction pair: ${reaction.leftId} + ${reaction.rightId}`);
+			errors.push(
+				`Duplicate reaction pair: ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)}`
+			);
 		}
 		seenReactions.add(normalizedKey);
 	}
@@ -213,7 +239,12 @@ export const validateModDraft = (draft: {
 		.filter((elementId) => !reachableElementIds.includes(elementId));
 
 	if (unreachableIds.length > 0) {
-		errors.push(`Unreachable elements: ${unreachableIds.slice(0, 8).join(', ')}`);
+		errors.push(
+			`Unreachable elements: ${unreachableIds
+				.slice(0, 8)
+				.map(describeElement)
+				.join(', ')}`
+		);
 	}
 
 	if (draft.reactions.length === 0) {

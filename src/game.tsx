@@ -2,8 +2,8 @@ import './index.css';
 
 import { StrictMode, useState, useRef, useEffect, type ComponentType, type CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
-import { context, requestExpandedMode } from '@devvit/web/client';
-import { IoSettingsSharp, IoCloseSharp, IoSearchSharp } from 'react-icons/io5';
+import { context } from '@devvit/web/client';
+import { IoCreateOutline, IoSettingsSharp, IoCloseSharp, IoSearchSharp } from 'react-icons/io5';
 import { BASE_RULESET } from './modding/base-ruleset';
 import {
 	getLocalStorageKeys,
@@ -15,6 +15,7 @@ import {
 } from './modding/runtime';
 import type { ActiveRuleset } from './modding/types';
 import { trpc } from './trpc';
+import { openEntry, setEditorTargetModId } from './webview-navigation';
 
 type Element = {
 	id: string;
@@ -202,6 +203,8 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	const [pushedElements, setPushedElements] = useState<Record<string, { x: number, y: number }>>({});
 	const [showOptions, setShowOptions] = useState(false);
 	const username = initialUsername;
+	const authorUsername = ruleset.ownerUsername ?? 'Unknown';
+	const isAuthor = !!username && username === ruleset.ownerUsername;
 	const [discoveryPopup, setDiscoveryPopup] = useState<string | null>(null);
 	const [confirmWipe, setConfirmWipe] = useState(false);
 	const [infoPopup, setInfoPopup] = useState<string | null>(null);
@@ -955,9 +958,12 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 					<button
 						onClick={(event) => {
 							localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
-							requestExpandedMode(event.nativeEvent, 'mod-editor');
+							if (ruleset.sourceModId) {
+								setEditorTargetModId(ruleset.sourceModId);
+							}
+							openEntry(event.nativeEvent, 'mod-editor');
 						}}
-						className="rounded-full bg-white/15 px-3 py-1.5 text-xs uppercase tracking-wide"
+						className="cursor-pointer rounded-full bg-white/15 px-3 py-1.5 text-xs uppercase tracking-wide"
 					>
 						Return to Editor
 					</button>
@@ -1270,13 +1276,28 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 						<div className="space-y-6">
 							<div className="flex flex-col gap-1">
 								<span className="text-sm font-medium text-secondary">Author</span>
-								<span className="text-lg font-bold text-primary">Elegar</span>
+								<span className="text-lg font-bold text-primary">{authorUsername}</span>
 							</div>
 							<a href="https://www.flaticon.com/free-icons/sand" title="sand icons">Sand icons created by Freepik - Flaticon</a>
 
 							<div className="h-px bg-white/10" />
 
 							<div className="space-y-3">
+								{isAuthor && ruleset.sourceModId && (
+									<button
+										onClick={(event) => {
+											setEditorTargetModId(ruleset.sourceModId ?? null);
+											localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+											setShowOptions(false);
+											openEntry(event.nativeEvent, 'mod-editor');
+										}}
+										className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-cyan-500 py-3 font-bold text-slate-950 transition-all hover:scale-[1.02] active:scale-95 shadow-lg"
+									>
+										<IoCreateOutline />
+										Edit Realm
+									</button>
+								)}
+
 								<button
 									onClick={() => {
 										if (!confirmWipe) {
@@ -1305,15 +1326,17 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 									{confirmWipe ? 'Are you sure? Click again' : 'Wipe All Progress'}
 								</button>
 
-								{username === 'Elegar' && ruleset.kind === 'base' && (
+								{isAuthor && (
 									<button
 										onClick={() => {
 											const allElements = Object.keys(ruleset.elementStyles);
 											setDiscovered(allElements);
-											trpc.progress.save.mutate({ discovered: allElements, progressScope }).catch(console.error);
+											if (!isPlaytest) {
+												trpc.progress.save.mutate({ discovered: allElements, progressScope }).catch(console.error);
+											}
 											setShowOptions(false);
 										}}
-										className="w-full rounded-xl bg-[var(--button-primary)] py-3 font-bold text-white transition-all hover:bg-[var(--button-primary-hover)] hover:scale-[1.02] active:scale-95 shadow-lg"
+										className="w-full cursor-pointer rounded-xl bg-[var(--button-primary)] py-3 font-bold text-white transition-all hover:bg-[var(--button-primary-hover)] hover:scale-[1.02] active:scale-95 shadow-lg"
 									>
 										Unlock All Elements
 									</button>

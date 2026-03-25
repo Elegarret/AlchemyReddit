@@ -1,6 +1,6 @@
 import './index.css';
 import 'emoji-picker-element';
-import { navigateTo, requestExpandedMode, showToast } from '@devvit/web/client';
+import { showShareSheet, showToast } from '@devvit/web/client';
 import {
   StrictMode,
   type DragEvent,
@@ -21,6 +21,7 @@ import {
   IoSaveSharp,
   IoShareOutline,
   IoTrashSharp,
+  IoCopyOutline,
 } from 'react-icons/io5';
 import {
   DEFAULT_MOD_BG_COLOR_TOKEN,
@@ -29,6 +30,7 @@ import {
   MOD_COLOR_OPTIONS,
 } from './modding/colors';
 import {
+  DEFAULT_MOD_TITLE,
   buildRulesetFromDraft,
   createElementIdFromName,
   PLAYTEST_RULESET_STORAGE_KEY,
@@ -36,6 +38,11 @@ import {
 } from './modding/runtime';
 import type { ModElement, ModListItem, SaveDraftInput } from './modding/types';
 import { trpc } from './trpc';
+import {
+  getEditorTargetModId,
+  openEntry,
+  setEditorTargetModId,
+} from './webview-navigation';
 
 type EditorTab = 'mine' | 'editor';
 
@@ -54,6 +61,15 @@ type ReactionWidgetProps = {
 };
 
 const ELEMENT_DATALIST_ID = 'alchemy-mod-elements';
+const DEFAULT_ELEMENT_NAME_PREFIX = 'Element';
+
+const getSharePostUrl = (mod: Pick<ModListItem, 'sharePostId'>) => {
+  if (!mod.sharePostId) {
+    return null;
+  }
+
+  return `https://www.reddit.com/comments/${mod.sharePostId.replace('t3_', '')}`;
+};
 
 const deriveElementGlyph = (name: string) => {
   const trimmed = name.trim();
@@ -89,7 +105,7 @@ const createStarterElement = (
 });
 
 const createEmptyDraft = (): SaveDraftInput => ({
-  title: 'Untitled Mod',
+  title: DEFAULT_MOD_TITLE,
   summary: '',
   startingElementIds: ['air', 'fire', 'earth', 'water'],
   elements: [
@@ -129,6 +145,21 @@ const ensureUniqueElementId = (elements: ModElement[], name: string) => {
   }
 
   return nextId;
+};
+
+const getNextGeneratedElementName = (elements: ModElement[]) => {
+  let suffix = 1;
+  const usedNames = new Set(
+    elements.map((element) => element.name.trim().toLowerCase())
+  );
+
+  while (
+    usedNames.has(`${DEFAULT_ELEMENT_NAME_PREFIX}-${suffix}`.toLowerCase())
+  ) {
+    suffix += 1;
+  }
+
+  return `${DEFAULT_ELEMENT_NAME_PREFIX}-${suffix}`;
 };
 
 const ensureElementInDraft = (draft: SaveDraftInput, rawName: string) => {
@@ -397,6 +428,7 @@ const DroppableInput = ({
   placeholder,
   className,
   onEnter,
+  onDropValue,
 }: {
   value: string;
   onChange: (val: string) => void;
@@ -405,6 +437,7 @@ const DroppableInput = ({
   placeholder: string;
   className?: string | undefined;
   onEnter?: (() => void) | undefined;
+  onDropValue?: ((val: string) => void) | undefined;
 }) => {
   const [dragOver, setDragOver] = useState(false);
 
@@ -413,6 +446,10 @@ const DroppableInput = ({
     setDragOver(false);
     const data = e.dataTransfer.getData('text/plain');
     if (data) {
+      if (onDropValue) {
+        onDropValue(data);
+        return;
+      }
       onChange(data);
       if (onBlur) setTimeout(onBlur, 50);
     }
@@ -607,6 +644,7 @@ const App = () => {
   const [elementSearch, setElementSearch] = useState('');
   const [reactionSearch, setReactionSearch] = useState('');
   const [newStartingText, setNewStartingText] = useState('');
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
 
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
   const [reactionText, setReactionText] = useState('');
@@ -681,6 +719,11 @@ const App = () => {
   };
 
   const validation = useMemo(() => validateModDraft(draft), [draft]);
+  const loadedMod = loadedDraftId
+    ? myMods.find((mod) => mod.id === loadedDraftId) ?? null
+    : null;
+  const isLoadedModPublished = loadedMod?.status === 'published';
+  const loadedSharePostUrl = loadedMod ? getSharePostUrl(loadedMod) : null;
 
   const refreshLists = async () => {
     setMyMods(await trpc.mods.listMine.query());
@@ -700,15 +743,18 @@ const App = () => {
   };
 
   const addElement = () => {
-    const baseName = `Element ${draft.elements.length + 1}`;
-    const nextElement = createStarterElement(
-      ensureUniqueElementId(draft.elements, baseName),
-      baseName
-    );
-    updateDraft((current) => ({
-      ...current,
-      elements: [...current.elements, nextElement],
-    }));
+    updateDraft((current) => {
+      const baseName = getNextGeneratedElementName(current.elements);
+      const nextElement = createStarterElement(
+        ensureUniqueElementId(current.elements, baseName),
+        baseName
+      );
+
+      return {
+        ...current,
+        elements: [...current.elements, nextElement],
+      };
+    });
   };
 
   const renameElement = (elementId: string, nextName: string) => {
@@ -776,13 +822,15 @@ const App = () => {
   const addStartingElement = (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const resolved = ensureElementInDraft(draft, trimmed);
-    updateDraft(() => ({
-      ...resolved.draft,
-      startingElementIds: Array.from(
-        new Set([...resolved.draft.startingElementIds, resolved.elementId])
-      ),
-    }));
+    updateDraft((current) => {
+      const resolved = ensureElementInDraft(current, trimmed);
+      return {
+        ...resolved.draft,
+        startingElementIds: Array.from(
+          new Set([...resolved.draft.startingElementIds, resolved.elementId])
+        ),
+      };
+    });
   };
 
   const removeStartingElement = (elementId: string) => {
@@ -916,7 +964,8 @@ const App = () => {
       }
 
       await trpc.mods.publish.mutate(modId);
-      showToast('Mod published');
+      showToast('Realm published');
+      setShareUrl(null);
       await refreshLists();
     } catch (error) {
       console.error(error);
@@ -928,23 +977,78 @@ const App = () => {
     }
   };
 
-  const shareDraft = async () => {
+  const unpublishDraft = async () => {
     if (!loadedDraftId) {
-      showToast('Save and publish the mod first');
+      showToast('Save the mod first');
       return;
     }
 
     setIsBusy(true);
     try {
-      const sharePost = await trpc.mods.createSharePost.mutate(loadedDraftId);
-      showToast('Share post created');
+      await trpc.mods.unpublish.mutate(loadedDraftId);
+      showToast('Realm moved back to drafts');
+      setShareUrl(null);
       await refreshLists();
-      navigateTo(sharePost.url);
+    } catch (error) {
+      console.error(error);
+      showToast(
+        error instanceof Error ? error.message : 'Failed to unpublish mod'
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const shareDraft = async () => {
+    if (!loadedDraftId || !isLoadedModPublished) {
+      showToast('Publish the mod first');
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      const nextShareUrl =
+        loadedSharePostUrl ??
+        (await trpc.mods.createSharePost.mutate(loadedDraftId)).url;
+      setShareUrl(nextShareUrl);
+      showToast('Share link ready');
+      await refreshLists();
     } catch (error) {
       console.error(error);
       showToast(error instanceof Error ? error.message : 'Failed to share mod');
     } finally {
       setIsBusy(false);
+    }
+  };
+
+  const copyShareUrl = async () => {
+    if (!shareUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast('Link copied');
+    } catch (error) {
+      console.error(error);
+      showToast('Failed to copy link');
+    }
+  };
+
+  const openNativeShare = async () => {
+    if (!shareUrl) {
+      return;
+    }
+
+    try {
+      await showShareSheet({
+        title: draft.title,
+        text: shareUrl,
+        data: shareUrl,
+      });
+    } catch (error) {
+      console.error(error);
+      showToast('Failed to open share sheet');
     }
   };
 
@@ -963,7 +1067,7 @@ const App = () => {
         })
       )
     );
-    requestExpandedMode(event.nativeEvent, 'game');
+    openEntry(event.nativeEvent, 'game');
   };
 
   const loadDraftFromServer = async (modId: string) => {
@@ -984,6 +1088,8 @@ const App = () => {
         reactions: loaded.reactions,
       });
       setLoadedDraftId(loaded.id);
+      setShareUrl(null);
+      setEditorTargetModId(null);
       setTab('editor');
     } catch (error) {
       console.error(error);
@@ -995,6 +1101,18 @@ const App = () => {
     }
   };
 
+  useEffect(() => {
+    const targetModId = getEditorTargetModId();
+    if (!targetModId || targetModId === loadedDraftId) {
+      return;
+    }
+
+    loadDraftFromServer(targetModId).catch((error) => {
+      console.error(error);
+      showToast('Failed to load selected realm');
+    });
+  }, [loadedDraftId]);
+
   const removeMyMod = async (modId: string) => {
     setIsBusy(true);
     try {
@@ -1002,6 +1120,8 @@ const App = () => {
       if (loadedDraftId === modId) {
         setDraft(createEmptyDraft());
         setLoadedDraftId(null);
+        setShareUrl(null);
+        setEditorTargetModId(null);
       }
       await refreshLists();
       showToast('Realm removed');
@@ -1050,6 +1170,54 @@ const App = () => {
             <option key={`element-option-${element.id}`} value={element.name} />
           ))}
         </datalist>
+
+        {shareUrl && (
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+            onClick={() => setShareUrl(null)}
+          >
+            <div
+              className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="text-[11px] font-bold tracking-[0.24em] text-orange-200/70 uppercase">
+                Share Realm
+              </div>
+              <h2 className="mt-2 text-xl font-black text-white">{draft.title}</h2>
+              <p className="mt-2 text-sm text-white/65">
+                Share the published post for this realm.
+              </p>
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-cyan-100 break-all">
+                {shareUrl}
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={copyShareUrl}
+                  className="cursor-pointer rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white"
+                >
+                  <IoCopyOutline className="mr-1 inline-block" />
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={openNativeShare}
+                  className="cursor-pointer rounded-full bg-orange-400 px-4 py-2 text-sm font-bold text-slate-950"
+                >
+                  <IoShareOutline className="mr-1 inline-block" />
+                  Share
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShareUrl(null)}
+                  className="cursor-pointer rounded-full bg-slate-800 px-4 py-2 text-sm font-bold text-white"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/10 bg-white/6 px-4 py-4 backdrop-blur-xl">
           <div>
@@ -1167,7 +1335,7 @@ const App = () => {
                   <button
                     disabled={isBusy}
                     onClick={playtestDraft}
-                    className="rounded-full bg-indigo-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
+                    className="cursor-pointer rounded-full bg-indigo-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <IoPlaySharp className="mr-1 inline-block" />
                     Playtest
@@ -1175,23 +1343,27 @@ const App = () => {
                   <button
                     disabled={isBusy}
                     onClick={saveDraft}
-                    className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                    className="cursor-pointer rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <IoSaveSharp className="mr-1 inline-block" />
                     Save
                   </button>
                   <button
                     disabled={isBusy}
-                    onClick={publishDraft}
-                    className="rounded-full bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
+                    onClick={isLoadedModPublished ? unpublishDraft : publishDraft}
+                    className={`cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                      isLoadedModPublished
+                        ? 'bg-amber-300 text-slate-950'
+                        : 'bg-emerald-400 text-slate-950'
+                    }`}
                   >
                     <IoRocketSharp className="mr-1 inline-block" />
-                    Publish
+                    {isLoadedModPublished ? 'Unpublish' : 'Publish'}
                   </button>
                   <button
-                    disabled={isBusy || !loadedDraftId}
+                    disabled={isBusy || !isLoadedModPublished}
                     onClick={shareDraft}
-                    className="rounded-full bg-orange-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50"
+                    className="cursor-pointer rounded-full bg-orange-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <IoShareOutline className="mr-1 inline-block" />
                     Share
@@ -1231,6 +1403,10 @@ const App = () => {
                       <DroppableInput
                         value={newStartingText}
                         onChange={setNewStartingText}
+                        onDropValue={(value) => {
+                          addStartingElement(value);
+                          setNewStartingText('');
+                        }}
                         onClear={
                           newStartingText
                             ? () => setNewStartingText('')
@@ -1248,7 +1424,7 @@ const App = () => {
                           addStartingElement(newStartingText);
                           setNewStartingText('');
                         }}
-                        className="rounded-r-lg border border-cyan-400 bg-cyan-400 px-2 py-1.5 text-slate-950"
+                        className="cursor-pointer rounded-r-lg border border-cyan-400 bg-cyan-400 px-2 py-1.5 text-slate-950"
                       >
                         <IoAddSharp size={20} />
                       </button>
@@ -1445,7 +1621,14 @@ const App = () => {
 
                     {filteredReactions.length === 0 && (
                       <div className="rounded-xl border border-dashed border-white/15 bg-white/4 p-6 text-center text-sm text-white/60">
-                        No reactions yet. Add one to make the mod playable.
+                        <div>No reactions yet. Add one to make the mod playable.</div>
+                        <button
+                          type="button"
+                          onClick={addReaction}
+                          className="mt-4 cursor-pointer rounded-full bg-cyan-400 px-4 py-2 font-bold text-slate-950"
+                        >
+                          Add First Reaction
+                        </button>
                       </div>
                     )}
                   </div>
