@@ -248,7 +248,7 @@ export const validateModDraft = (draft: {
 	}
 
 	if (draft.reactions.length === 0) {
-		warnings.push('The mod has no reactions yet.');
+		errors.push('Add at least one reaction to make the mod playable.');
 	}
 
 	return {

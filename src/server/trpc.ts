@@ -49,10 +49,12 @@ export const appRouter = t.router({
     get: publicProcedure
       .input(z.object({ modId: z.string().optional() }).optional())
       .query(async ({ input }) => {
-        const [count, username, userId] = await Promise.all([
+        const userId = context.userId;
+        const [count, username] = await Promise.all([
           countGet(),
-          reddit.getCurrentUsername(),
-          context.userId,
+          userId
+            ? reddit.getCurrentUsername().catch(() => undefined)
+            : Promise.resolve(undefined),
         ]);
 
         let resolvedRuleset;

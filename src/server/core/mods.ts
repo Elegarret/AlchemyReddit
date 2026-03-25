@@ -162,11 +162,22 @@ export const listModsForUser = async (userId: string) => {
   const items = await Promise.all(
     entries.map(async ({ member }) => {
       const draft = parseMod(await redis.get(getDraftKey(userId, member)));
+      const latest = await loadLatestMod(member);
+
+      if (draft && latest?.status === 'published') {
+        return serializeListItem({
+          ...draft,
+          status: 'published',
+          publishedAt: latest.publishedAt,
+          publishedHash: latest.publishedHash,
+          sharePostId: latest.sharePostId,
+        });
+      }
+
       if (draft) {
         return serializeListItem(draft);
       }
 
-      const latest = await loadLatestMod(member);
       return latest ? serializeListItem(latest) : null;
     })
   );

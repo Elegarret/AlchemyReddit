@@ -1,6 +1,6 @@
 import './index.css';
 import 'emoji-picker-element';
-import { showShareSheet, showToast } from '@devvit/web/client';
+import { navigateTo, showShareSheet, showToast } from '@devvit/web/client';
 import {
   StrictMode,
   type DragEvent,
@@ -27,6 +27,7 @@ import {
   DEFAULT_MOD_BG_COLOR_TOKEN,
   DEFAULT_MOD_FRAME_COLOR_TOKEN,
   getModElementClasses,
+  MOD_COLOR_TOKENS,
   MOD_COLOR_OPTIONS,
 } from './modding/colors';
 import {
@@ -363,17 +364,28 @@ const ColorPicker = ({
     MOD_COLOR_OPTIONS.find((opt) => opt.value === value) ||
     MOD_COLOR_OPTIONS[0]!;
   const isCustom = value.startsWith('#');
+  const activeDefinition =
+    MOD_COLOR_TOKENS[value] ?? MOD_COLOR_TOKENS[DEFAULT_MOD_BG_COLOR_TOKEN]!;
+  const framePreviewClass = !isCustom
+    ? activeDefinition.frameClass.replace('border-', 'bg-')
+    : undefined;
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`relative h-8 w-8 rounded-lg border-2 ${isCustom ? 'border-white/20' : activeOption.swatchClass} flex shrink-0 items-end justify-end overflow-hidden transition-opacity outline-none hover:opacity-90`}
+        className={`relative flex h-8 w-8 shrink-0 items-end justify-end overflow-hidden rounded-lg border-2 transition-opacity outline-none hover:opacity-90 ${
+          isCustom
+            ? 'border-white/20'
+            : type === 'bg'
+              ? activeOption.swatchClass
+              : `${framePreviewClass ?? 'bg-white/40'} border-white/20`
+        }`}
         style={
           isCustom
             ? type === 'bg'
               ? { backgroundColor: value }
-              : { backgroundColor: 'transparent', borderColor: value }
+              : { backgroundColor: value, borderColor: 'rgba(255,255,255,0.2)' }
             : undefined
         }
       >
@@ -645,6 +657,9 @@ const App = () => {
   const [reactionSearch, setReactionSearch] = useState('');
   const [newStartingText, setNewStartingText] = useState('');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [pendingRemoveModId, setPendingRemoveModId] = useState<string | null>(
+    null
+  );
 
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
   const [reactionText, setReactionText] = useState('');
@@ -826,18 +841,19 @@ const App = () => {
       const resolved = ensureElementInDraft(current, trimmed);
       return {
         ...resolved.draft,
-        startingElementIds: Array.from(
-          new Set([...resolved.draft.startingElementIds, resolved.elementId])
-        ),
+        startingElementIds: [
+          ...resolved.draft.startingElementIds,
+          resolved.elementId,
+        ],
       };
     });
   };
 
-  const removeStartingElement = (elementId: string) => {
+  const removeStartingElement = (indexToRemove: number) => {
     updateDraft((current) => ({
       ...current,
       startingElementIds: current.startingElementIds.filter(
-        (id) => id !== elementId
+        (_, index) => index !== indexToRemove
       ),
     }));
   };
@@ -924,14 +940,20 @@ const App = () => {
     }));
   };
 
+  const persistDraftSilently = async () => {
+    const saved = await trpc.mods.saveDraft.mutate({
+      ...draft,
+      ...(loadedDraftId ? { id: loadedDraftId } : {}),
+    });
+    setLoadedDraftId(saved.id);
+    return saved.id;
+  };
+
   const saveDraft = async () => {
     setIsBusy(true);
     try {
-      const saved = await trpc.mods.saveDraft.mutate({
-        ...draft,
-        ...(loadedDraftId ? { id: loadedDraftId } : {}),
-      });
-      setLoadedDraftId(saved.id);
+      const savedId = await persistDraftSilently();
+      setLoadedDraftId(savedId);
       showToast('Draft saved');
       await refreshLists();
     } catch (error) {
@@ -952,21 +974,17 @@ const App = () => {
 
     setIsBusy(true);
     try {
-      let modId = loadedDraftId;
-      if (!modId) {
-        const saved = await trpc.mods.saveDraft.mutate(draft);
-        modId = saved.id;
-        setLoadedDraftId(saved.id);
-      }
+      const modId = await persistDraftSilently();
 
       if (!modId) {
         throw new Error('Missing draft id');
       }
 
-      await trpc.mods.publish.mutate(modId);
+      const published = await trpc.mods.publish.mutate(modId);
       showToast('Realm published');
       setShareUrl(null);
       await refreshLists();
+      navigateTo(published.sharePost.url);
     } catch (error) {
       console.error(error);
       showToast(
@@ -1052,22 +1070,33 @@ const App = () => {
     }
   };
 
-  const playtestDraft = (event: MouseEvent<HTMLButtonElement>) => {
+  const playtestDraft = async (event: MouseEvent<HTMLButtonElement>) => {
     if (!validation.isValid) {
       showToast(validation.errors[0] ?? 'Fix validation errors first');
       return;
     }
 
-    localStorage.setItem(
-      PLAYTEST_RULESET_STORAGE_KEY,
-      JSON.stringify(
-        buildRulesetFromDraft({
-          ...draft,
-          ...(loadedDraftId ? { id: loadedDraftId } : {}),
-        })
-      )
-    );
-    openEntry(event.nativeEvent, 'game');
+    setIsBusy(true);
+    try {
+      const modId = await persistDraftSilently();
+      localStorage.setItem(
+        PLAYTEST_RULESET_STORAGE_KEY,
+        JSON.stringify(
+          buildRulesetFromDraft({
+            ...draft,
+            ...(modId ? { id: modId } : {}),
+          })
+        )
+      );
+      openEntry(event.nativeEvent, 'game');
+    } catch (error) {
+      console.error(error);
+      showToast(
+        error instanceof Error ? error.message : 'Failed to prepare playtest'
+      );
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const loadDraftFromServer = async (modId: string) => {
@@ -1089,6 +1118,7 @@ const App = () => {
       });
       setLoadedDraftId(loaded.id);
       setShareUrl(null);
+      setPendingRemoveModId(null);
       setEditorTargetModId(null);
       setTab('editor');
     } catch (error) {
@@ -1114,6 +1144,11 @@ const App = () => {
   }, [loadedDraftId]);
 
   const removeMyMod = async (modId: string) => {
+    if (pendingRemoveModId !== modId) {
+      setPendingRemoveModId(modId);
+      return;
+    }
+
     setIsBusy(true);
     try {
       await trpc.mods.remove.mutate(modId);
@@ -1123,10 +1158,12 @@ const App = () => {
         setShareUrl(null);
         setEditorTargetModId(null);
       }
+      setPendingRemoveModId(null);
       await refreshLists();
       showToast('Realm removed');
     } catch (error) {
       console.error(error);
+      setPendingRemoveModId(null);
       showToast(
         error instanceof Error ? error.message : 'Failed to remove realm'
       );
@@ -1277,17 +1314,19 @@ const App = () => {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => loadDraftFromServer(mod.id)}
-                    className="rounded-full bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950"
+                    className="cursor-pointer rounded-full bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950"
                   >
                     Edit
                   </button>
                   <button
                     disabled={isBusy}
                     onClick={() => removeMyMod(mod.id)}
-                    className="rounded-full bg-rose-500/85 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                    className="cursor-pointer rounded-full bg-rose-500/85 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <IoTrashSharp className="mr-1 inline-block" />
-                    Remove
+                    {pendingRemoveModId === mod.id
+                      ? 'Press Again To Confirm'
+                      : 'Remove'}
                   </button>
                 </div>
               </div>
@@ -1368,6 +1407,17 @@ const App = () => {
                     <IoShareOutline className="mr-1 inline-block" />
                     Share
                   </button>
+                  <button
+                    disabled={isBusy || !loadedSharePostUrl}
+                    onClick={() => {
+                      if (loadedSharePostUrl) {
+                        navigateTo(loadedSharePostUrl);
+                      }
+                    }}
+                    className="cursor-pointer rounded-full bg-cyan-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Go To Mod&apos;s Page
+                  </button>
                 </div>
               </div>
 
@@ -1382,16 +1432,16 @@ const App = () => {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {draft.startingElementIds.map((id) => {
+                    {draft.startingElementIds.map((id, index) => {
                       const el = draft.elements.find((e) => e.id === id);
                       return el ? (
                         <div
-                          key={`starting-${id}`}
+                          key={`starting-${id}-${index}`}
                           className="flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-400/18 py-1 pr-1 pl-2 text-sm font-bold text-emerald-50"
                         >
                           <span>{el.name}</span>
                           <button
-                            onClick={() => removeStartingElement(id)}
+                            onClick={() => removeStartingElement(index)}
                             className="ml-0.5 text-emerald-200/70 hover:text-white"
                           >
                             <IoCloseSharp size={16} />

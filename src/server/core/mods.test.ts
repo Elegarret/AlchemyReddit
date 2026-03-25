@@ -62,6 +62,11 @@ test('publishing creates a share post and unpublishing returns the mod to drafts
   expect(published.mod.sharePostId).toBe(sharePostId);
   expect(published.sharePost.url).toContain('/comments/');
 
+  const mineAfterPublish = await listModsForUser(userId);
+  const modAfterPublish = mineAfterPublish.find((mod) => mod.id === saved.id);
+  expect(modAfterPublish?.status).toBe('published');
+  expect(modAfterPublish?.sharePostId).toBe(sharePostId);
+
   const catalogAfterPublish = await listCatalogMods();
   expect(catalogAfterPublish.map((mod) => mod.id)).toContain(saved.id);
 

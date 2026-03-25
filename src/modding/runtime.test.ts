@@ -32,6 +32,20 @@ describe('validateModDraft', () => {
     expect(result.errors).toContain('A mod description is required.');
   });
 
+  it('treats missing reactions as a blocking validation error', () => {
+    const result = validateModDraft({
+      title: 'Reactionless Realm',
+      summary: 'This realm intentionally has no reactions.',
+      startingElementIds: ['air', 'fire'],
+      elements: [makeElement('air', 'Air'), makeElement('fire', 'Fire')],
+      reactions: [],
+    });
+
+    expect(result.errors).toContain(
+      'Add at least one reaction to make the mod playable.'
+    );
+  });
+
   it('reports unreachable elements by name instead of stale generated ids', () => {
     const result = validateModDraft({
       title: 'Crystal Realm',
