@@ -12,17 +12,20 @@ import { saveDraftInputSchema } from '../modding/types';
  */
 import { getDiscoveredElements, saveDiscoveredElements } from './core/progress';
 import {
-	createSharePostForMod,
-	getEditableModForUser,
-	getPublishedMod,
-	hidePublishedMod,
-	listCatalogMods,
-	listModsForUser,
-	publishDraftForUser,
-	resolveRulesetForModId,
-	resolveRulesetFromPostData,
-	saveDraftForUser,
-	validateDraftInput,
+  createSharePostForMod,
+  getEditableModForUser,
+  getPublishedMod,
+  getPublishedModListItem,
+  hidePublishedMod,
+  listCatalogMods,
+  listModsForUser,
+  publishDraftForUser,
+  recordUniqueModPlayer,
+  removeModForUser,
+  resolveRulesetForModId,
+  resolveRulesetFromPostData,
+  saveDraftForUser,
+  validateDraftInput,
 } from './core/mods';
 
 /**
@@ -30,7 +33,7 @@ import {
  * Should be done only once per backend!
  */
 const t = initTRPC.context<Context>().create({
-	transformer,
+  transformer,
 });
 
 /**
@@ -41,136 +44,168 @@ export const router = t.router;
 export const publicProcedure = t.procedure;
 
 export const appRouter = t.router({
-	init: t.router({
-		get: publicProcedure
-			.input(z.object({ modId: z.string().optional() }).optional())
-			.query(async ({ input }) => {
-				const [count, username, userId] = await Promise.all([
-					countGet(),
-					reddit.getCurrentUsername(),
-					context.userId,
-				]);
+  init: t.router({
+    get: publicProcedure
+      .input(z.object({ modId: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const [count, username, userId] = await Promise.all([
+          countGet(),
+          reddit.getCurrentUsername(),
+          context.userId,
+        ]);
 
-				let resolvedRuleset;
-				if (input?.modId) {
-					resolvedRuleset = await resolveRulesetForModId(input.modId);
-				} else {
-					resolvedRuleset = await resolveRulesetFromPostData();
-				}
+        let resolvedRuleset;
+        if (input?.modId) {
+          resolvedRuleset = await resolveRulesetForModId(input.modId);
+        } else {
+          resolvedRuleset = await resolveRulesetFromPostData();
+        }
 
-				const redditDiscovered = userId
-					? await getDiscoveredElements(userId, resolvedRuleset.progressScope)
-					: [];
+        if (userId && resolvedRuleset.modId) {
+          await recordUniqueModPlayer(resolvedRuleset.modId, userId);
+        }
 
-				return {
-					count,
-					postId: context.postId,
-					username,
-					redditDiscovered,
-					activeRuleset: resolvedRuleset.ruleset,
-					progressScope: resolvedRuleset.progressScope,
-					rulesetUnavailableReason: resolvedRuleset.unavailableReason,
-				};
-			}),
-	}),
-	progress: t.router({
-		save: publicProcedure
-			.input(z.object({ discovered: z.array(z.string()), progressScope: z.string().min(1).max(128) }))
-			.mutation(async ({ input }) => {
-				const userId = context.userId;
-				if (userId) {
-					await saveDiscoveredElements(userId, input.progressScope, input.discovered);
-				}
-				return { success: true };
-			}),
-	}),
-	mods: t.router({
-		listCatalog: publicProcedure.query(async () => await listCatalogMods()),
-		listMine: publicProcedure.query(async () => {
-			if (!context.userId) {
-				return [];
-			}
-			return await listModsForUser(context.userId);
-		}),
-		getDraft: publicProcedure
-			.input(z.string().min(1).max(64))
-			.query(async ({ input }) => {
-				if (!context.userId) {
-					throw new Error('You must be logged in.');
-				}
-				return await getEditableModForUser(context.userId, input);
-			}),
-		getPublished: publicProcedure
-			.input(z.string().min(1).max(64))
-			.query(async ({ input }) => await getPublishedMod(input)),
-		validateDraft: publicProcedure
-			.input(saveDraftInputSchema)
-			.mutation(async ({ input }) => validateDraftInput(input)),
-		saveDraft: publicProcedure
-			.input(saveDraftInputSchema)
-			.mutation(async ({ input }) => {
-				if (!context.userId) {
-					throw new Error('You must be logged in.');
-				}
+        const [redditDiscovered, activeModListing] = await Promise.all([
+          userId
+            ? getDiscoveredElements(userId, resolvedRuleset.progressScope)
+            : Promise.resolve([]),
+          resolvedRuleset.modId
+            ? getPublishedModListItem(resolvedRuleset.modId)
+            : Promise.resolve(null),
+        ]);
 
-				const username = await reddit.getCurrentUsername();
-				if (!username) {
-					throw new Error('You must be logged in.');
-				}
+        return {
+          count,
+          postId: context.postId,
+          username,
+          redditDiscovered,
+          activeRuleset: resolvedRuleset.ruleset,
+          activeModListing,
+          progressScope: resolvedRuleset.progressScope,
+          rulesetUnavailableReason: resolvedRuleset.unavailableReason,
+        };
+      }),
+  }),
+  progress: t.router({
+    save: publicProcedure
+      .input(
+        z.object({
+          discovered: z.array(z.string()),
+          progressScope: z.string().min(1).max(128),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const userId = context.userId;
+        if (userId) {
+          await saveDiscoveredElements(
+            userId,
+            input.progressScope,
+            input.discovered
+          );
+        }
+        return { success: true };
+      }),
+  }),
+  mods: t.router({
+    listCatalog: publicProcedure.query(async () => await listCatalogMods()),
+    listMine: publicProcedure.query(async () => {
+      if (!context.userId) {
+        return [];
+      }
+      return await listModsForUser(context.userId);
+    }),
+    getDraft: publicProcedure
+      .input(z.string().min(1).max(64))
+      .query(async ({ input }) => {
+        if (!context.userId) {
+          throw new Error('You must be logged in.');
+        }
+        return await getEditableModForUser(context.userId, input);
+      }),
+    getPublished: publicProcedure
+      .input(z.string().min(1).max(64))
+      .query(async ({ input }) => await getPublishedMod(input)),
+    validateDraft: publicProcedure
+      .input(saveDraftInputSchema)
+      .mutation(async ({ input }) => validateDraftInput(input)),
+    saveDraft: publicProcedure
+      .input(saveDraftInputSchema)
+      .mutation(async ({ input }) => {
+        if (!context.userId) {
+          throw new Error('You must be logged in.');
+        }
 
-				return await saveDraftForUser(context.userId, username, input);
-			}),
-		publish: publicProcedure
-			.input(z.string().min(1).max(64))
-			.mutation(async ({ input }) => {
-				if (!context.userId) {
-					throw new Error('You must be logged in.');
-				}
-				return await publishDraftForUser(context.userId, input);
-			}),
-		createSharePost: publicProcedure
-			.input(z.string().min(1).max(64))
-			.mutation(async ({ input }) => {
-				if (!context.userId) {
-					throw new Error('You must be logged in.');
-				}
-				return await createSharePostForMod(context.userId, input);
-			}),
-		hide: publicProcedure
-			.input(z.string().min(1).max(64))
-			.mutation(async ({ input }) => {
-				if (!context.userId) {
-					throw new Error('You must be logged in.');
-				}
+        const username = await reddit.getCurrentUsername();
+        if (!username) {
+          throw new Error('You must be logged in.');
+        }
 
-				return await hidePublishedMod(context.userId, await reddit.getCurrentUsername(), input);
-			}),
-	}),
-	counter: t.router({
-		increment: publicProcedure
-			.input(z.number().optional())
-			.mutation(async ({ input }) => {
-				const { postId } = context;
-				return {
-					count: await countIncrement(input),
-					postId,
-					type: 'increment',
-				};
-			}),
-		decrement: publicProcedure
-			.input(z.number().optional())
-			.mutation(async ({ input }) => {
-				const { postId } = context;
-				return {
-					count: await countDecrement(input),
-					postId,
-					type: 'decrement',
-				};
-			}),
-		get: publicProcedure.query(async () => {
-			return await countGet();
-		}),
-	}),
+        return await saveDraftForUser(context.userId, username, input);
+      }),
+    publish: publicProcedure
+      .input(z.string().min(1).max(64))
+      .mutation(async ({ input }) => {
+        if (!context.userId) {
+          throw new Error('You must be logged in.');
+        }
+        return await publishDraftForUser(context.userId, input);
+      }),
+    createSharePost: publicProcedure
+      .input(z.string().min(1).max(64))
+      .mutation(async ({ input }) => {
+        if (!context.userId) {
+          throw new Error('You must be logged in.');
+        }
+        return await createSharePostForMod(context.userId, input);
+      }),
+    hide: publicProcedure
+      .input(z.string().min(1).max(64))
+      .mutation(async ({ input }) => {
+        if (!context.userId) {
+          throw new Error('You must be logged in.');
+        }
+
+        return await hidePublishedMod(
+          context.userId,
+          await reddit.getCurrentUsername(),
+          input
+        );
+      }),
+    remove: publicProcedure
+      .input(z.string().min(1).max(64))
+      .mutation(async ({ input }) => {
+        if (!context.userId) {
+          throw new Error('You must be logged in.');
+        }
+
+        return await removeModForUser(context.userId, input);
+      }),
+  }),
+  counter: t.router({
+    increment: publicProcedure
+      .input(z.number().optional())
+      .mutation(async ({ input }) => {
+        const { postId } = context;
+        return {
+          count: await countIncrement(input),
+          postId,
+          type: 'increment',
+        };
+      }),
+    decrement: publicProcedure
+      .input(z.number().optional())
+      .mutation(async ({ input }) => {
+        const { postId } = context;
+        return {
+          count: await countDecrement(input),
+          postId,
+          type: 'decrement',
+        };
+      }),
+    get: publicProcedure.query(async () => {
+      return await countGet();
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

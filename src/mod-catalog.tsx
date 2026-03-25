@@ -1,163 +1,262 @@
 import './index.css';
 
-import { StrictMode, useEffect, useState, useMemo } from 'react';
+import { navigateTo, requestExpandedMode } from '@devvit/web/client';
+import {
+  StrictMode,
+  useEffect,
+  useState,
+  useMemo,
+  type MouseEvent,
+} from 'react';
 import { createRoot } from 'react-dom/client';
+import { IoEyeSharp, IoPlaySharp, IoThumbsUpSharp } from 'react-icons/io5';
+import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
 import type { ModListItem } from './modding/types';
 
 export const Catalog = () => {
-	const [mods, setMods] = useState<ModListItem[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [searchQuery, setSearchQuery] = useState('');
-	const [allPage, setAllPage] = useState(0);
-	const ALL_PAGE_SIZE = 15;
+  const [mods, setMods] = useState<ModListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allPage, setAllPage] = useState(0);
+  const ALL_PAGE_SIZE = 15;
 
-	useEffect(() => {
-		const fetchMods = async () => {
-			try {
-				const response = await trpc.mods.listCatalog.query();
-				setMods(response);
-			} catch (e) {
-				console.error('Failed to load mods catalog', e);
-			} finally {
-				setLoading(false);
-			}
-		};
+  useEffect(() => {
+    const fetchMods = async () => {
+      try {
+        const response = await trpc.mods.listCatalog.query();
+        setMods(response);
+      } catch (e) {
+        console.error('Failed to load mods catalog', e);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-		fetchMods();
-	}, []);
+    void fetchMods();
+  }, []);
 
-	const sortedByUpvotes = useMemo(() => {
-		return [...mods].sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0)).slice(0, 10);
-	}, [mods]);
+  const sortedByUpvotes = useMemo(() => {
+    return [...mods]
+      .sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0))
+      .slice(0, 10);
+  }, [mods]);
 
-	const sortedByRecent = useMemo(() => {
-		return [...mods].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 10);
-	}, [mods]);
+  const sortedByRecent = useMemo(() => {
+    return [...mods]
+      .sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
+      .slice(0, 10);
+  }, [mods]);
 
-	const allModsFiltered = useMemo(() => {
-		if (!searchQuery) return mods;
-		return mods.filter(m => m.title.toLowerCase().includes(searchQuery.toLowerCase()) || m.ownerUsername.toLowerCase().includes(searchQuery.toLowerCase()));
-	}, [mods, searchQuery]);
+  const allModsFiltered = useMemo(() => {
+    if (!searchQuery) return mods;
+    return mods.filter(
+      (m) =>
+        m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.ownerUsername.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [mods, searchQuery]);
 
-	const allModsPage = useMemo(() => {
-		return allModsFiltered.slice(allPage * ALL_PAGE_SIZE, (allPage + 1) * ALL_PAGE_SIZE);
-	}, [allModsFiltered, allPage]);
+  const allModsPage = useMemo(() => {
+    return allModsFiltered.slice(
+      allPage * ALL_PAGE_SIZE,
+      (allPage + 1) * ALL_PAGE_SIZE
+    );
+  }, [allModsFiltered, allPage]);
 
-	const totalPages = Math.ceil(allModsFiltered.length / ALL_PAGE_SIZE);
+  const totalPages = Math.ceil(allModsFiltered.length / ALL_PAGE_SIZE);
 
-	const renderModWidget = (mod: ModListItem) => {
-		const url = mod.sharePostId ? `https://www.reddit.com/comments/${mod.sharePostId.replace('t3_', '')}` : '#';
-		return (
-			<div key={mod.id} className="bg-black/40 backdrop-blur-sm border border-white/10 rounded-xl p-3 flex flex-row items-center gap-3 transition-colors hover:bg-black/50 shadow-md">
-				<div className="flex-1 min-w-0">
-					<h3 className="font-black text-base text-white truncate drop-shadow-sm">{mod.title}</h3>
-					<div className="flex items-center gap-2 mt-0.5">
-						<span className="text-[10px] font-medium text-cyan-300 truncate">u/{mod.ownerUsername}</span>
-						<span className="text-[10px] font-medium text-orange-400">👍 {mod.upvotes || 0}</span>
-					</div>
-					<p className="text-[11px] text-slate-300 leading-tight mt-1 opacity-90 line-clamp-2">
-						{mod.summary || 'No description provided.'}
-					</p>
-				</div>
-				<a
-					href={url}
-					target="_blank"
-					className="flex-shrink-0 cursor-pointer rounded-full bg-gradient-to-br from-[#ff4500] to-[#ff6600] w-10 h-10 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 transition-transform hover:scale-105 active:scale-95"
-					title="Play Mod Post"
-				>
-					▶
-				</a>
-			</div>
-		);
-	};
+  const getSharePostUrl = (mod: ModListItem) => {
+    if (!mod.sharePostId) {
+      return null;
+    }
 
-	return (
-		<div className="flex min-h-screen flex-col items-center bg-table-gradient px-3 py-6 overflow-y-auto w-full">
-			<div className="flex flex-col items-center gap-1 mb-6 text-center w-full max-w-2xl px-2">
-				<h1 className="text-3xl font-black text-[#ff4500] tracking-tight drop-shadow-md uppercase">Users Realms</h1>
-				<div className="flex gap-2 mt-2">
-					<button className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-1.5 text-cyan-50 font-bold text-xs shadow-sm hover:bg-cyan-400/20" onClick={() => window.location.reload()}>
-						Refresh Realms
-					</button>
-				</div>
-			</div>
+    return `https://www.reddit.com/comments/${mod.sharePostId.replace('t3_', '')}`;
+  };
 
-			<div className="w-full max-w-2xl flex flex-col gap-6 pb-12 px-2">
-				{loading ? (
-					<div className="text-center font-bold text-white/50 py-8 animate-pulse text-sm">Loading realms...</div>
-				) : mods.length === 0 ? (
-					<div className="text-center text-white/50 bg-black/20 p-6 rounded-xl border border-white/10 text-sm">No realms published yet.</div>
-				) : (
-					<>
-						{sortedByUpvotes.length > 0 && (
-							<div className="flex flex-col gap-3">
-								<h2 className="text-lg font-bold text-amber-400 drop-shadow-sm px-1">💎 Best Realms</h2>
-								<div className="grid grid-cols-2 gap-2 sm:gap-3">
-									{sortedByUpvotes.map(renderModWidget)}
-								</div>
-							</div>
-						)}
+  const openRealmPost = (url: string) => {
+    navigateTo(url);
+  };
 
-						{sortedByRecent.length > 0 && (
-							<div className="flex flex-col gap-3">
-								<h2 className="text-lg font-bold text-cyan-300 drop-shadow-sm px-1">✨ Recent Realms</h2>
-								<div className="grid grid-cols-2 gap-2 sm:gap-3">
-									{sortedByRecent.map(renderModWidget)}
-								</div>
-							</div>
-						)}
+  const playPublishedMod = (
+    event: MouseEvent<HTMLButtonElement>,
+    modId: string
+  ) => {
+    localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+    localStorage.setItem('override-mod-id', modId);
+    requestExpandedMode(event.nativeEvent, 'game');
+  };
 
-						<div className="flex flex-col gap-3 mt-4 border-t border-white/10 pt-6">
-							<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
-								<h2 className="text-lg font-bold text-white drop-shadow-sm">🌍 All Realms</h2>
-								<input 
-									type="text" 
-									placeholder="Search realms..." 
-									value={searchQuery}
-									onChange={(e) => { setSearchQuery(e.target.value); setAllPage(0); }}
-									className="px-3 py-1.5 rounded-lg bg-black/40 border border-white/20 text-white text-sm focus:outline-none focus:border-cyan-400 transition-colors w-full sm:w-auto outline-none"
-								/>
-							</div>
-							
-							{allModsFiltered.length === 0 ? (
-								<div className="text-center text-white/50 py-4 text-sm">No realms found matching "{searchQuery}"</div>
-							) : (
-								<>
-									<div className="grid grid-cols-2 gap-2 sm:gap-3">
-										{allModsPage.map(renderModWidget)}
-									</div>
-									{totalPages > 1 && (
-										<div className="flex justify-center items-center gap-4 mt-4">
-											<button 
-												disabled={allPage === 0}
-												onClick={() => setAllPage(p => p - 1)}
-												className="px-4 py-1.5 rounded-lg bg-slate-800 disabled:opacity-50 text-white font-bold text-sm cursor-pointer"
-											>
-												Prev
-											</button>
-											<span className="text-slate-400 text-xs font-medium">Page {allPage + 1} of {totalPages}</span>
-											<button 
-												disabled={allPage === totalPages - 1}
-												onClick={() => setAllPage(p => p + 1)}
-												className="px-4 py-1.5 rounded-lg bg-slate-800 disabled:opacity-50 text-white font-bold text-sm cursor-pointer"
-											>
-												Next
-											</button>
-										</div>
-									)}
-								</>
-							)}
-						</div>
-					</>
-				)}
-			</div>
-		</div>
-	);
+  const openEditor = (event: MouseEvent<HTMLButtonElement>) => {
+    requestExpandedMode(event.nativeEvent, 'mod-editor');
+  };
+
+  const renderModWidget = (mod: ModListItem) => {
+    const url = getSharePostUrl(mod);
+    const titleClasses =
+      'block w-full border-b border-white/10 px-3 py-2 text-center text-sm font-black text-white transition-colors';
+
+    return (
+      <div
+        key={mod.id}
+        className="overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-md backdrop-blur-sm transition-colors hover:bg-black/50"
+      >
+        {url ? (
+          <button
+            type="button"
+            onClick={() => openRealmPost(url)}
+            className={`${titleClasses} hover:bg-white/5`}
+          >
+            <span className="block truncate drop-shadow-sm">{mod.title}</span>
+          </button>
+        ) : (
+          <div className={titleClasses}>
+            <span className="block truncate drop-shadow-sm">{mod.title}</span>
+          </div>
+        )}
+
+        <div className="flex min-h-[44px] items-stretch">
+          <div className="flex min-w-0 flex-1 flex-col justify-center px-1.5 py-0.5">
+            <p className="line-clamp-2 text-[11px] leading-tight text-slate-300 opacity-90">
+              {mod.summary || 'No description provided.'}
+            </p>
+            <div className="mt-1 flex items-center gap-3 text-[11px] font-bold">
+              <div className="flex items-center gap-1 text-orange-300">
+                <IoThumbsUpSharp className="text-[11px]" />
+                <span>{mod.upvotes || 0}</span>
+              </div>
+              <div className="flex items-center gap-1 text-cyan-200/70">
+                <IoEyeSharp className="text-[11px]" />
+                <span>{mod.playerCount || 0}</span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={(event) => playPublishedMod(event, mod.id)}
+            className="flex w-7 flex-shrink-0 items-center justify-center border-l border-white/10 bg-gradient-to-b from-[#ff5a1f] to-[#ff4500] text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
+            title="Play realm"
+          >
+            <IoPlaySharp className="text-[22px]" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-table-gradient flex min-h-screen w-full flex-col items-center overflow-y-auto py-6 sm:px-3">
+      <div className="mb-6 flex w-full max-w-5xl flex-col items-center gap-1 text-center sm:px-2">
+        <h1 className="text-3xl font-black tracking-tight text-[#ff4500] uppercase drop-shadow-md">
+          Users Realms
+        </h1>
+        <button
+          type="button"
+          onClick={openEditor}
+          className="mt-3 rounded-full border border-cyan-300/30 bg-cyan-400/12 px-5 py-2 text-sm font-black text-cyan-50 transition-all hover:scale-[1.02] hover:bg-cyan-400/20 active:scale-[0.98]"
+        >
+          Create My Realm!
+        </button>
+      </div>
+
+      <div className="flex w-full max-w-5xl flex-col gap-6 pb-12 sm:px-2">
+        {loading ? (
+          <div className="animate-pulse py-8 text-center text-sm font-bold text-white/50">
+            Loading realms...
+          </div>
+        ) : mods.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-black/20 p-6 text-center text-sm text-white/50">
+            No realms published yet.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2 sm:gap-4">
+              {sortedByUpvotes.length > 0 && (
+                <div className="flex min-w-0 flex-col gap-3">
+                  <h2 className="px-1 text-center text-lg font-black text-amber-300 uppercase drop-shadow-sm">
+                    Best
+                  </h2>
+                  <div className="flex flex-col gap-1.5 sm:gap-3">
+                    {sortedByUpvotes.map(renderModWidget)}
+                  </div>
+                </div>
+              )}
+
+              {sortedByRecent.length > 0 && (
+                <div className="flex min-w-0 flex-col gap-3">
+                  <h2 className="px-1 text-center text-lg font-black text-cyan-300 uppercase drop-shadow-sm">
+                    New
+                  </h2>
+                  <div className="flex flex-col gap-1.5 sm:gap-3">
+                    {sortedByRecent.map(renderModWidget)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-6">
+              <div className="flex flex-col items-center gap-2 px-1">
+                <h2 className="text-lg font-black text-white uppercase drop-shadow-sm">
+                  All
+                </h2>
+                <input
+                  type="text"
+                  placeholder="Search realms..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setAllPage(0);
+                  }}
+                  className="w-full rounded-lg border border-white/20 bg-black/40 px-3 py-1.5 text-sm text-white transition-colors outline-none focus:border-cyan-400 sm:max-w-sm"
+                />
+              </div>
+
+              {allModsFiltered.length === 0 ? (
+                <div className="py-4 text-center text-sm text-white/50">
+                  No realms found matching "{searchQuery}"
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3">
+                    {allModsPage.map(renderModWidget)}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="mt-4 flex items-center justify-center gap-4">
+                      <button
+                        disabled={allPage === 0}
+                        onClick={() => setAllPage((p) => p - 1)}
+                        className="cursor-pointer rounded-lg bg-slate-800 px-4 py-1.5 text-sm font-bold text-white disabled:opacity-50"
+                      >
+                        Prev
+                      </button>
+                      <span className="text-xs font-medium text-slate-400">
+                        Page {allPage + 1} of {totalPages}
+                      </span>
+                      <button
+                        disabled={allPage === totalPages - 1}
+                        onClick={() => setAllPage((p) => p + 1)}
+                        className="cursor-pointer rounded-lg bg-slate-800 px-4 py-1.5 text-sm font-bold text-white disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 };
 
 createRoot(document.getElementById('root')!).render(
-	<StrictMode>
-		<Catalog />
-	</StrictMode>
+  <StrictMode>
+    <Catalog />
+  </StrictMode>
 );

@@ -10,7 +10,7 @@ menu.post('/post-create', async (c) => {
 
     return c.json<UiResponse>(
       {
-        navigateTo: `https://reddit.com/comments/${post.id}`,
+        navigateTo: post.url,
       },
       200
     );
@@ -31,7 +31,7 @@ menu.post('/catalog-create', async (c) => {
 
     return c.json<UiResponse>(
       {
-        navigateTo: `https://reddit.com/comments/${post.id}`,
+        navigateTo: post.url,
       },
       200
     );

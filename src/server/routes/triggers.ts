@@ -15,7 +15,7 @@ triggers.post('/on-app-install', async (c) => {
     return c.json<TriggerResponse>(
       {
         status: 'success',
-        message: `Post created in subreddit ${context.subredditName} with id ${post.id} (trigger: ${input.type})`,
+        message: `Post created in subreddit ${context.subredditName} at ${post.url} (trigger: ${input.type})`,
       },
       200
     );
