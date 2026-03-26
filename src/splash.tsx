@@ -49,7 +49,7 @@ export const Splash = () => {
 	}, []);
 
 	return (
-		<div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-table-gradient">
+		<div className="realm-page flex min-h-screen flex-col items-center justify-center gap-6 overflow-hidden">
 			<div className="relative w-48 h-48 mt-4 flex items-center justify-center">
 				{/* Orbiting elements */}
 				<div className="absolute flex flex-col items-center animate-orbit" style={{ animationDelay: '0s' }}>
@@ -73,31 +73,31 @@ export const Splash = () => {
 			</div>
 
 			<div className="flex flex-col items-center gap-2 mt-4 text-center">
-				<h1 className="text-4xl font-black text-primary tracking-tight drop-shadow-md">Alchemy</h1>
+				<h1 className="catalog-title-font text-4xl font-black text-primary tracking-tight drop-shadow-md">Alchemy</h1>
 				<p className="text-secondary font-medium px-4">Combine elements to discover the world!</p>
 				{progress && (
-					<div className="mt-2 px-4 py-1.5 bg-black/20 backdrop-blur-sm rounded-full border border-white/10">
-						<span className="text-sm font-bold text-orange-400">Progress: {progress.discovered}/{progress.total}</span>
+					<div className="realm-panel-soft mt-2 rounded-full px-4 py-1.5 backdrop-blur-sm">
+						<span className="catalog-title-font text-sm font-bold realm-text-ink">Progress: {progress.discovered}/{progress.total}</span>
 					</div>
 				)}
 			</div>
 
 			<div className="mt-6 flex w-full max-w-sm flex-col gap-3 px-4">
 				<button
-					className="cursor-pointer rounded-full bg-[#ff4500] px-10 py-4 text-white font-bold text-lg shadow-xl transition-all hover:scale-105 active:scale-95 hover:bg-[#ff5500] ring-4 ring-orange-500/20 animate-pulsate"
+					className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-10 py-4 text-lg font-bold shadow-xl transition-all hover:scale-105 active:scale-95 animate-pulsate"
 					onClick={(e) => requestExpandedMode(e.nativeEvent, 'game')}
 				>
 					{progress ? 'Continue discovery' : 'Play Now'}
 				</button>
 				<button
-					className="cursor-pointer rounded-full border border-cyan-300/30 bg-cyan-400/12 px-10 py-4 text-cyan-50 font-bold text-lg shadow-xl transition-all hover:scale-105 active:scale-95 hover:bg-cyan-400/20"
+					className="realm-button-primary catalog-title-font cursor-pointer rounded-full px-10 py-4 text-lg font-bold shadow-xl transition-all hover:scale-105 active:scale-95"
 					onClick={(e) => requestExpandedMode(e.nativeEvent, 'mod-editor')}
 				>
 					Create a Mod
 				</button>
 			</div>
 
-			<div className="absolute bottom-4 right-4 text-[10px] font-mono text-white/20 select-none tracking-wider uppercase">
+			<div className="realm-text-muted absolute bottom-4 right-4 text-[10px] font-mono select-none tracking-wider uppercase">
 				Build {__BUILD_NUMBER__}
 			</div>
 		</div>

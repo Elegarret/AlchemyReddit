@@ -260,7 +260,7 @@ const EmojiDropdown = ({
             }, 50);
           }
         }}
-        className="flex h-full w-full cursor-pointer items-center justify-center bg-transparent pb-0.5 text-[26px] font-black text-white/90 outline-none hover:bg-white/10"
+        className="realm-text-ink flex h-full w-full cursor-pointer items-center justify-center bg-transparent pb-0.5 text-[26px] font-black outline-none hover:bg-white/10"
       >
         {emoji}
       </button>
@@ -327,7 +327,7 @@ const ElementPreview = ({
           onChange={onChangeEmoji}
         />
       ) : (
-        <div className="flex flex-1 items-center justify-center pb-0.5 text-[26px] font-black text-white/90">
+        <div className="realm-text-ink flex flex-1 items-center justify-center pb-0.5 text-[26px] font-black">
           {element.emoji}
         </div>
       )}
@@ -395,9 +395,9 @@ const ColorPicker = ({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 z-50 mt-2 w-40 rounded-xl border border-white/10 bg-slate-900 p-2 shadow-2xl">
+        <div className="realm-panel absolute top-full right-0 z-50 mt-2 w-40 rounded-xl p-2 shadow-2xl">
           <div className="mb-2 flex items-center justify-between px-1">
-            <div className="text-[10px] font-bold tracking-widest text-white/50 uppercase">
+            <div className="catalog-title-font realm-text-muted text-[10px] font-bold tracking-widest uppercase">
               {type} Color
             </div>
             <div className="relative h-4 w-4 overflow-hidden rounded border border-white/20 shadow-sm">
@@ -422,7 +422,7 @@ const ColorPicker = ({
                 <div
                   className={`h-4 w-4 rounded-sm border ${option.swatchClass}`}
                 />
-                <span className="text-white/80">{option.label}</span>
+                <span className="realm-text-soft">{option.label}</span>
               </button>
             ))}
           </div>
@@ -495,7 +495,7 @@ const DroppableInput = ({
         <button
           type="button"
           onClick={onClear}
-          className="absolute right-1.5 shrink-0 rounded-md bg-slate-800/50 p-0.5 text-white/40 hover:text-white/80"
+          className="realm-button-muted absolute right-1.5 shrink-0 rounded-md p-0.5 text-[10px]"
         >
           <IoCloseSharp size={12} />
         </button>
@@ -575,7 +575,7 @@ const ReactionWidget = ({
   };
 
   return (
-    <div className="flex flex-col gap-2 overflow-hidden rounded-xl border border-white/10 bg-black/20 p-2">
+    <div className="realm-panel-soft flex flex-col gap-2 overflow-hidden rounded-xl p-2">
       <div className="flex w-full flex-nowrap items-center gap-1.5">
         <DroppableInput
           value={leftText}
@@ -587,9 +587,9 @@ const ReactionWidget = ({
           }}
           onEnter={() => commit()}
           placeholder="A"
-          className="border border-white/10 bg-slate-950/50"
+          className="realm-input border"
         />
-        <div className="shrink-0 text-center font-black text-cyan-200">+</div>
+        <div className="catalog-title-font realm-text-ink shrink-0 text-center font-black">+</div>
         <DroppableInput
           value={rightText}
           onChange={setRightText}
@@ -600,11 +600,11 @@ const ReactionWidget = ({
           }}
           onEnter={() => commit()}
           placeholder="B"
-          className="border border-white/10 bg-slate-950/50"
+          className="realm-input border"
         />
         <button
           onClick={() => onDelete(index)}
-          className="ml-1 shrink-0 rounded bg-white/10 p-1 text-white/70 hover:bg-rose-500/20 hover:text-rose-300"
+          className="realm-button-muted ml-1 shrink-0 rounded p-1 hover:bg-rose-500/20 hover:text-rose-300"
         >
           <IoCloseSharp size={16} />
         </button>
@@ -630,7 +630,7 @@ const ReactionWidget = ({
               }
             }}
             placeholder={`Result ${outputIndex + 1}`}
-            className="min-w-[6rem] border border-white/10 bg-slate-950/50"
+            className="realm-input min-w-[6rem] border"
           />
         ))}
         <button
@@ -638,7 +638,7 @@ const ReactionWidget = ({
             setOutputTexts((current) => [...current, '']);
             setPendingFocusIndex(outputTexts.length);
           }}
-          className="shrink-0 rounded-lg bg-cyan-400 p-1 text-slate-950"
+          className="realm-button-accent shrink-0 rounded-lg p-1"
         >
           <IoAddSharp size={16} />
         </button>
@@ -1200,7 +1200,7 @@ const App = () => {
   });
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#17304f_0%,#0b1424_46%,#060a12_100%)] text-white">
+    <div className="realm-page min-h-screen">
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-4 sm:px-6">
         <datalist id={ELEMENT_DATALIST_ID}>
           {draft.elements.map((element) => (
@@ -1214,24 +1214,24 @@ const App = () => {
             onClick={() => setShareUrl(null)}
           >
             <div
-              className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl"
+              className="realm-panel w-full max-w-sm rounded-3xl p-5 shadow-2xl"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="text-[11px] font-bold tracking-[0.24em] text-orange-200/70 uppercase">
+              <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
                 Share Realm
               </div>
-              <h2 className="mt-2 text-xl font-black text-white">{draft.title}</h2>
-              <p className="mt-2 text-sm text-white/65">
+              <h2 className="catalog-title-font realm-text-ink mt-2 text-xl font-black">{draft.title}</h2>
+              <p className="realm-text-soft mt-2 text-sm">
                 Share the published post for this realm.
               </p>
-              <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-cyan-100 break-all">
+              <div className="realm-panel-soft mt-4 rounded-2xl px-4 py-3 text-sm break-all">
                 {shareUrl}
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={copyShareUrl}
-                  className="cursor-pointer rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white"
+                  className="realm-button-primary catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
                 >
                   <IoCopyOutline className="mr-1 inline-block" />
                   Copy
@@ -1239,7 +1239,7 @@ const App = () => {
                 <button
                   type="button"
                   onClick={openNativeShare}
-                  className="cursor-pointer rounded-full bg-orange-400 px-4 py-2 text-sm font-bold text-slate-950"
+                  className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
                 >
                   <IoShareOutline className="mr-1 inline-block" />
                   Share
@@ -1247,7 +1247,7 @@ const App = () => {
                 <button
                   type="button"
                   onClick={() => setShareUrl(null)}
-                  className="cursor-pointer rounded-full bg-slate-800 px-4 py-2 text-sm font-bold text-white"
+                  className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
                 >
                   Close
                 </button>
@@ -1256,12 +1256,12 @@ const App = () => {
           </div>
         )}
 
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/10 bg-white/6 px-4 py-4 backdrop-blur-xl">
+        <div className="realm-panel mb-4 flex flex-wrap items-center justify-between gap-3 rounded-3xl px-4 py-4 backdrop-blur-xl">
           <div>
-            <div className="text-[11px] font-bold tracking-[0.24em] text-cyan-200/60 uppercase">
+            <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
               Alchemy Workshop
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-white">
+            <h1 className="catalog-title-font realm-text-ink text-2xl font-black tracking-tight">
               Create and Share Mods
             </h1>
           </div>
@@ -1269,13 +1269,13 @@ const App = () => {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setTab('mine')}
-              className={`rounded-full px-4 py-2 text-sm font-bold ${tab === 'mine' ? 'bg-cyan-400 text-slate-950' : 'bg-white/8 text-white/80'}`}
+              className={`catalog-title-font rounded-full px-4 py-2 text-sm font-bold ${tab === 'mine' ? 'realm-button-accent' : 'realm-button-muted'}`}
             >
               My Mods
             </button>
             <button
               onClick={() => setTab('editor')}
-              className={`rounded-full px-4 py-2 text-sm font-bold ${tab === 'editor' ? 'bg-cyan-400 text-slate-950' : 'bg-white/8 text-white/80'}`}
+              className={`catalog-title-font rounded-full px-4 py-2 text-sm font-bold ${tab === 'editor' ? 'realm-button-accent' : 'realm-button-muted'}`}
             >
               Editor
             </button>
@@ -1287,14 +1287,14 @@ const App = () => {
             {myMods.map((mod) => (
               <div
                 key={mod.id}
-                className="rounded-3xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl"
+                className="realm-panel rounded-3xl p-5 backdrop-blur-xl"
               >
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-xl font-black text-white">
+                    <h2 className="catalog-title-font realm-text-ink text-xl font-black">
                       {mod.title}
                     </h2>
-                    <p className="mt-1 text-sm text-white/65">
+                    <p className="realm-text-soft mt-1 text-sm">
                       {mod.summary || 'No summary provided.'}
                     </p>
                   </div>
@@ -1304,7 +1304,7 @@ const App = () => {
                     {mod.status}
                   </span>
                 </div>
-                <div className="mb-5 space-y-1 text-sm text-white/70">
+                <div className="realm-text-soft mb-5 space-y-1 text-sm">
                   <div>By {mod.ownerUsername}</div>
                   <div>
                     {mod.elementCount} elements, {mod.reactionCount} reactions
@@ -1314,7 +1314,7 @@ const App = () => {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => loadDraftFromServer(mod.id)}
-                    className="cursor-pointer rounded-full bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950"
+                    className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
                   >
                     Edit
                   </button>
@@ -1332,7 +1332,7 @@ const App = () => {
               </div>
             ))}
             {myMods.length === 0 && (
-              <div className="rounded-3xl border border-dashed border-white/15 bg-white/4 p-8 text-center text-white/65">
+              <div className="realm-panel-soft realm-text-soft rounded-3xl border border-dashed p-8 text-center">
                 You have not saved any mods yet.
               </div>
             )}
@@ -1341,10 +1341,10 @@ const App = () => {
 
         {tab === 'editor' && (
           <div className="flex flex-1 flex-col gap-4">
-            <div className="rounded-3xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl">
+            <div className="realm-panel rounded-3xl p-5 backdrop-blur-xl">
               <div className="mb-4 flex flex-col gap-4">
                 <div className="w-full">
-                  <div className="mb-2 text-[11px] font-bold tracking-[0.24em] text-cyan-200/60 uppercase">
+                  <div className="catalog-title-font realm-text-muted mb-2 text-[11px] font-bold tracking-[0.24em] uppercase">
                     Mod Info
                   </div>
                   <input
@@ -1355,7 +1355,7 @@ const App = () => {
                         title: event.target.value,
                       }))
                     }
-                    className="mb-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-2xl font-black outline-none"
+                    className="realm-input catalog-title-font mb-3 w-full rounded-2xl border px-4 py-3 text-2xl font-black outline-none"
                   />
                   <textarea
                     value={draft.summary}
@@ -1367,14 +1367,14 @@ const App = () => {
                     }
                     placeholder="Describe the mod"
                     rows={2}
-                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none"
+                    className="realm-input catalog-body-font w-full rounded-2xl border px-4 py-3 text-sm outline-none"
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     disabled={isBusy}
                     onClick={playtestDraft}
-                    className="cursor-pointer rounded-full bg-indigo-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <IoPlaySharp className="mr-1 inline-block" />
                     Playtest
@@ -1382,7 +1382,7 @@ const App = () => {
                   <button
                     disabled={isBusy}
                     onClick={saveDraft}
-                    className="cursor-pointer rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="realm-button-primary catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <IoSaveSharp className="mr-1 inline-block" />
                     Save
@@ -1390,11 +1390,7 @@ const App = () => {
                   <button
                     disabled={isBusy}
                     onClick={isLoadedModPublished ? unpublishDraft : publishDraft}
-                    className={`cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
-                      isLoadedModPublished
-                        ? 'bg-amber-300 text-slate-950'
-                        : 'bg-emerald-400 text-slate-950'
-                    }`}
+                    className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <IoRocketSharp className="mr-1 inline-block" />
                     {isLoadedModPublished ? 'Unpublish' : 'Publish'}
@@ -1402,7 +1398,7 @@ const App = () => {
                   <button
                     disabled={isBusy || !isLoadedModPublished}
                     onClick={shareDraft}
-                    className="cursor-pointer rounded-full bg-orange-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <IoShareOutline className="mr-1 inline-block" />
                     Share
@@ -1414,7 +1410,7 @@ const App = () => {
                         navigateTo(loadedSharePostUrl);
                       }
                     }}
-                    className="cursor-pointer rounded-full bg-cyan-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Go To Mod&apos;s Page
                   </button>
@@ -1424,10 +1420,10 @@ const App = () => {
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
                 <div>
                   <div className="mb-2 flex items-center justify-between">
-                    <div className="text-[11px] font-bold tracking-[0.24em] text-cyan-200/60 uppercase">
+                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
                       Starting Elements
                     </div>
-                    <div className="text-xs text-white/55">
+                    <div className="realm-text-muted text-xs">
                       {draft.startingElementIds.length}
                     </div>
                   </div>
@@ -1463,7 +1459,7 @@ const App = () => {
                             : undefined
                         }
                         placeholder="Add starter"
-                        className="w-28 rounded-l-lg border border-white/10 bg-black/20"
+                         className="realm-input w-28 rounded-l-lg border"
                         onEnter={() => {
                           addStartingElement(newStartingText);
                           setNewStartingText('');
@@ -1474,7 +1470,7 @@ const App = () => {
                           addStartingElement(newStartingText);
                           setNewStartingText('');
                         }}
-                        className="cursor-pointer rounded-r-lg border border-cyan-400 bg-cyan-400 px-2 py-1.5 text-slate-950"
+                        className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
                       >
                         <IoAddSharp size={20} />
                       </button>
@@ -1482,9 +1478,9 @@ const App = () => {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="realm-panel-soft rounded-2xl p-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <div className="text-sm font-black text-white">
+                    <div className="catalog-title-font realm-text-ink text-sm font-black">
                       Validation
                     </div>
                     <span
@@ -1493,7 +1489,7 @@ const App = () => {
                       {validation.isValid ? 'Ready' : 'Blocked'}
                     </span>
                   </div>
-                  <div className="mb-3 text-sm text-white/65">
+                  <div className="realm-text-soft mb-3 text-sm">
                     {validation.reachableElementIds.length}/
                     {validation.totalElements} reachable
                   </div>
@@ -1527,13 +1523,13 @@ const App = () => {
             </div>
 
             <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-              <div className="rounded-3xl border border-white/10 bg-white/6 p-3 backdrop-blur-xl lg:p-4">
+              <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <div className="text-[11px] font-bold tracking-[0.24em] text-cyan-200/60 uppercase">
+                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
                       Elements
                     </div>
-                    <div className="text-sm text-white/70">
+                    <div className="realm-text-soft text-sm">
                       {draft.elements.length} total
                     </div>
                   </div>
@@ -1545,11 +1541,11 @@ const App = () => {
                         elementSearch ? () => setElementSearch('') : undefined
                       }
                       placeholder="Search elements"
-                      className="w-24 border border-white/10 bg-black/20 sm:w-32 lg:w-44"
+                      className="realm-input w-24 border sm:w-32 lg:w-44"
                     />
                     <button
                       onClick={addElement}
-                      className="shrink-0 rounded-md bg-cyan-400 px-3 py-1.5 font-bold text-slate-950"
+                      className="realm-button-accent shrink-0 rounded-md px-3 py-1.5 font-bold"
                     >
                       <IoAddSharp size={18} />
                     </button>
@@ -1560,7 +1556,7 @@ const App = () => {
                   {filteredElements.map((element) => (
                     <div
                       key={element.id}
-                      className="relative rounded-xl border border-white/10 bg-black/20 p-2 pt-4"
+                      className="realm-panel-soft relative rounded-xl p-2 pt-4"
                     >
                       <button
                         onClick={() => removeElement(element.id)}
@@ -1583,7 +1579,7 @@ const App = () => {
                               renameElement(element.id, event.target.value)
                             }
                             placeholder="Name"
-                            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5 text-sm outline-none"
+                            className="realm-input min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm outline-none"
                           />
                           <ColorPicker
                             type="bg"
@@ -1612,21 +1608,21 @@ const App = () => {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/6 p-3 backdrop-blur-xl lg:p-4">
+              <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
                 <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="text-[11px] font-bold tracking-[0.24em] text-cyan-200/60 uppercase">
+                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
                       Reactions
                     </div>
                     <button
                       onClick={toggleReactionView}
-                      className="rounded bg-white/10 px-2 py-1 text-[9px] font-bold tracking-widest text-white/80 uppercase transition-colors hover:bg-white/20"
+                      className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
                     >
                       {reactionView === 'visual'
                         ? 'Text Editor'
                         : 'Visual Editor'}
                     </button>
-                    <div className="hidden text-sm text-white/70 lg:block">
+                    <div className="realm-text-soft hidden text-sm lg:block">
                       {draft.reactions.length} total
                     </div>
                   </div>
@@ -1642,11 +1638,11 @@ const App = () => {
                               : undefined
                           }
                           placeholder="Search reactions"
-                          className="w-24 border border-white/10 bg-black/20 sm:w-32 lg:w-44"
+                          className="realm-input w-24 border sm:w-32 lg:w-44"
                         />
                         <button
                           onClick={addReaction}
-                          className="shrink-0 rounded-md bg-cyan-400 px-3 py-1.5 font-bold text-slate-950"
+                          className="realm-button-accent shrink-0 rounded-md px-3 py-1.5 font-bold"
                         >
                           <IoAddSharp size={18} />
                         </button>
@@ -1670,12 +1666,12 @@ const App = () => {
                     ))}
 
                     {filteredReactions.length === 0 && (
-                      <div className="rounded-xl border border-dashed border-white/15 bg-white/4 p-6 text-center text-sm text-white/60">
+                      <div className="realm-panel-soft realm-text-soft rounded-xl border border-dashed p-6 text-center text-sm">
                         <div>No reactions yet. Add one to make the mod playable.</div>
                         <button
                           type="button"
                           onClick={addReaction}
-                          className="mt-4 cursor-pointer rounded-full bg-cyan-400 px-4 py-2 font-bold text-slate-950"
+                          className="realm-button-accent catalog-title-font mt-4 cursor-pointer rounded-full px-4 py-2 font-bold"
                         >
                           Add First Reaction
                         </button>
@@ -1695,7 +1691,7 @@ const App = () => {
                         }
                       }}
                       placeholder="Water + Fire = Steam, Fog&#10;Earth + Air = Dust"
-                      className="custom-scrollbar h-full w-full resize-none rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-sm font-bold text-white/80 outline-none"
+                      className="realm-input custom-scrollbar h-full w-full resize-none rounded-xl border p-4 font-mono text-sm font-bold outline-none"
                     />
                   </div>
                 )}

@@ -948,12 +948,12 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 	return (
 		<div
-			className="flex h-screen w-screen flex-col overflow-hidden bg-main text-primary font-sans select-none touch-none"
+			className="realm-page flex h-screen w-screen flex-col overflow-hidden bg-main text-primary font-sans select-none touch-none"
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 		>
 			{isPlaytest && (
-				<div className="absolute inset-x-0 top-0 z-[5000] flex items-center justify-between gap-3 bg-indigo-500/90 px-4 py-3 text-sm font-bold text-white backdrop-blur-sm">
+				<div className="realm-panel-soft catalog-title-font absolute inset-x-0 top-0 z-[5000] flex items-center justify-between gap-3 px-4 py-3 text-sm font-bold backdrop-blur-sm">
 					<span>Playtesting draft mod</span>
 					<button
 						onClick={(event) => {
@@ -963,7 +963,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 							}
 							openEntry(event.nativeEvent, 'mod-editor');
 						}}
-						className="cursor-pointer rounded-full bg-white/15 px-3 py-1.5 text-xs uppercase tracking-wide"
+						className="realm-button-muted cursor-pointer rounded-full px-3 py-1.5 text-xs uppercase tracking-wide"
 					>
 						Return to Editor
 					</button>
@@ -1043,7 +1043,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 				<button
 					onClick={() => setShowOptions(true)}
-					className="absolute right-2 top-2 z-30 p-2 rounded-full bg-black/20 hover:bg-black/40 text-primary transition-colors backdrop-blur-sm border border-white/10 shadow-lg cursor-pointer"
+					className="realm-button-muted absolute right-2 top-2 z-30 cursor-pointer rounded-full p-2 transition-colors shadow-lg backdrop-blur-sm"
 					title="Options"
 				>
 					<IoSettingsSharp size={24} />
@@ -1051,7 +1051,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 			</div>
 
 			{/* Palette Area */}
-			<div className="relative h-60 border-t border-palette bg-palette flex flex-col z-10 overflow-hidden">
+			<div className="realm-panel relative z-10 flex h-60 flex-col overflow-hidden border-t border-palette bg-palette">
 				<div className="pt-3 px-4 pb-1 relative z-10">
 					{showMobileFilter ? (
 						<div
@@ -1653,9 +1653,9 @@ const GameRoot = () => {
 
 	if (state.status === 'loading') {
 		return (
-			<div className="flex min-h-screen items-center justify-center bg-main text-white">
-				<div className="rounded-3xl border border-white/10 bg-white/6 px-6 py-5 text-center backdrop-blur-xl">
-					<div className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-200/60">Alchemy</div>
+			<div className="realm-page flex min-h-screen items-center justify-center">
+				<div className="realm-panel rounded-3xl px-6 py-5 text-center backdrop-blur-xl">
+					<div className="catalog-title-font realm-text-muted text-xs font-bold uppercase tracking-[0.24em]">Alchemy</div>
 					<div className="mt-2 text-lg font-black">Loading ruleset...</div>
 				</div>
 			</div>
@@ -1664,11 +1664,11 @@ const GameRoot = () => {
 
 	if (state.status === 'unavailable') {
 		return (
-			<div className="flex min-h-screen items-center justify-center bg-main px-4 text-white">
-				<div className="max-w-md rounded-3xl border border-white/10 bg-white/6 p-8 text-center backdrop-blur-xl">
-					<div className="text-xs font-bold uppercase tracking-[0.24em] text-amber-200/70">Mod Unavailable</div>
-					<h1 className="mt-2 text-3xl font-black">This shared mod cannot be loaded here.</h1>
-					<p className="mt-4 text-sm leading-relaxed text-white/70">{state.message}</p>
+			<div className="realm-page flex min-h-screen items-center justify-center px-4">
+				<div className="realm-panel max-w-md rounded-3xl p-8 text-center backdrop-blur-xl">
+					<div className="catalog-title-font realm-text-muted text-xs font-bold uppercase tracking-[0.24em]">Mod Unavailable</div>
+					<h1 className="catalog-title-font realm-text-ink mt-2 text-3xl font-black">This shared mod cannot be loaded here.</h1>
+					<p className="realm-text-soft mt-4 text-sm leading-relaxed">{state.message}</p>
 				</div>
 			</div>
 		);
