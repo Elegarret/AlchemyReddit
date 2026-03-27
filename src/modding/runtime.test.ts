@@ -28,8 +28,10 @@ describe('validateModDraft', () => {
       ],
     });
 
-    expect(result.errors).toContain('Choose a custom mod title before publishing.');
-    expect(result.errors).toContain('A mod description is required.');
+    expect(result.errors).toContain(
+      'Choose a custom realm title before publishing.'
+    );
+    expect(result.errors).toContain('A realm description is required.');
   });
 
   it('treats missing reactions as a blocking validation error', () => {
@@ -42,7 +44,7 @@ describe('validateModDraft', () => {
     });
 
     expect(result.errors).toContain(
-      'Add at least one reaction to make the mod playable.'
+      'Add at least one reaction to make the realm playable.'
     );
   });
 

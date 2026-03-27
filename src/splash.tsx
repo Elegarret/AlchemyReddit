@@ -4,6 +4,7 @@ import { requestExpandedMode } from '@devvit/web/client';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ELEMENT_COLORS } from './data/elements';
+import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
 
 const STORAGE_KEY = 'alchemy-discovered';
@@ -49,7 +50,7 @@ export const Splash = () => {
 	}, []);
 
 	return (
-		<div className="realm-page flex min-h-screen flex-col items-center justify-center gap-6 overflow-hidden">
+		<div className="realm-page flex h-screen flex-col items-center justify-center gap-5 overflow-hidden px-4 py-4">
 			<div className="relative w-48 h-48 mt-4 flex items-center justify-center">
 				{/* Orbiting elements */}
 				<div className="absolute flex flex-col items-center animate-orbit" style={{ animationDelay: '0s' }}>
@@ -82,18 +83,16 @@ export const Splash = () => {
 				)}
 			</div>
 
-			<div className="mt-6 flex w-full max-w-sm flex-col gap-3 px-4">
+			<div className="mt-4 flex w-full max-w-sm flex-col gap-3">
 				<button
 					className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-10 py-4 text-lg font-bold shadow-xl transition-all hover:scale-105 active:scale-95 animate-pulsate"
-					onClick={(e) => requestExpandedMode(e.nativeEvent, 'game')}
+					onClick={(e) => {
+						localStorage.removeItem('override-mod-id');
+						localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+						requestExpandedMode(e.nativeEvent, 'game');
+					}}
 				>
 					{progress ? 'Continue discovery' : 'Play Now'}
-				</button>
-				<button
-					className="realm-button-primary catalog-title-font cursor-pointer rounded-full px-10 py-4 text-lg font-bold shadow-xl transition-all hover:scale-105 active:scale-95"
-					onClick={(e) => requestExpandedMode(e.nativeEvent, 'mod-editor')}
-				>
-					Create a Mod
 				</button>
 			</div>
 

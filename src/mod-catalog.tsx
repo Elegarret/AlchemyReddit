@@ -18,7 +18,12 @@ import {
 import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
 import type { ModListItem } from './modding/types';
-import { openEntry, setEditorTargetModId } from './webview-navigation';
+import {
+  getLastPlayedRealm,
+  openEntry,
+  setEditorTargetModId,
+  setLastPlayedRealm,
+} from './webview-navigation';
 
 const ALL_PAGE_SIZE = 15;
 
@@ -33,6 +38,7 @@ const getSharePostUrl = (mod: ModListItem) => {
 export const Catalog = () => {
   const [mods, setMods] = useState<ModListItem[]>([]);
   const [myMods, setMyMods] = useState<ModListItem[]>([]);
+  const [lastPlayedRealm, setLastPlayedRealmState] = useState(getLastPlayedRealm);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [allPage, setAllPage] = useState(0);
@@ -57,7 +63,7 @@ export const Catalog = () => {
   }, []);
 
   const sortedByUpvotes = useMemo(
-    () => [...mods].sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0)).slice(0, 10),
+    () => [...mods].sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0)).slice(0, 5),
     [mods]
   );
 
@@ -68,7 +74,7 @@ export const Catalog = () => {
           (a, b) =>
             new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         )
-        .slice(0, 10),
+        .slice(0, 5),
     [mods]
   );
 
@@ -111,8 +117,12 @@ export const Catalog = () => {
 
   const playPublishedMod = (
     event: MouseEvent<HTMLButtonElement>,
-    modId: string
+    modId: string,
+    title: string
   ) => {
+    const nextLastPlayedRealm = { modId, title };
+    setLastPlayedRealm(nextLastPlayedRealm);
+    setLastPlayedRealmState(nextLastPlayedRealm);
     localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
     localStorage.setItem('override-mod-id', modId);
     openEntry(event.nativeEvent, 'game');
@@ -137,19 +147,19 @@ export const Catalog = () => {
           <button
             type="button"
             onClick={() => openRealmPost(url)}
-            className="catalog-title-font catalog-header-strip block w-full cursor-pointer px-2.5 py-1.5 text-center text-[11px] font-bold tracking-[0.12em] uppercase transition-colors"
+            className="catalog-title-font catalog-header-strip block w-full cursor-pointer px-2.5 py-2 text-center text-[11px] font-bold tracking-[0.12em] uppercase transition-colors"
           >
             <span className="block truncate">{mod.title}</span>
           </button>
         ) : (
-          <div className="catalog-title-font catalog-header-strip block w-full px-2.5 py-1.5 text-center text-[11px] font-bold tracking-[0.12em] uppercase">
+          <div className="catalog-title-font catalog-header-strip block w-full px-2.5 py-2 text-center text-[11px] font-bold tracking-[0.12em] uppercase">
             <span className="block truncate">{mod.title}</span>
           </div>
         )}
 
         <div className="flex min-h-[44px] items-stretch">
           <div className="catalog-body-font flex min-w-0 flex-1 flex-col justify-center px-1.5 py-1">
-            <p className="catalog-text-soft line-clamp-2 text-[11px] leading-tight italic">
+            <p className="catalog-text-soft line-clamp-2 text-[12px] leading-tight italic">
               {mod.summary || 'No description provided.'}
             </p>
             <div className="catalog-stat-text mt-1 flex items-center gap-3 text-[10px] font-semibold">
@@ -166,7 +176,7 @@ export const Catalog = () => {
 
           <button
             type="button"
-            onClick={(event) => playPublishedMod(event, mod.id)}
+            onClick={(event) => playPublishedMod(event, mod.id, mod.title)}
             className="catalog-play-button flex w-7 flex-shrink-0 cursor-pointer items-center justify-center transition-colors"
             title="Play realm"
           >
@@ -184,10 +194,10 @@ export const Catalog = () => {
     return (
       <div
         key={`mine-${mod.id}`}
-        className="catalog-card p-3"
+        className="catalog-card overflow-hidden"
       >
         <span aria-hidden="true" className="catalog-corner-lily" />
-        <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="catalog-header-strip flex items-start justify-between gap-3 px-3 py-2.5">
           <button
             type="button"
             onClick={(event) => {
@@ -203,9 +213,6 @@ export const Catalog = () => {
             <div className="catalog-title-font catalog-text-ink truncate text-sm font-bold tracking-[0.08em] uppercase">
               {mod.title}
             </div>
-            <div className="catalog-body-font catalog-text-soft mt-1 text-sm italic">
-              {mod.summary || 'No description provided.'}
-            </div>
           </button>
           <span
             className={`catalog-title-font rounded-full border px-2 py-0.5 text-[9px] font-bold tracking-[0.16em] uppercase ${
@@ -217,34 +224,39 @@ export const Catalog = () => {
             {mod.status}
           </span>
         </div>
-        <div className="catalog-body-font catalog-stat-text mb-3 flex items-center gap-3 text-[11px] font-semibold">
-          <div className="flex items-center gap-1">
-            <IoThumbsUpSharp className="text-[11px]" />
-            <span>{mod.upvotes || 0}</span>
+        <div className="p-3">
+          <div className="catalog-body-font catalog-text-soft mb-3 text-[15px] leading-snug italic">
+            {mod.summary || 'No description provided.'}
           </div>
-          <div className="flex items-center gap-1">
-            <IoEyeSharp className="text-[11px]" />
-            <span>{mod.playerCount || 0}</span>
+          <div className="catalog-body-font catalog-stat-text mb-3 flex items-center gap-3 text-[11px] font-semibold">
+            <div className="flex items-center gap-1">
+              <IoThumbsUpSharp className="text-[11px]" />
+              <span>{mod.upvotes || 0}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <IoEyeSharp className="text-[11px]" />
+              <span>{mod.playerCount || 0}</span>
+            </div>
           </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={(event) => openEditor(event, mod.id)}
-            className="catalog-title-font catalog-action-button flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold tracking-[0.08em] uppercase transition-colors"
-          >
-            <IoCreateOutline />
-            Edit
-          </button>
-          {isPublished && (
+          <div className="flex gap-2">
             <button
               type="button"
-              onClick={(event) => playPublishedMod(event, mod.id)}
-              className="catalog-action-button catalog-action-invert flex cursor-pointer items-center justify-center rounded-full border px-3 py-1.5 text-[11px] transition-colors"
+              onClick={(event) => openEditor(event, mod.id)}
+              className="catalog-title-font catalog-action-button flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold tracking-[0.08em] uppercase transition-colors"
             >
-              <IoPlaySharp />
+              <IoCreateOutline />
+              Edit
             </button>
-          )}
+            {isPublished && (
+              <button
+                type="button"
+                onClick={(event) => playPublishedMod(event, mod.id, mod.title)}
+                className="catalog-action-button catalog-action-invert flex cursor-pointer items-center justify-center rounded-full border px-3 py-1.5 text-[11px] transition-colors"
+              >
+                <IoPlaySharp />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -256,13 +268,40 @@ export const Catalog = () => {
         <h1 className="catalog-title-font catalog-text-ink text-xl font-bold tracking-[0.18em] uppercase sm:text-2xl">
           Users Realms
         </h1>
-        <button
-          type="button"
-          onClick={(event) => openEditor(event)}
-          className="catalog-title-font catalog-action-button mt-2 cursor-pointer rounded-full border px-4 py-1.5 text-[11px] font-bold tracking-[0.12em] uppercase transition-colors"
+        <div
+          className={`mt-2 grid w-full max-w-xl gap-2 ${
+            lastPlayedRealm ? 'sm:grid-cols-2' : ''
+          }`}
         >
-          Create My Realm!
-        </button>
+          <button
+            type="button"
+            onClick={(event) => openEditor(event)}
+            className="catalog-title-font catalog-action-button cursor-pointer rounded-2xl border px-4 py-3 text-[11px] font-bold tracking-[0.12em] uppercase transition-colors"
+          >
+            Create My Realm
+          </button>
+          {lastPlayedRealm && (
+            <button
+              type="button"
+              onClick={(event) =>
+                playPublishedMod(
+                  event,
+                  lastPlayedRealm.modId,
+                  lastPlayedRealm.title
+                )
+              }
+              className="catalog-action-button rounded-2xl border px-4 py-2.5 text-center transition-colors"
+              title={`Continue exploring ${lastPlayedRealm.title}`}
+            >
+              <span className="catalog-title-font block text-[11px] font-bold tracking-[0.12em] uppercase">
+                Continue Exploring
+              </span>
+              <span className="catalog-body-font catalog-text-soft mt-1 block text-[12px] italic">
+                {lastPlayedRealm.title}
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex w-full max-w-5xl flex-col gap-5 pb-8 sm:px-2">
@@ -279,7 +318,7 @@ export const Catalog = () => {
             <div className="grid grid-cols-2 gap-2 sm:gap-4">
               {sortedByUpvotes.length > 0 && (
                 <div className="flex min-w-0 flex-col gap-3">
-                  <h2 className="catalog-title-font catalog-text-ink px-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
+                  <h2 className="catalog-title-font catalog-text-ink border-b border-[color:var(--catalog-soft-border)] px-1 pb-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
                     Best
                   </h2>
                   <div className="flex flex-col gap-1.5 sm:gap-3">
@@ -290,7 +329,7 @@ export const Catalog = () => {
 
               {sortedByRecent.length > 0 && (
                 <div className="flex min-w-0 flex-col gap-3">
-                  <h2 className="catalog-title-font catalog-text-ink px-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
+                  <h2 className="catalog-title-font catalog-text-ink border-b border-[color:var(--catalog-soft-border)] px-1 pb-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
                     New
                   </h2>
                   <div className="flex flex-col gap-1.5 sm:gap-3">
@@ -303,7 +342,7 @@ export const Catalog = () => {
             {sortedMyMods.length > 0 && (
               <div className="catalog-divider-line flex flex-col gap-3 border-t pt-5">
                 <h2 className="catalog-title-font catalog-text-ink px-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
-                  My Mods
+                  My Realms
                 </h2>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {sortedMyMods.map(renderMyModWidget)}

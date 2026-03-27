@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { IoAddSharp, IoAlbumsSharp, IoEyeSharp, IoThumbsUpSharp } from 'react-icons/io5';
 import { trpc } from './trpc';
 import type { ActiveRuleset, ModListItem } from './modding/types';
-import { openEntry } from './webview-navigation';
+import { openEntry, setLastPlayedRealm } from './webview-navigation';
 
 export const ModSplash = () => {
   const [status, setStatus] = useState<'loading' | 'unavailable' | 'ready'>(
@@ -46,6 +46,10 @@ export const ModSplash = () => {
 
     if (ruleset.sourceModId) {
       localStorage.setItem('override-mod-id', ruleset.sourceModId);
+      setLastPlayedRealm({
+        modId: ruleset.sourceModId,
+        title: ruleset.title,
+      });
     } else {
       localStorage.removeItem('override-mod-id');
     }
@@ -64,7 +68,7 @@ export const ModSplash = () => {
 
   if (status === 'loading') {
     return (
-      <div className="realm-page flex min-h-screen items-center justify-center px-4">
+      <div className="realm-page flex h-screen items-center justify-center overflow-hidden px-4 py-4">
         <div className="realm-panel animate-pulse rounded-3xl px-6 py-8 text-center backdrop-blur-xl">
           <div className="catalog-title-font mt-2 text-lg font-black realm-text-ink">
             Summoning Realm...
@@ -76,7 +80,7 @@ export const ModSplash = () => {
 
   if (status === 'unavailable' || !ruleset) {
     return (
-      <div className="realm-page flex min-h-screen items-center justify-center px-4">
+      <div className="realm-page flex h-screen items-center justify-center overflow-hidden px-4 py-4">
         <div className="realm-panel max-w-md rounded-3xl p-8 text-center shadow-2xl backdrop-blur-xl">
           <div className="catalog-title-font text-xs font-bold tracking-[0.24em] text-red-500 uppercase">
             Realm Unavailable
@@ -103,12 +107,12 @@ export const ModSplash = () => {
     modListing?.ownerUsername ?? ruleset.ownerUsername ?? 'unknown';
 
   return (
-    <div className="realm-page relative flex min-h-screen flex-col items-center justify-center gap-6 overflow-hidden">
+    <div className="realm-page relative flex h-screen flex-col items-center justify-center gap-4 overflow-hidden px-4 py-4">
       <div className="pointer-events-none absolute top-1/2 left-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color:var(--catalog-ink)]/8 blur-3xl" />
       <div className="pointer-events-none absolute top-1/4 left-1/4 h-32 w-32 rounded-full bg-[color:var(--catalog-ink)]/6 blur-2xl" />
       <div className="pointer-events-none absolute right-1/4 bottom-1/4 h-48 w-48 rounded-full bg-[color:var(--catalog-ink)]/5 blur-2xl" />
 
-      <div className="z-10 mt-4 flex w-full max-w-lg flex-col items-center gap-3 px-6 text-center">
+      <div className="z-10 flex w-full max-w-lg flex-col items-center gap-3 px-2 text-center">
         <div className="catalog-title-font realm-text-muted mb-2 text-sm font-bold tracking-[0.24em] uppercase drop-shadow-md">
           User&apos;s Realm
         </div>
@@ -151,7 +155,7 @@ export const ModSplash = () => {
         </div>
       </div>
 
-      <div className="z-10 mt-2 flex w-full max-w-[320px] flex-col gap-3 px-4">
+      <div className="z-10 flex w-full max-w-[320px] flex-col gap-3">
         <button
           className="realm-button-accent catalog-title-font w-full cursor-pointer rounded-full px-8 py-4 text-lg font-black tracking-[0.1em] uppercase shadow-[0_0_40px_-10px_rgba(6,182,212,0.25)] transition-all hover:scale-105 active:scale-95 sm:text-xl"
           onClick={openGame}

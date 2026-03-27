@@ -43,6 +43,7 @@ export type ModReaction = z.infer<typeof modReactionSchema>;
 
 export const modStatusSchema = z.enum(['draft', 'published', 'hidden']);
 export type ModStatus = z.infer<typeof modStatusSchema>;
+export const MAX_REALM_SUMMARY_LENGTH = 128;
 
 export const modDocSchema = z.object({
   id: z.string().min(1).max(64),
@@ -102,6 +103,7 @@ export type ActiveRuleset = {
   storageScope: string;
   startingElements: string[];
   recipes: Record<string, string[]>;
+  elementNames?: Record<string, string>;
   elementStyles: Record<string, string>;
   elementIcons: Record<string, ElementIconValue>;
   keyItems: string[];
@@ -124,7 +126,7 @@ export type ValidationResult = {
 export const saveDraftInputSchema = z.object({
   id: z.string().min(1).max(64).optional(),
   title: z.string().min(1).max(80),
-  summary: z.string().max(280),
+  summary: z.string().max(MAX_REALM_SUMMARY_LENGTH),
   startingElementIds: z.array(z.string().min(1).max(48)).min(2).max(8),
   elements: z.array(modElementSchema).max(128),
   reactions: z.array(modReactionSchema).max(512),

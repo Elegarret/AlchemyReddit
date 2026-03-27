@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type ReactNode,
 } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
@@ -37,7 +38,12 @@ import {
   PLAYTEST_RULESET_STORAGE_KEY,
   validateModDraft,
 } from './modding/runtime';
-import type { ModElement, ModListItem, SaveDraftInput } from './modding/types';
+import {
+  MAX_REALM_SUMMARY_LENGTH,
+  type ModElement,
+  type ModListItem,
+  type SaveDraftInput,
+} from './modding/types';
 import { trpc } from './trpc';
 import {
   getEditorTargetModId,
@@ -46,6 +52,7 @@ import {
 } from './webview-navigation';
 
 type EditorTab = 'mine' | 'editor';
+type ElementPanelView = 'extended' | 'compact';
 
 type ReactionWidgetProps = {
   index: number;
@@ -105,6 +112,20 @@ const createStarterElement = (
   frameColorToken,
 });
 
+const getElementPreviewStyle = (element: ModElement) => {
+  const customBg = element.bgColorToken.startsWith('#')
+    ? element.bgColorToken
+    : undefined;
+  const customFrame = element.frameColorToken.startsWith('#')
+    ? element.frameColorToken
+    : undefined;
+
+  return {
+    ...(customBg ? { backgroundColor: customBg } : {}),
+    ...(customFrame ? { borderColor: customFrame } : {}),
+  };
+};
+
 const createEmptyDraft = (): SaveDraftInput => ({
   title: DEFAULT_MOD_TITLE,
   summary: '',
@@ -117,6 +138,9 @@ const createEmptyDraft = (): SaveDraftInput => ({
   ],
   reactions: [],
 });
+
+const clampRealmSummary = (summary: string) =>
+  summary.slice(0, MAX_REALM_SUMMARY_LENGTH);
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat(undefined, {
@@ -197,10 +221,18 @@ const EmojiDropdown = ({
   emoji,
   name,
   onChange,
+  buttonClassName,
+  children,
+  containerClassName,
+  title,
 }: {
   emoji: string;
   name: string;
   onChange: (emoji: string) => void;
+  buttonClassName?: string;
+  children?: ReactNode;
+  containerClassName?: string;
+  title?: string;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -239,11 +271,15 @@ const EmojiDropdown = ({
 
   return (
     <div
-      className="absolute top-0 left-0 z-10 h-[calc(100%-12px)] w-full"
+      className={
+        containerClassName ||
+        'pointer-events-none absolute top-0 left-0 z-10 h-[calc(100%-12px)] w-full'
+      }
       ref={ref}
     >
       <button
         type="button"
+        title={title}
         onClick={(e) => {
           e.stopPropagation();
           setIsOpen(!isOpen);
@@ -260,9 +296,12 @@ const EmojiDropdown = ({
             }, 50);
           }
         }}
-        className="realm-text-ink flex h-full w-full cursor-pointer items-center justify-center bg-transparent pb-0.5 text-[26px] font-black outline-none hover:bg-white/10"
+        className={
+          buttonClassName ||
+          'pointer-events-auto realm-text-ink flex h-full w-full cursor-pointer items-center justify-center bg-transparent pb-0.5 text-[26px] font-black outline-none hover:bg-white/10'
+        }
       >
-        {emoji}
+        {children || emoji}
       </button>
 
       {isOpen &&
@@ -303,22 +342,12 @@ const ElementPreview = ({
     }
   };
 
-  const customBg = element.bgColorToken.startsWith('#')
-    ? element.bgColorToken
-    : undefined;
-  const customFrame = element.frameColorToken.startsWith('#')
-    ? element.frameColorToken
-    : undefined;
-
   return (
     <div
       draggable={draggable}
       onDragStart={handleDragStart}
       className={`relative flex flex-col items-center justify-end overflow-hidden rounded-xl border-2 ${getModElementClasses(element.bgColorToken, element.frameColorToken)} h-12 w-12 shrink-0 ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
-      style={{
-        ...(customBg ? { backgroundColor: customBg } : {}),
-        ...(customFrame ? { borderColor: customFrame } : {}),
-      }}
+      style={getElementPreviewStyle(element)}
     >
       {onChangeEmoji ? (
         <EmojiDropdown
@@ -342,10 +371,18 @@ const ColorPicker = ({
   value,
   onChange,
   type,
+  containerClassName,
+  buttonClassName,
+  children,
+  title,
 }: {
   value: string;
   onChange: (value: string) => void;
   type: 'bg' | 'frame';
+  containerClassName?: string;
+  buttonClassName?: string;
+  children?: ReactNode;
+  title?: string;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -371,27 +408,39 @@ const ColorPicker = ({
     : undefined;
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={containerClassName || 'relative'} ref={ref}>
       <button
+        type="button"
+        title={title}
         onClick={() => setIsOpen(!isOpen)}
-        className={`relative flex h-8 w-8 shrink-0 items-end justify-end overflow-hidden rounded-lg border-2 transition-opacity outline-none hover:opacity-90 ${
-          isCustom
-            ? 'border-white/20'
-            : type === 'bg'
-              ? activeOption.swatchClass
-              : `${framePreviewClass ?? 'bg-white/40'} border-white/20`
-        }`}
+        className={
+          buttonClassName ||
+          `relative flex h-8 w-8 shrink-0 items-end justify-end overflow-hidden rounded-lg border-2 transition-opacity outline-none hover:opacity-90 ${
+            isCustom
+              ? 'border-white/20'
+              : type === 'bg'
+                ? activeOption.swatchClass
+                : `${framePreviewClass ?? 'bg-white/40'} border-white/20`
+          }`
+        }
         style={
-          isCustom
-            ? type === 'bg'
-              ? { backgroundColor: value }
-              : { backgroundColor: value, borderColor: 'rgba(255,255,255,0.2)' }
-            : undefined
+          buttonClassName
+            ? undefined
+            : isCustom
+              ? type === 'bg'
+                ? { backgroundColor: value }
+                : {
+                    backgroundColor: value,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                  }
+              : undefined
         }
       >
-        <div className="absolute right-0 bottom-0 rounded-tl bg-black/50 p-0.5">
-          <IoChevronDownSharp size={10} className="text-white" />
-        </div>
+        {children || (
+          <div className="absolute right-0 bottom-0 rounded-tl bg-black/50 p-0.5">
+            <IoChevronDownSharp size={10} className="text-white" />
+          </div>
+        )}
       </button>
 
       {isOpen && (
@@ -431,6 +480,81 @@ const ColorPicker = ({
     </div>
   );
 };
+
+const CompactElementTile = ({
+  element,
+  onRename,
+  onChangeEmoji,
+  onChangeBgColor,
+  onChangeFrameColor,
+  onRemove,
+}: {
+  element: ModElement;
+  onRename: (name: string) => void;
+  onChangeEmoji: (emoji: string) => void;
+  onChangeBgColor: (value: string) => void;
+  onChangeFrameColor: (value: string) => void;
+  onRemove: () => void;
+}) => (
+  <div className="group relative">
+    <div
+      className={`relative h-[60px] w-[60px] overflow-hidden rounded-[10px] border-2 ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}
+      style={getElementPreviewStyle(element)}
+    >
+      <ColorPicker
+        type="frame"
+        value={element.frameColorToken}
+        onChange={onChangeFrameColor}
+        title={`Edit ${element.name} frame color`}
+        containerClassName="absolute inset-0 z-0"
+        buttonClassName="h-full w-full cursor-pointer rounded-[10px] border-2 border-transparent bg-transparent transition-colors hover:border-white/70 focus-visible:border-white/80"
+      >
+        <span className="sr-only">Edit frame color</span>
+      </ColorPicker>
+
+      <ColorPicker
+        type="bg"
+        value={element.bgColorToken}
+        onChange={onChangeBgColor}
+        title={`Edit ${element.name} background color`}
+        containerClassName="absolute inset-[3px] top-[3px] bottom-[14px] z-10"
+        buttonClassName="h-full w-full cursor-pointer rounded-[7px] bg-transparent transition-colors hover:bg-white/10 focus-visible:bg-white/10"
+      >
+        <span className="sr-only">Edit background color</span>
+      </ColorPicker>
+
+      <button
+        type="button"
+        onClick={onRemove}
+        title={`Remove ${element.name}`}
+        className="realm-button-muted absolute top-0.5 right-0.5 z-30 rounded-full p-0.5 text-[10px] text-white/70 opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        <IoCloseSharp size={10} />
+      </button>
+
+      <div className="pointer-events-none relative z-20 flex h-full flex-col items-center justify-end">
+        <div className="flex flex-1 items-center justify-center px-1 pt-1">
+          <EmojiDropdown
+            emoji={element.emoji}
+            name={element.name}
+            onChange={onChangeEmoji}
+            title={`Edit ${element.name} icon`}
+            buttonClassName="pointer-events-auto absolute top-1/2 left-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-[60%] cursor-pointer items-center justify-center rounded-full bg-transparent text-[22px] font-black text-[color:var(--catalog-ink)] outline-none transition-all hover:scale-105 hover:bg-white/12 focus-visible:bg-white/12"
+          />
+        </div>
+
+        <input
+          value={element.name}
+          maxLength={32}
+          onChange={(event) => onRename(event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          title={`Rename ${element.name}`}
+          className="pointer-events-auto relative z-20 h-[14px] w-full bg-black/25 px-1 text-center text-[7px] font-bold tracking-[0.08em] text-white uppercase outline-none transition-colors hover:bg-black/40 focus:bg-black/45"
+        />
+      </div>
+    </div>
+  </div>
+);
 
 const DroppableInput = ({
   value,
@@ -660,7 +784,10 @@ const App = () => {
   const [pendingRemoveModId, setPendingRemoveModId] = useState<string | null>(
     null
   );
-
+  const [elementPanelView, setElementPanelView] =
+    useState<ElementPanelView>('extended');
+  const [isValidationBlinking, setIsValidationBlinking] = useState(false);
+  const validationBlinkTimeoutRef = useRef<number | null>(null);
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
   const [reactionText, setReactionText] = useState('');
 
@@ -739,6 +866,48 @@ const App = () => {
     : null;
   const isLoadedModPublished = loadedMod?.status === 'published';
   const loadedSharePostUrl = loadedMod ? getSharePostUrl(loadedMod) : null;
+  const publishBlockedReason =
+    !isLoadedModPublished && !validation.isValid
+      ? validation.errors[0] ?? 'Fix validation errors first'
+      : null;
+  const shareBlockedReason = !isLoadedModPublished
+    ? 'Publish this realm first.'
+    : null;
+  const realmPageBlockedReason = !isLoadedModPublished
+    ? 'Publish this realm first.'
+    : !loadedSharePostUrl
+      ? 'Share this realm first to create its page.'
+      : null;
+  const editorActionButtonClass =
+    'realm-button-accent catalog-title-font rounded-full px-4 py-2 text-sm font-bold transition-opacity';
+
+  useEffect(() => {
+    return () => {
+      if (validationBlinkTimeoutRef.current !== null) {
+        window.clearTimeout(validationBlinkTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const blinkValidation = () => {
+    setIsValidationBlinking(false);
+
+    requestAnimationFrame(() => {
+      setIsValidationBlinking(true);
+      if (validationBlinkTimeoutRef.current !== null) {
+        window.clearTimeout(validationBlinkTimeoutRef.current);
+      }
+
+      validationBlinkTimeoutRef.current = window.setTimeout(() => {
+        setIsValidationBlinking(false);
+      }, 700);
+    });
+  };
+
+  const showValidationFeedback = (message?: string) => {
+    showToast(message ?? validation.errors[0] ?? 'Fix validation errors first');
+    blinkValidation();
+  };
 
   const refreshLists = async () => {
     setMyMods(await trpc.mods.listMine.query());
@@ -747,7 +916,7 @@ const App = () => {
   useEffect(() => {
     refreshLists().catch((error) => {
       console.error(error);
-      showToast('Failed to load mods');
+      showToast('Failed to load realms');
     });
   }, []);
 
@@ -943,6 +1112,7 @@ const App = () => {
   const persistDraftSilently = async () => {
     const saved = await trpc.mods.saveDraft.mutate({
       ...draft,
+      summary: clampRealmSummary(draft.summary),
       ...(loadedDraftId ? { id: loadedDraftId } : {}),
     });
     setLoadedDraftId(saved.id);
@@ -968,7 +1138,7 @@ const App = () => {
 
   const publishDraft = async () => {
     if (!validation.isValid) {
-      showToast(validation.errors[0] ?? 'Fix validation errors first');
+      showValidationFeedback();
       return;
     }
 
@@ -988,7 +1158,7 @@ const App = () => {
     } catch (error) {
       console.error(error);
       showToast(
-        error instanceof Error ? error.message : 'Failed to publish mod'
+        error instanceof Error ? error.message : 'Failed to publish realm'
       );
     } finally {
       setIsBusy(false);
@@ -997,7 +1167,7 @@ const App = () => {
 
   const unpublishDraft = async () => {
     if (!loadedDraftId) {
-      showToast('Save the mod first');
+      showToast('Save the realm first');
       return;
     }
 
@@ -1010,7 +1180,7 @@ const App = () => {
     } catch (error) {
       console.error(error);
       showToast(
-        error instanceof Error ? error.message : 'Failed to unpublish mod'
+        error instanceof Error ? error.message : 'Failed to unpublish realm'
       );
     } finally {
       setIsBusy(false);
@@ -1019,7 +1189,7 @@ const App = () => {
 
   const shareDraft = async () => {
     if (!loadedDraftId || !isLoadedModPublished) {
-      showToast('Publish the mod first');
+      showToast('Publish the realm first');
       return;
     }
 
@@ -1033,7 +1203,9 @@ const App = () => {
       await refreshLists();
     } catch (error) {
       console.error(error);
-      showToast(error instanceof Error ? error.message : 'Failed to share mod');
+      showToast(
+        error instanceof Error ? error.message : 'Failed to share realm'
+      );
     } finally {
       setIsBusy(false);
     }
@@ -1072,7 +1244,7 @@ const App = () => {
 
   const playtestDraft = async (event: MouseEvent<HTMLButtonElement>) => {
     if (!validation.isValid) {
-      showToast(validation.errors[0] ?? 'Fix validation errors first');
+      showValidationFeedback();
       return;
     }
 
@@ -1111,7 +1283,7 @@ const App = () => {
       setDraft({
         id: loaded.id,
         title: loaded.title,
-        summary: loaded.summary,
+        summary: clampRealmSummary(loaded.summary),
         startingElementIds: loaded.startingElementIds,
         elements: loaded.elements,
         reactions: loaded.reactions,
@@ -1262,7 +1434,7 @@ const App = () => {
               Alchemy Workshop
             </div>
             <h1 className="catalog-title-font realm-text-ink text-2xl font-black tracking-tight">
-              Create and Share Mods
+              Create and Share Realms
             </h1>
           </div>
 
@@ -1271,7 +1443,7 @@ const App = () => {
               onClick={() => setTab('mine')}
               className={`catalog-title-font rounded-full px-4 py-2 text-sm font-bold ${tab === 'mine' ? 'realm-button-accent' : 'realm-button-muted'}`}
             >
-              My Mods
+              My Realms
             </button>
             <button
               onClick={() => setTab('editor')}
@@ -1295,7 +1467,7 @@ const App = () => {
                       {mod.title}
                     </h2>
                     <p className="realm-text-soft mt-1 text-sm">
-                      {mod.summary || 'No summary provided.'}
+                      {mod.summary || 'No description provided.'}
                     </p>
                   </div>
                   <span
@@ -1333,7 +1505,7 @@ const App = () => {
             ))}
             {myMods.length === 0 && (
               <div className="realm-panel-soft realm-text-soft rounded-3xl border border-dashed p-8 text-center">
-                You have not saved any mods yet.
+                You have not saved any realms yet.
               </div>
             )}
           </div>
@@ -1345,7 +1517,7 @@ const App = () => {
               <div className="mb-4 flex flex-col gap-4">
                 <div className="w-full">
                   <div className="catalog-title-font realm-text-muted mb-2 text-[11px] font-bold tracking-[0.24em] uppercase">
-                    Mod Info
+                    Realm Info
                   </div>
                   <input
                     value={draft.title}
@@ -1362,19 +1534,23 @@ const App = () => {
                     onChange={(event) =>
                       updateDraft((current) => ({
                         ...current,
-                        summary: event.target.value,
+                        summary: clampRealmSummary(event.target.value),
                       }))
                     }
-                    placeholder="Describe the mod"
+                    maxLength={MAX_REALM_SUMMARY_LENGTH}
+                    placeholder="Describe the realm"
                     rows={2}
                     className="realm-input catalog-body-font w-full rounded-2xl border px-4 py-3 text-sm outline-none"
                   />
+                  <div className="realm-text-muted mt-1 text-right text-xs">
+                    {draft.summary.length}/{MAX_REALM_SUMMARY_LENGTH}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     disabled={isBusy}
                     onClick={playtestDraft}
-                    className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`${editorActionButtonClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     <IoPlaySharp className="mr-1 inline-block" />
                     Playtest
@@ -1382,37 +1558,97 @@ const App = () => {
                   <button
                     disabled={isBusy}
                     onClick={saveDraft}
-                    className="realm-button-primary catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`${editorActionButtonClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     <IoSaveSharp className="mr-1 inline-block" />
                     Save
                   </button>
                   <button
-                    disabled={isBusy}
-                    onClick={isLoadedModPublished ? unpublishDraft : publishDraft}
-                    className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    aria-disabled={isBusy || !!publishBlockedReason}
+                    title={
+                      publishBlockedReason ??
+                      (isLoadedModPublished
+                        ? 'Move this realm back to drafts.'
+                        : 'Publish this realm.')
+                    }
+                    onClick={() => {
+                      if (isBusy) {
+                        return;
+                      }
+
+                      if (publishBlockedReason) {
+                        showValidationFeedback(publishBlockedReason);
+                        return;
+                      }
+
+                      void (
+                        isLoadedModPublished ? unpublishDraft() : publishDraft()
+                      );
+                    }}
+                    className={`${editorActionButtonClass} ${
+                      isBusy || publishBlockedReason
+                        ? 'cursor-not-allowed opacity-50'
+                        : 'cursor-pointer'
+                    }`}
                   >
                     <IoRocketSharp className="mr-1 inline-block" />
                     {isLoadedModPublished ? 'Unpublish' : 'Publish'}
                   </button>
                   <button
-                    disabled={isBusy || !isLoadedModPublished}
-                    onClick={shareDraft}
-                    className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    aria-disabled={isBusy || !!shareBlockedReason}
+                    title={
+                      shareBlockedReason || 'Share the published realm post.'
+                    }
+                    onClick={() => {
+                      if (isBusy) {
+                        return;
+                      }
+
+                      if (shareBlockedReason) {
+                        showToast(shareBlockedReason);
+                        return;
+                      }
+
+                      void shareDraft();
+                    }}
+                    className={`${editorActionButtonClass} ${
+                      isBusy || shareBlockedReason
+                        ? 'cursor-not-allowed opacity-50'
+                        : 'cursor-pointer'
+                    }`}
                   >
                     <IoShareOutline className="mr-1 inline-block" />
                     Share
                   </button>
                   <button
-                    disabled={isBusy || !loadedSharePostUrl}
+                    type="button"
+                    aria-disabled={isBusy || !!realmPageBlockedReason}
+                    title={
+                      realmPageBlockedReason || 'Open the published realm page.'
+                    }
                     onClick={() => {
+                      if (isBusy) {
+                        return;
+                      }
+
+                      if (realmPageBlockedReason) {
+                        showToast(realmPageBlockedReason);
+                        return;
+                      }
+
                       if (loadedSharePostUrl) {
                         navigateTo(loadedSharePostUrl);
                       }
                     }}
-                    className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`${editorActionButtonClass} ${
+                      isBusy || realmPageBlockedReason
+                        ? 'cursor-not-allowed opacity-50'
+                        : 'cursor-pointer'
+                    }`}
                   >
-                    Go To Mod&apos;s Page
+                    Go To Realm Page
                   </button>
                 </div>
               </div>
@@ -1478,7 +1714,11 @@ const App = () => {
                   </div>
                 </div>
 
-                <div className="realm-panel-soft rounded-2xl p-4">
+                <div
+                  className={`realm-panel-soft rounded-2xl p-4 ${
+                    isValidationBlinking ? 'animate-shake ring-2 ring-rose-300/70' : ''
+                  }`}
+                >
                   <div className="mb-3 flex items-center justify-between">
                     <div className="catalog-title-font realm-text-ink text-sm font-black">
                       Validation
@@ -1524,14 +1764,28 @@ const App = () => {
 
             <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
               <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                      Elements
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                        Elements
+                      </div>
+                      <div className="realm-text-soft text-sm">
+                        {draft.elements.length} total
+                      </div>
                     </div>
-                    <div className="realm-text-soft text-sm">
-                      {draft.elements.length} total
-                    </div>
+                    <button
+                      onClick={() =>
+                        setElementPanelView((current) =>
+                          current === 'extended' ? 'compact' : 'extended'
+                        )
+                      }
+                      className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
+                    >
+                      {elementPanelView === 'extended'
+                        ? 'Compact View'
+                        : 'Extended View'}
+                    </button>
                   </div>
                   <div className="flex items-center gap-2">
                     <DroppableInput
@@ -1543,69 +1797,111 @@ const App = () => {
                       placeholder="Search elements"
                       className="realm-input w-24 border sm:w-32 lg:w-44"
                     />
-                    <button
-                      onClick={addElement}
-                      className="realm-button-accent shrink-0 rounded-md px-3 py-1.5 font-bold"
-                    >
-                      <IoAddSharp size={18} />
-                    </button>
+                    {elementPanelView === 'extended' && (
+                      <button
+                        onClick={addElement}
+                        className="realm-button-accent catalog-title-font shrink-0 cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
+                      >
+                        <IoAddSharp className="mr-1 inline-block" />
+                        Add Element
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="custom-scrollbar h-[500px] space-y-3 overflow-y-auto pr-2 pb-6">
-                  {filteredElements.map((element) => (
-                    <div
-                      key={element.id}
-                      className="realm-panel-soft relative rounded-xl p-2 pt-4"
-                    >
-                      <button
-                        onClick={() => removeElement(element.id)}
-                        className="absolute top-1 right-1 rounded-full bg-white/5 p-1 text-white/40 hover:bg-rose-500/20 hover:text-rose-300"
+                {elementPanelView === 'extended' ? (
+                  <div className="custom-scrollbar h-[500px] space-y-3 overflow-y-auto pr-2 pb-6">
+                    {filteredElements.map((element) => (
+                      <div
+                        key={element.id}
+                        className="realm-panel-soft relative rounded-xl p-2 pt-4"
                       >
-                        <IoCloseSharp size={12} />
-                      </button>
-                      <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
-                        <ElementPreview
-                          element={element}
-                          onChangeEmoji={(val) =>
-                            updateElementEmoji(element.id, val)
-                          }
-                          draggable={true}
-                        />
-                        <div className="flex min-w-[12rem] flex-1 items-center gap-1.5 pr-1 sm:min-w-0">
-                          <input
-                            value={element.name}
-                            onChange={(event) =>
-                              renameElement(element.id, event.target.value)
+                        <button
+                          onClick={() => removeElement(element.id)}
+                          className="absolute top-1 right-1 rounded-full bg-white/5 p-1 text-white/40 hover:bg-rose-500/20 hover:text-rose-300"
+                        >
+                          <IoCloseSharp size={12} />
+                        </button>
+                        <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
+                          <ElementPreview
+                            element={element}
+                            onChangeEmoji={(val) =>
+                              updateElementEmoji(element.id, val)
                             }
-                            placeholder="Name"
-                            className="realm-input min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm outline-none"
+                            draggable={true}
                           />
-                          <ColorPicker
-                            type="bg"
-                            value={element.bgColorToken}
-                            onChange={(val) =>
-                              updateElementColors(element.id, {
-                                bgColorToken: val,
-                                frameColorToken: element.frameColorToken,
-                              })
-                            }
-                          />
-                          <ColorPicker
-                            type="frame"
-                            value={element.frameColorToken}
-                            onChange={(val) =>
-                              updateElementColors(element.id, {
-                                bgColorToken: element.bgColorToken,
-                                frameColorToken: val,
-                              })
-                            }
-                          />
+                          <div className="flex min-w-[12rem] flex-1 items-center gap-1.5 pr-1 sm:min-w-0">
+                            <input
+                              value={element.name}
+                              maxLength={32}
+                              onChange={(event) =>
+                                renameElement(element.id, event.target.value)
+                              }
+                              placeholder="Name"
+                              className="realm-input min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm outline-none"
+                            />
+                            <ColorPicker
+                              type="bg"
+                              value={element.bgColorToken}
+                              onChange={(val) =>
+                                updateElementColors(element.id, {
+                                  bgColorToken: val,
+                                  frameColorToken: element.frameColorToken,
+                                })
+                              }
+                            />
+                            <ColorPicker
+                              type="frame"
+                              value={element.frameColorToken}
+                              onChange={(val) =>
+                                updateElementColors(element.id, {
+                                  bgColorToken: element.bgColorToken,
+                                  frameColorToken: val,
+                                })
+                              }
+                            />
+                          </div>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="custom-scrollbar h-[500px] overflow-y-auto pr-1 pb-6">
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-3">
+                      {filteredElements.map((element) => (
+                        <CompactElementTile
+                          key={element.id}
+                          element={element}
+                          onRename={(name) => renameElement(element.id, name)}
+                          onChangeEmoji={(emoji) =>
+                            updateElementEmoji(element.id, emoji)
+                          }
+                          onChangeBgColor={(value) =>
+                            updateElementColors(element.id, {
+                              bgColorToken: value,
+                              frameColorToken: element.frameColorToken,
+                            })
+                          }
+                          onChangeFrameColor={(value) =>
+                            updateElementColors(element.id, {
+                              bgColorToken: element.bgColorToken,
+                              frameColorToken: value,
+                            })
+                          }
+                          onRemove={() => removeElement(element.id)}
+                        />
+                      ))}
+                      <button
+                        type="button"
+                        onClick={addElement}
+                        title="Add element"
+                        className="realm-button-accent catalog-title-font flex h-[60px] w-[60px] cursor-pointer items-center justify-center rounded-[10px] border-2 text-2xl font-black"
+                      >
+                        +
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
 
               <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
@@ -1667,7 +1963,9 @@ const App = () => {
 
                     {filteredReactions.length === 0 && (
                       <div className="realm-panel-soft realm-text-soft rounded-xl border border-dashed p-6 text-center text-sm">
-                        <div>No reactions yet. Add one to make the mod playable.</div>
+                        <div>
+                          No reactions yet. Add one to make the realm playable.
+                        </div>
                         <button
                           type="button"
                           onClick={addReaction}

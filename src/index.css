@@ -560,18 +560,17 @@
 }
 
 .catalog-side-ornament::before {
-	left: 10px;
+	left: 4px;
 	background-image: var(--catalog-side-svg-left);
 }
 
 .catalog-side-ornament::after {
-	right: 10px;
+	right: 4px;
 	transform: scaleX(-1);
 	background-image: var(--catalog-side-svg-right);
 }
 
 .catalog-side-ornament > * {
-	position: relative;
 	z-index: 1;
 }
 
@@ -643,6 +642,13 @@
 	color: var(--catalog-ink);
 }
 
+.realm-page-plain {
+	position: relative;
+	background: var(--catalog-page-bg);
+	box-shadow: var(--catalog-page-shadow);
+	color: var(--catalog-ink);
+}
+
 .realm-page::before,
 .realm-page::after {
 	content: '';
@@ -659,18 +665,21 @@
 }
 
 .realm-page::before {
-	left: 10px;
+	left: 4px;
 	background-image: var(--catalog-side-svg-left);
 }
 
 .realm-page::after {
-	right: 10px;
+	right: 4px;
 	transform: scaleX(-1);
 	background-image: var(--catalog-side-svg-right);
 }
 
 .realm-page > * {
-	position: relative;
+	z-index: 1;
+}
+
+.realm-page-plain > * {
 	z-index: 1;
 }
 

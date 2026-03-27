@@ -5,7 +5,7 @@ export const MAX_MOD_ELEMENTS = 128;
 export const MAX_MOD_REACTIONS = 512;
 export const MAX_REACTION_OUTPUTS = 4;
 export const PLAYTEST_RULESET_STORAGE_KEY = 'alchemy-playtest-ruleset';
-export const DEFAULT_MOD_TITLE = 'Untitled Mod';
+export const DEFAULT_MOD_TITLE = 'Unknown Realm';
 
 export const normalizeReactionKey = (leftId: string, rightId: string) =>
 	[leftId, rightId].sort((a, b) => a.localeCompare(b)).join('+');
@@ -139,15 +139,15 @@ export const validateModDraft = (draft: {
 	const summary = draft.summary.trim();
 
 	if (!title) {
-		errors.push('A mod title is required.');
+		errors.push('A realm title is required.');
 	}
 
 	if (title.toLowerCase() === DEFAULT_MOD_TITLE.toLowerCase()) {
-		errors.push('Choose a custom mod title before publishing.');
+		errors.push('Choose a custom realm title before publishing.');
 	}
 
 	if (!summary) {
-		errors.push('A mod description is required.');
+		errors.push('A realm description is required.');
 	}
 
 	if (draft.elements.length > MAX_MOD_ELEMENTS) {
@@ -248,7 +248,7 @@ export const validateModDraft = (draft: {
 	}
 
 	if (draft.reactions.length === 0) {
-		errors.push('Add at least one reaction to make the mod playable.');
+		errors.push('Add at least one reaction to make the realm playable.');
 	}
 
 	return {
@@ -261,29 +261,32 @@ export const validateModDraft = (draft: {
 };
 
 export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
-	const recipes = Object.fromEntries(
-		mod.reactions.map((reaction) => [normalizeReactionKey(reaction.leftId, reaction.rightId), reaction.outputIds])
-	);
-	const elementStyles: Record<string, string> = {};
-	const elementIcons: Record<string, string> = {};
-	for (const element of mod.elements) {
-		elementStyles[element.id] = getModElementClasses(
-			element.bgColorToken ?? DEFAULT_MOD_BG_COLOR_TOKEN,
-			element.frameColorToken ?? DEFAULT_MOD_FRAME_COLOR_TOKEN
+  const recipes = Object.fromEntries(
+    mod.reactions.map((reaction) => [normalizeReactionKey(reaction.leftId, reaction.rightId), reaction.outputIds])
+  );
+  const elementNames: Record<string, string> = {};
+  const elementStyles: Record<string, string> = {};
+  const elementIcons: Record<string, string> = {};
+  for (const element of mod.elements) {
+    elementNames[element.id] = element.name;
+    elementStyles[element.id] = getModElementClasses(
+      element.bgColorToken ?? DEFAULT_MOD_BG_COLOR_TOKEN,
+      element.frameColorToken ?? DEFAULT_MOD_FRAME_COLOR_TOKEN
 		);
 		elementIcons[element.id] = element.emoji;
 	}
 
-	return {
-		kind: 'mod',
-		rulesetId: `mod:${mod.id}`,
-		title: mod.title,
-		summary: mod.summary,
-		storageScope: `mod:${mod.id}:${mod.publishedHash ?? createModFingerprint(mod)}`,
-		startingElements: mod.startingElementIds,
-		recipes,
-		elementStyles,
-		elementIcons,
+  return {
+    kind: 'mod',
+    rulesetId: `mod:${mod.id}`,
+    title: mod.title,
+    summary: mod.summary,
+    storageScope: `mod:${mod.id}:${mod.publishedHash ?? createModFingerprint(mod)}`,
+    startingElements: mod.startingElementIds,
+    recipes,
+    elementNames,
+    elementStyles,
+    elementIcons,
 		keyItems: [],
 		keyItemData: {},
 		elementMessages: {},

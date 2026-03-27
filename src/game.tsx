@@ -529,7 +529,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 			y: e.clientY - el.y,
 		};
 		setDragging(id);
-		(e.target as HTMLElement).setPointerCapture(e.pointerId);
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	};
 
 	const getRandomTableIcon = (name: string) => {
@@ -539,6 +539,9 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		// Pick a random icon starting from index 1
 		return rawIcon[1 + Math.floor(Math.random() * (rawIcon.length - 1))];
 	};
+
+	const getElementDisplayName = (elementId: string) =>
+		ruleset.elementNames?.[elementId] ?? elementId;
 
 	const renderElementWidget = (
 		name: string,
@@ -559,7 +562,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		const weightMatch = colorClass.match(/-(\d{3})/);
 		const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
 		const Icon = isHidden ? null : (iconOverride ?? ruleset.elementIcons[name]);
-		const displayName = isHidden ? '???' : name;
+		const displayName = isHidden ? '???' : getElementDisplayName(name);
 
 		const sizeClasses = size === 'small'
 			? 'h-full w-full rounded-lg border-2 text-[10px] pb-0'
@@ -645,7 +648,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		setElements((prev) => [...prev, newElement]);
 		setDragging(id);
 		dragOffset.current = { x: 0, y: 0 };
-		(e.target as HTMLElement).setPointerCapture(e.pointerId);
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	};
 
 	const handlePointerMove = (e: React.PointerEvent) => {
@@ -948,7 +951,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 	return (
 		<div
-			className="realm-page flex h-screen w-screen flex-col overflow-hidden bg-main text-primary font-sans select-none touch-none"
+			className="realm-page-plain flex h-screen w-screen flex-col overflow-hidden bg-main text-primary font-sans select-none touch-none"
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 		>
@@ -1653,7 +1656,7 @@ const GameRoot = () => {
 
 	if (state.status === 'loading') {
 		return (
-			<div className="realm-page flex min-h-screen items-center justify-center">
+			<div className="realm-page-plain flex min-h-screen items-center justify-center">
 				<div className="realm-panel rounded-3xl px-6 py-5 text-center backdrop-blur-xl">
 					<div className="catalog-title-font realm-text-muted text-xs font-bold uppercase tracking-[0.24em]">Alchemy</div>
 					<div className="mt-2 text-lg font-black">Loading ruleset...</div>
@@ -1664,7 +1667,7 @@ const GameRoot = () => {
 
 	if (state.status === 'unavailable') {
 		return (
-			<div className="realm-page flex min-h-screen items-center justify-center px-4">
+			<div className="realm-page-plain flex min-h-screen items-center justify-center px-4">
 				<div className="realm-panel max-w-md rounded-3xl p-8 text-center backdrop-blur-xl">
 					<div className="catalog-title-font realm-text-muted text-xs font-bold uppercase tracking-[0.24em]">Mod Unavailable</div>
 					<h1 className="catalog-title-font realm-text-ink mt-2 text-3xl font-black">This shared mod cannot be loaded here.</h1>
