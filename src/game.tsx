@@ -1059,10 +1059,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 			{/* Worktable Area */}
 			<div
 				ref={containerRef}
-				className={`relative flex-1 bg-table-gradient ${isPlaytest ? 'pt-12' : ''}`}
+				className={`relative flex-1 bg-table-gradient ${isPlaytest ? 'pt-8' : ''}`}
 			>
 				{isPlaytest && (
-					<div className="catalog-title-font absolute inset-x-3 top-3 z-[5000] flex items-center justify-between gap-3 rounded-2xl border border-cyan-300/20 bg-slate-950/92 px-4 py-3 text-sm font-bold text-cyan-50 shadow-[0_10px_30px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+					<div className="catalog-title-font absolute inset-x-0 top-0 z-[5000] flex items-center justify-between gap-3 border-b border-cyan-300/20 bg-slate-950/92 px-4 py-1.5 text-xs font-bold text-cyan-50 shadow-[0_10px_24px_rgba(2,6,23,0.35)] backdrop-blur-xl">
 						<span>Playtesting draft mod</span>
 						<button
 							onClick={(event) => {
@@ -1072,7 +1072,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 								}
 								openEntry(event.nativeEvent, 'mod-editor');
 							}}
-							className="cursor-pointer rounded-full border border-cyan-200/25 bg-cyan-400/12 px-3 py-1.5 text-xs uppercase tracking-wide text-cyan-50 transition-colors hover:bg-cyan-400/20"
+							className="cursor-pointer rounded-full border border-cyan-200/25 bg-cyan-400/12 px-2.5 py-0.5 text-[10px] uppercase tracking-wide text-cyan-50 transition-colors hover:bg-cyan-400/20"
 						>
 							Return to Editor
 						</button>

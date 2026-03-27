@@ -74,6 +74,29 @@ test('publishing creates a share post and unpublishing returns the mod to drafts
   const catalogAfterPublish = await listCatalogMods();
   expect(catalogAfterPublish.map((mod) => mod.id)).toContain(saved.id);
 
+  await saveDraftForUser(userId, username, {
+    id: saved.id,
+    title: 'Storm Lab',
+    summary: 'Build storms from a compact recipe tree.',
+    intro: 'Welcome to the storm lab.',
+    startingElementIds: ['air', 'water'],
+    elements: [
+      makeElement('air', 'Air'),
+      makeElement('water', 'Water'),
+      makeElement('storm', 'Storm'),
+    ],
+    reactions: [
+      {
+        leftId: 'air',
+        rightId: 'water',
+        outputIds: ['storm'],
+      },
+    ],
+  });
+
+  const catalogAfterDraftSave = await listCatalogMods();
+  expect(catalogAfterDraftSave.map((mod) => mod.id)).toContain(saved.id);
+
   await unpublishModForUser(userId, saved.id);
 
   expect(await getPublishedMod(saved.id)).toBeNull();

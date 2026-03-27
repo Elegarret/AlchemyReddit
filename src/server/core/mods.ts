@@ -141,9 +141,15 @@ const enrichListItem = async (item: ModListItem): Promise<ModListItem> => {
 export const listCatalogMods = async () => {
   const entries = await redis.zRange(catalogKey, 0, 99);
   const items = await Promise.all(
-    entries.map(async ({ member }) =>
-      parseListItem(await redis.get(getMetaKey(member)))
-    )
+    entries.map(async ({ member }) => {
+      const meta = parseListItem(await redis.get(getMetaKey(member)));
+      if (meta?.status === 'published') {
+        return meta;
+      }
+
+      const latest = await loadLatestMod(member);
+      return latest?.status === 'published' ? serializeListItem(latest) : null;
+    })
   );
   const publishedItems = items.filter(
     (item): item is ModListItem => item !== null && item.status === 'published'
@@ -255,7 +261,9 @@ export const saveDraftForUser = async (
   };
 
   await redis.set(getDraftKey(userId, modId), JSON.stringify(draft));
-  await saveMeta(draft);
+  await saveMeta(
+    existingPublished?.status === 'published' ? existingPublished : draft
+  );
   await indexModForOwner(draft);
   return draft;
 };
