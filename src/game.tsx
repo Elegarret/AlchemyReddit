@@ -13,7 +13,11 @@ import {
 	getValidDiscoveredItems,
 	PLAYTEST_RULESET_STORAGE_KEY,
 } from './modding/runtime';
-import type { ActiveRuleset } from './modding/types';
+import {
+	LEGACY_ELEMENT_EFFECTS,
+	type ActiveRuleset,
+	type ModElementEffect,
+} from './modding/types';
 import { trpc } from './trpc';
 import { openEntry, setEditorTargetModId } from './webview-navigation';
 
@@ -114,10 +118,32 @@ type GameSessionProps = {
 	isPlaytest: boolean;
 };
 
+type PersistedRuleset = {
+	kind?: ActiveRuleset['kind'];
+	rulesetId: string;
+	title?: string;
+	summary?: string;
+	intro?: string;
+	storageScope: string;
+	startingElements: string[];
+	recipes: ActiveRuleset['recipes'];
+	elementNames?: ActiveRuleset['elementNames'];
+	elementStyles: ActiveRuleset['elementStyles'];
+	elementIcons: ActiveRuleset['elementIcons'];
+	elementEffects?: ActiveRuleset['elementEffects'];
+	keyItems?: ActiveRuleset['keyItems'];
+	keyItemData?: ActiveRuleset['keyItemData'];
+	elementMessages?: ActiveRuleset['elementMessages'];
+	sourceModId?: string;
+	publishedHash?: string;
+	ownerUsername?: string;
+	publishedAt?: string;
+};
+
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
 
-const isRulesetRecord = (value: unknown): value is ActiveRuleset => {
+const isRulesetRecord = (value: unknown): value is PersistedRuleset => {
 	if (!isUnknownRecord(value)) {
 		return false;
 	}
@@ -132,7 +158,7 @@ const isRulesetRecord = (value: unknown): value is ActiveRuleset => {
 	);
 };
 
-const readPlaytestRuleset = () => {
+const readPlaytestRuleset = (): ActiveRuleset | null => {
 	try {
 		const saved = localStorage.getItem(PLAYTEST_RULESET_STORAGE_KEY);
 		if (!saved) {
@@ -140,7 +166,36 @@ const readPlaytestRuleset = () => {
 		}
 
 		const parsed = JSON.parse(saved);
-		return isRulesetRecord(parsed) ? parsed : null;
+		if (!isRulesetRecord(parsed)) {
+			return null;
+		}
+
+		const kind: ActiveRuleset['kind'] =
+			parsed.kind === 'mod' ? 'mod' : 'base';
+
+		return {
+			kind,
+			rulesetId: parsed.rulesetId,
+			title: parsed.title ?? 'Alchemy',
+			summary: parsed.summary ?? '',
+			intro: parsed.intro ?? '',
+			storageScope: parsed.storageScope,
+			startingElements: parsed.startingElements,
+			recipes: parsed.recipes,
+			elementStyles: parsed.elementStyles,
+			elementIcons: parsed.elementIcons,
+			elementEffects: parsed.elementEffects ?? {},
+			keyItems: parsed.keyItems ?? [],
+			keyItemData: parsed.keyItemData ?? {},
+			elementMessages: parsed.elementMessages ?? {},
+			...(parsed.elementNames ? { elementNames: parsed.elementNames } : {}),
+			...(parsed.sourceModId ? { sourceModId: parsed.sourceModId } : {}),
+			...(parsed.publishedHash
+				? { publishedHash: parsed.publishedHash }
+				: {}),
+			...(parsed.ownerUsername ? { ownerUsername: parsed.ownerUsername } : {}),
+			...(parsed.publishedAt ? { publishedAt: parsed.publishedAt } : {}),
+		};
 	} catch {
 		return null;
 	}
@@ -148,6 +203,7 @@ const readPlaytestRuleset = () => {
 
 const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScope, isPlaytest }: GameSessionProps) => {
 	const storageKeys = getLocalStorageKeys(ruleset);
+	const introStorageKey = `${storageKeys.discovered}-intro-dismissed`;
 	const [discovered, setDiscovered] = useState<string[]>(() => {
 		try {
 			const saved = localStorage.getItem(storageKeys.discovered);
@@ -213,6 +269,28 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	const [showMobileFilter, setShowMobileFilter] = useState(false);
 	const [isQuaking, setIsQuaking] = useState(false);
 	const [stormFlashVisible, setStormFlashVisible] = useState(false);
+	const [showRealmIntro, setShowRealmIntro] = useState(() => {
+		if (!ruleset.intro.trim()) {
+			return false;
+		}
+
+		try {
+			return localStorage.getItem(introStorageKey) !== '1';
+		} catch {
+			return true;
+		}
+	});
+
+	const getElementDisplayName = (elementId: string) =>
+		ruleset.elementNames?.[elementId] ?? elementId;
+
+	const getElementEffect = (elementId: string): ModElementEffect =>
+		ruleset.elementEffects[elementId] ??
+		LEGACY_ELEMENT_EFFECTS[elementId] ??
+		'none';
+
+	const hasElementEffect = (elementId: string, effect: ModElementEffect) =>
+		getElementEffect(elementId) === effect;
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -261,7 +339,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	const gestureStart = useRef({ x: 0, y: 0, name: '' });
 
 	const itemsPerPage = layoutCols * 3;
-	const hasStorm = elements.some(el => el.name === 'storm');
+	const hasStorm = elements.some(el => hasElementEffect(el.name, 'storm'));
 	const pagesCount = Math.ceil(discovered.length / itemsPerPage);
 	const prevPagesCount = useRef(pagesCount);
 	const prevDiscoveredLen = useRef(discovered.length);
@@ -313,7 +391,9 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 	useEffect(() => {
 		const currentEarthquakeIds = new Set(
-			elements.filter((el) => el.name === 'earthquake').map((el) => el.id)
+			elements
+				.filter((el) => hasElementEffect(el.name, 'earthquake'))
+				.map((el) => el.id)
 		);
 
 		if (!initializedEarthquakeTracking.current) {
@@ -396,7 +476,9 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 	// Explosion Effect Logic
 	useEffect(() => {
-		const explodeEl = elements.find(el => el.name === 'explode' && !explodingIDs[el.id]);
+		const explodeEl = elements.find(
+			el => hasElementEffect(el.name, 'explode') && !explodingIDs[el.id]
+		);
 		if (explodeEl) {
 			const currentExplodeId = explodeEl.id;
 			setExplodingIDs(prev => ({ ...prev, [currentExplodeId]: true }));
@@ -540,9 +622,6 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		return rawIcon[1 + Math.floor(Math.random() * (rawIcon.length - 1))];
 	};
 
-	const getElementDisplayName = (elementId: string) =>
-		ruleset.elementNames?.[elementId] ?? elementId;
-
 	const renderElementWidget = (
 		name: string,
 		size: 'small' | 'large' = 'small',
@@ -569,7 +648,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 			: 'h-full w-full rounded-xl border-2 text-[11px] pb-0';
 
 		const reactiveClasses = isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : '';
-		const lightGlow = name === 'light' && !isHidden ? 'shadow-[0_0_40px_15px_rgba(255,255,150,0.8)] z-20' : '';
+		const lightGlow = hasElementEffect(name, 'light') && !isHidden ? 'shadow-[0_0_40px_15px_rgba(255,255,150,0.8)] z-20' : '';
 
 		return (
 			<div className={`relative flex flex-col items-center justify-end select-none overflow-hidden ${sizeClasses} ${colorClass} ${reactiveClasses} ${lightGlow}`} style={style}>
@@ -634,7 +713,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	const spawnFromPalette = (e: React.PointerEvent, name: string) => {
 		const id = createElementId();
 		const icon = getRandomTableIcon(name);
-		const hint = name === 'scientist' ? (getRandomHint() ?? 'nothing') : undefined;
+		const hint = hasElementEffect(name, 'hint') ? (getRandomHint() ?? 'nothing') : undefined;
 
 		const newElement: Element = {
 			id,
@@ -670,7 +749,14 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 					return Math.sqrt(dx * dx + dy * dy) < MERGE_DISTANCE;
 				});
 
-				if (targetEl && (getRecipeResultForRuleset(ruleset, draggedEl.name, targetEl.name) || draggedEl.name === 'computer' || targetEl.name === 'computer')) {
+				if (
+					targetEl &&
+					(
+						getRecipeResultForRuleset(ruleset, draggedEl.name, targetEl.name) ||
+						hasElementEffect(draggedEl.name, 'computer') ||
+						hasElementEffect(targetEl.name, 'computer')
+					)
+				) {
 					if (!reactiveIDs.includes(draggedEl.id) || !reactiveIDs.includes(targetEl.id)) {
 						setReactiveIDs([draggedEl.id, targetEl.id]);
 					}
@@ -708,9 +794,13 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		});
 
 		if (targetEl) {
-			const isComputerAction = draggedEl.name === 'computer' || targetEl.name === 'computer';
+			const isComputerAction =
+				hasElementEffect(draggedEl.name, 'computer') ||
+				hasElementEffect(targetEl.name, 'computer');
 			if (isComputerAction) {
-				const elementToShow = draggedEl.name === 'computer' ? targetEl.name : draggedEl.name;
+				const elementToShow = hasElementEffect(draggedEl.name, 'computer')
+					? targetEl.name
+					: draggedEl.name;
 				setComputerPopup(elementToShow);
 			}
 
@@ -744,7 +834,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 				// Recalculate hints for ALL existing scientists on the table given the new discoveries
 				const updatedFilteredElements = filteredElements.map(el => {
-					if (el.name === 'scientist') {
+					if (hasElementEffect(el.name, 'hint')) {
 						return {
 							...el,
 							hint: getRandomHint(nextDiscovered) ?? 'nothing'
@@ -755,7 +845,9 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 				const newResultElements = result.map((name) => {
 					const icon = getRandomTableIcon(name);
-					const hint = name === 'scientist' ? (getRandomHint(nextDiscovered) ?? 'nothing') : undefined;
+					const hint = hasElementEffect(name, 'hint')
+						? (getRandomHint(nextDiscovered) ?? 'nothing')
+						: undefined;
 					return {
 						id: createElementId(),
 						name,
@@ -773,6 +865,15 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 						setDiscoveryPopup(newlyDiscoveredKeyItem);
 					} else if (newlyDiscoveredInfoItem) {
 						setInfoPopup(newlyDiscoveredInfoItem);
+					}
+				}
+
+				if (showRealmIntro) {
+					setShowRealmIntro(false);
+					try {
+						localStorage.setItem(introStorageKey, '1');
+					} catch {
+						// ignore storage failures
 					}
 				}
 
@@ -1024,7 +1125,16 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 					</div>
 				)}
 				<div className="absolute inset-x-0 top-12 flex flex-col items-center pointer-events-none z-10 text-center px-6 opacity-50">
-					{discovered.length === 4 ? (
+					{showRealmIntro ? (
+						<div className="max-w-2xl">
+							<h1 className="mb-2 text-xl font-bold tracking-tight text-primary opacity-40">
+								{ruleset.title}
+							</h1>
+							<p className="text-base leading-relaxed text-tertiary sm:text-lg">
+								{ruleset.intro}
+							</p>
+						</div>
+					) : discovered.length === 4 ? (
 						<h2 className="text-2xl font-black tracking-tight text-primary animate-bounce-subtle">
 							Welcome to the Alchemy! Drag elements here to combine them and create the world!
 						</h2>
@@ -1208,7 +1318,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 							{renderElementWidget(el.name, 'large', false, isReactive, el.icon)}
 
 							{/* Scientist Hint Bubble */}
-							{el.hint && el.name === 'scientist' && (
+							{el.hint && hasElementEffect(el.name, 'hint') && (
 								<div
 									className="absolute -top-24 left-1/2 -translate-x-1/2 z-[200] cursor-pointer animate-bounce-subtle pointer-events-auto"
 									onPointerDown={(e) => {
@@ -1314,6 +1424,8 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 										localStorage.setItem(storageKeys.discovered, JSON.stringify(basic));
 										localStorage.setItem(storageKeys.elements, JSON.stringify([]));
 										localStorage.setItem(storageKeys.page, '0');
+										localStorage.removeItem(introStorageKey);
+										setShowRealmIntro(Boolean(ruleset.intro.trim()));
 										if (!isPlaytest) {
 											trpc.progress.save.mutate({ discovered: basic, progressScope }).catch(console.error);
 										}
@@ -1463,8 +1575,8 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 									</div>
 								</div>
 
-								<h3 className="text-center text-3xl font-black mb-1 capitalize tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-cyan-200">
-									{computerPopup.replace(/-/g, ' ')}
+								<h3 className="text-center text-3xl font-black mb-1 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-cyan-200">
+									{getElementDisplayName(computerPopup)}
 								</h3>
 								<p className="text-center text-blue-300/60 text-sm font-medium uppercase tracking-[0.2em] mb-8">
 									Reaction Database
@@ -1533,7 +1645,9 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 							<div className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
 								Discovery Note
 							</div>
-							<h3 className="mb-4 text-2xl font-bold text-white capitalize">{infoPopup.replace('-', ' ')}</h3>
+							<h3 className="mb-4 text-2xl font-bold text-white">
+								{getElementDisplayName(infoPopup)}
+							</h3>
 
 							<div className="flex justify-center mb-6">
 								<div

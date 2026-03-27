@@ -18,7 +18,7 @@ import {
   IoAddSharp,
   IoChevronDownSharp,
   IoCloseSharp,
-  IoColorPaletteSharp,
+  IoEllipsisHorizontal,
   IoPlaySharp,
   IoRocketSharp,
   IoSaveSharp,
@@ -42,7 +42,10 @@ import {
   validateModDraft,
 } from './modding/runtime';
 import {
+  MAX_ELEMENT_MESSAGE_LENGTH,
+  MAX_REALM_INTRO_LENGTH,
   MAX_REALM_SUMMARY_LENGTH,
+  type ModElementEffect,
   type ModElement,
   type ModListItem,
   type SaveDraftInput,
@@ -73,6 +76,47 @@ type ReactionWidgetProps = {
 
 const ELEMENT_DATALIST_ID = 'alchemy-mod-elements';
 const DEFAULT_ELEMENT_NAME_PREFIX = 'Element';
+const ELEMENT_EFFECT_OPTIONS: Array<{
+  value: ModElementEffect;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'none',
+    label: 'None',
+    description: 'No special runtime behavior.',
+  },
+  {
+    value: 'explode',
+    label: 'Explode',
+    description: 'Triggers the existing explosion table effect.',
+  },
+  {
+    value: 'hint',
+    label: 'Hint',
+    description: 'Shows the existing discovery hint bubble.',
+  },
+  {
+    value: 'light',
+    label: 'Light',
+    description: 'Applies the existing glow effect on the table.',
+  },
+  {
+    value: 'computer',
+    label: 'Computer',
+    description: 'Opens the reaction database popup on contact.',
+  },
+  {
+    value: 'earthquake',
+    label: 'Earthquake',
+    description: 'Triggers the existing quake effect when created.',
+  },
+  {
+    value: 'storm',
+    label: 'Storm',
+    description: 'Enables the existing ambient storm flashes.',
+  },
+];
 
 const getSharePostUrl = (mod: Pick<ModListItem, 'sharePostId'>) => {
   if (!mod.sharePostId) {
@@ -113,6 +157,8 @@ const createStarterElement = (
   emoji: deriveElementGlyph(name),
   bgColorToken,
   frameColorToken,
+  message: '',
+  effect: 'none',
 });
 
 const getElementPreviewStyle = (element: ModElement) => {
@@ -146,6 +192,7 @@ const getColorOptionSwatchStyle = (
 const createEmptyDraft = (): SaveDraftInput => ({
   title: DEFAULT_MOD_TITLE,
   summary: '',
+  intro: '',
   startingElementIds: ['air', 'fire', 'earth', 'water'],
   elements: [
     createStarterElement('air', 'Air', 'ice', 'ocean'),
@@ -384,172 +431,38 @@ const ElementPreview = ({
   );
 };
 
-const ColorPicker = ({
-  value,
-  onChange,
-  type,
-  containerClassName,
-  buttonClassName,
-  buttonStyle,
-  children,
-  title,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  type: 'bg' | 'frame';
-  containerClassName?: string;
-  buttonClassName?: string;
-  buttonStyle?: CSSProperties | undefined;
-  children?: ReactNode;
-  title?: string;
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: globalThis.MouseEvent) => {
-      if (popoverRef.current?.contains(event.target as Node)) {
-        return;
-      }
-
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const isCustom = value.startsWith('#');
-  const typeLabel = type === 'bg' ? 'Background' : 'Border';
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const updatePopoverStyle = () => {
-      const rect = buttonRef.current?.getBoundingClientRect();
-      if (!rect) {
-        return;
-      }
-
-      const width = 160;
-      const margin = 12;
-      const left = Math.min(
-        window.innerWidth - width - margin,
-        Math.max(margin, rect.right - width)
-      );
-
-      setPopoverStyle({
-        position: 'fixed',
-        top: rect.bottom + 8,
-        left,
-        width,
-      });
-    };
-
-    updatePopoverStyle();
-    window.addEventListener('resize', updatePopoverStyle);
-    window.addEventListener('scroll', updatePopoverStyle, true);
-
-    return () => {
-      window.removeEventListener('resize', updatePopoverStyle);
-      window.removeEventListener('scroll', updatePopoverStyle, true);
-    };
-  }, [isOpen]);
-
-  return (
-    <div className={containerClassName || 'relative'} ref={ref}>
-      <button
-        ref={buttonRef}
-        type="button"
-        title={title}
-        onClick={() => setIsOpen(!isOpen)}
-        className={
-          buttonClassName ||
-          'relative flex h-8 w-8 shrink-0 items-end justify-end overflow-hidden rounded-lg border-2 border-white/20 transition-opacity outline-none hover:opacity-90'
-        }
-        style={
-          buttonStyle ||
-          (buttonClassName
-            ? undefined
-            : isCustom
-              ? {
-                  backgroundColor: value,
-                  borderColor: 'rgba(255,255,255,0.2)',
-                }
-              : getColorOptionSwatchStyle(value, type))
-        }
-      >
-        {children || (
-          <div className="absolute right-0 bottom-0 rounded-tl bg-black/50 p-0.5">
-            <IoChevronDownSharp size={10} className="text-white" />
-          </div>
-        )}
-      </button>
-
-      {isOpen &&
-        popoverStyle &&
-        createPortal(
-          <div
-            ref={popoverRef}
-            className="realm-panel z-[100000] rounded-xl p-2 shadow-2xl"
-            style={{
-              ...popoverStyle,
-              background: 'var(--catalog-card-fill)',
-              border: '1px solid var(--catalog-soft-border)',
-            }}
-          >
-            <div className="mb-2 flex items-center justify-between px-1">
-              <div className="catalog-title-font realm-text-muted text-[10px] font-bold tracking-widest uppercase">
-                {typeLabel} Color
-              </div>
-              <div className="relative h-4 w-4 overflow-hidden rounded border border-white/20 shadow-sm">
-                <input
-                  type="color"
-                  value={isCustom ? value : '#2ba6ff'}
-                  onChange={(e) => onChange(e.target.value)}
-                  className="absolute -top-2 -left-2 h-8 w-8 cursor-pointer"
-                />
-              </div>
-            </div>
-            <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
-              {MOD_COLOR_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() => {
-                    onChange(option.value);
-                    setIsOpen(false);
-                  }}
-                  className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/10 ${value === option.value ? 'bg-white/10' : ''}`}
-                >
-                  <div
-                    className="h-4 w-4 rounded-sm border border-white/20"
-                    style={getColorOptionSwatchStyle(option.value, type)}
-                  />
-                  <span className="realm-text-soft">{option.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>,
-          document.body
-        )}
-    </div>
+const getDualColorButtonStyle = (
+  bgColorToken: string,
+  frameColorToken: string
+): CSSProperties => {
+  const { bgColor, frameColor } = resolveModElementColors(
+    bgColorToken,
+    frameColorToken
   );
+
+  return {
+    backgroundImage: `linear-gradient(135deg, ${bgColor} 0%, ${bgColor} 47%, rgba(255,255,255,0.96) 49%, rgba(255,255,255,0.96) 51%, ${frameColor} 53%, ${frameColor} 100%)`,
+    borderColor: frameColor,
+    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)',
+  };
 };
 
-const CompactDualColorPicker = ({
+const DualColorPicker = ({
   element,
   onChangeBgColor,
   onChangeFrameColor,
+  containerClassName,
+  buttonClassName,
+  title,
+  popoverWidth = 336,
 }: {
   element: ModElement;
   onChangeBgColor: (value: string) => void;
   onChangeFrameColor: (value: string) => void;
+  containerClassName?: string;
+  buttonClassName?: string;
+  title?: string;
+  popoverWidth?: number;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -583,7 +496,7 @@ const CompactDualColorPicker = ({
         return;
       }
 
-      const width = 336;
+      const width = popoverWidth;
       const margin = 12;
       const left = Math.min(
         window.innerWidth - width - margin,
@@ -606,7 +519,7 @@ const CompactDualColorPicker = ({
       window.removeEventListener('resize', updatePopoverStyle);
       window.removeEventListener('scroll', updatePopoverStyle, true);
     };
-  }, [isOpen]);
+  }, [isOpen, popoverWidth]);
 
   const renderColumn = (
     columnType: 'bg' | 'frame',
@@ -654,15 +567,25 @@ const CompactDualColorPicker = ({
   };
 
   return (
-    <div className="absolute -top-1 -left-1 z-30" ref={ref}>
+    <div className={containerClassName || 'relative'} ref={ref}>
       <button
         ref={buttonRef}
         type="button"
-        title={`Edit ${element.name} background and border colors`}
+        title={title || `Edit ${element.name} background and border colors`}
         onClick={() => setIsOpen((current) => !current)}
-        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
+        className={
+          buttonClassName ||
+          'relative flex h-8 w-8 shrink-0 cursor-pointer items-end justify-end overflow-hidden rounded-lg border-2 outline-none transition-transform hover:scale-[1.04] focus-visible:scale-[1.04]'
+        }
+        style={getDualColorButtonStyle(
+          element.bgColorToken,
+          element.frameColorToken
+        )}
       >
-        <IoColorPaletteSharp size={11} />
+        <span className="absolute inset-0 bg-white/5" />
+        <span className="absolute right-0 bottom-0 rounded-tl bg-black/55 p-0.5 text-white">
+          <IoChevronDownSharp size={10} />
+        </span>
       </button>
 
       {isOpen &&
@@ -701,12 +624,149 @@ const CompactDualColorPicker = ({
   );
 };
 
+const ElementAdvancedButton = ({
+  element,
+  onApply,
+  containerClassName,
+  buttonClassName,
+}: {
+  element: ModElement;
+  onApply: (patch: Pick<ModElement, 'message' | 'effect'>) => void;
+  containerClassName?: string;
+  buttonClassName?: string;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messageDraft, setMessageDraft] = useState(element.message);
+  const [effectDraft, setEffectDraft] = useState<ModElementEffect>(
+    element.effect
+  );
+
+  return (
+    <div className={containerClassName || 'relative'}>
+      <button
+        type="button"
+        title={`Advanced settings for ${element.name}`}
+        onClick={() => {
+          setMessageDraft(element.message);
+          setEffectDraft(element.effect);
+          setIsOpen(true);
+        }}
+        className={
+          buttonClassName ||
+          'realm-button-muted flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg'
+        }
+      >
+        <IoEllipsisHorizontal size={16} />
+      </button>
+
+      {isOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100001] flex items-center justify-center bg-black/65 px-4 backdrop-blur-sm"
+            onClick={() => setIsOpen(false)}
+          >
+            <div
+              className="realm-panel w-full max-w-md rounded-[1.75rem] p-5 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                    More
+                  </div>
+                  <h3 className="catalog-title-font realm-text-ink mt-2 text-2xl font-black">
+                    {element.name}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="realm-button-muted flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
+                >
+                  <IoCloseSharp size={18} />
+                </button>
+              </div>
+
+              <label className="mb-2 block">
+                <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                  Element Message
+                </div>
+                <textarea
+                  value={messageDraft}
+                  onChange={(event) =>
+                    setMessageDraft(
+                      event.target.value.slice(0, MAX_ELEMENT_MESSAGE_LENGTH)
+                    )
+                  }
+                  rows={5}
+                  maxLength={MAX_ELEMENT_MESSAGE_LENGTH}
+                  placeholder="Shown in the in-game discovery popup for this element."
+                  className="realm-input custom-scrollbar w-full rounded-2xl border px-4 py-3 text-sm outline-none"
+                />
+                <div className="realm-text-muted mt-1 text-right text-xs">
+                  {messageDraft.length}/{MAX_ELEMENT_MESSAGE_LENGTH}
+                </div>
+              </label>
+
+              <label className="mb-5 block">
+                <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                  Effect
+                </div>
+                <select
+                  value={effectDraft}
+                  onChange={(event) => {
+                    const nextEffect = ELEMENT_EFFECT_OPTIONS.find(
+                      (option) => option.value === event.target.value
+                    );
+                    if (nextEffect) {
+                      setEffectDraft(nextEffect.value);
+                    }
+                  }}
+                  className="realm-input w-full rounded-2xl border px-4 py-3 text-sm outline-none"
+                >
+                  {ELEMENT_EFFECT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="realm-text-soft mt-2 text-sm leading-relaxed">
+                  {
+                    ELEMENT_EFFECT_OPTIONS.find(
+                      (option) => option.value === effectDraft
+                    )?.description
+                  }
+                </p>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onApply({
+                    message: messageDraft.trim(),
+                    effect: effectDraft,
+                  });
+                  setIsOpen(false);
+                }}
+                className="realm-button-accent catalog-title-font w-full cursor-pointer rounded-full px-4 py-3 text-sm font-bold"
+              >
+                Apply
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+};
+
 const CompactElementTile = ({
   element,
   onRename,
   onChangeEmoji,
   onChangeBgColor,
   onChangeFrameColor,
+  onApplyAdvanced,
   onRemove,
 }: {
   element: ModElement;
@@ -714,6 +774,7 @@ const CompactElementTile = ({
   onChangeEmoji: (emoji: string) => void;
   onChangeBgColor: (value: string) => void;
   onChangeFrameColor: (value: string) => void;
+  onApplyAdvanced: (patch: Pick<ModElement, 'message' | 'effect'>) => void;
   onRemove: () => void;
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
@@ -726,10 +787,19 @@ const CompactElementTile = ({
         className={`relative h-full w-full overflow-hidden rounded-[10px] border-[4px] ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}
         style={getElementPreviewStyle(element)}
       >
-        <CompactDualColorPicker
+        <DualColorPicker
           element={element}
           onChangeBgColor={onChangeBgColor}
           onChangeFrameColor={onChangeFrameColor}
+          containerClassName="absolute -top-1.5 -left-1.5 z-30"
+          buttonClassName="flex h-[22px] w-[22px] cursor-pointer items-end justify-end overflow-hidden rounded-full border border-[color:rgba(44,36,26,0.3)] shadow-[0_2px_8px_rgba(44,36,26,0.18)] opacity-0 transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:opacity-100 focus-visible:opacity-100"
+        />
+
+        <ElementAdvancedButton
+          element={element}
+          onApply={onApplyAdvanced}
+          containerClassName="absolute -top-2 left-1/2 z-30 -translate-x-1/2"
+          buttonClassName="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
         />
 
         <button
@@ -1213,6 +1283,23 @@ const App = () => {
     }));
   };
 
+  const updateElementAdvanced = (
+    elementId: string,
+    patch: Pick<ModElement, 'message' | 'effect'>
+  ) => {
+    updateDraft((current) => ({
+      ...current,
+      elements: current.elements.map((element) =>
+        element.id === elementId
+          ? {
+              ...element,
+              ...patch,
+            }
+          : element
+      ),
+    }));
+  };
+
   const removeElement = (elementId: string) => {
     updateDraft((current) => ({
       ...current,
@@ -1345,6 +1432,7 @@ const App = () => {
     const saved = await trpc.mods.saveDraft.mutate({
       ...draft,
       summary: clampRealmSummary(draft.summary),
+      intro: draft.intro.trim(),
       ...(loadedDraftId ? { id: loadedDraftId } : {}),
     });
     setLoadedDraftId(saved.id);
@@ -1516,6 +1604,7 @@ const App = () => {
         id: loaded.id,
         title: loaded.title,
         summary: clampRealmSummary(loaded.summary),
+        intro: loaded.intro,
         startingElementIds: loaded.startingElementIds,
         elements: loaded.elements,
         reactions: loaded.reactions,
@@ -1776,6 +1865,22 @@ const App = () => {
                   />
                   <div className="realm-text-muted mt-1 text-right text-xs">
                     {draft.summary.length}/{MAX_REALM_SUMMARY_LENGTH}
+                  </div>
+                  <textarea
+                    value={draft.intro}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        intro: event.target.value.slice(0, MAX_REALM_INTRO_LENGTH),
+                      }))
+                    }
+                    maxLength={MAX_REALM_INTRO_LENGTH}
+                    placeholder="Intro shown when players open this realm. It disappears after the first reaction."
+                    rows={4}
+                    className="realm-input catalog-body-font mt-3 w-full rounded-2xl border px-4 py-3 text-sm outline-none"
+                  />
+                  <div className="realm-text-muted mt-1 text-right text-xs">
+                    {draft.intro.length}/{MAX_REALM_INTRO_LENGTH}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2046,11 +2151,11 @@ const App = () => {
                     {filteredElements.map((element) => (
                       <div
                         key={element.id}
-                        className="realm-panel-soft relative rounded-xl p-2 pt-4"
+                        className="realm-panel-soft relative overflow-visible rounded-xl p-2 pt-4"
                       >
                         <button
                           onClick={() => removeElement(element.id)}
-                          className="absolute top-1 right-1 rounded-full bg-white/5 p-1 text-white/40 hover:bg-rose-500/20 hover:text-rose-300"
+                          className="absolute -top-2.5 -right-2.5 z-20 rounded-full bg-[color:rgba(255,255,255,0.96)] p-1 text-slate-700 shadow-lg transition-colors hover:bg-rose-500 hover:text-white"
                         >
                           <IoCloseSharp size={12} />
                         </button>
@@ -2072,24 +2177,25 @@ const App = () => {
                               placeholder="Name"
                               className="realm-input min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm outline-none"
                             />
-                            <ColorPicker
-                              type="bg"
-                              value={element.bgColorToken}
-                              onChange={(val) =>
+                            <DualColorPicker
+                              element={element}
+                              onChangeBgColor={(value) =>
                                 updateElementColors(element.id, {
-                                  bgColorToken: val,
+                                  bgColorToken: value,
                                   frameColorToken: element.frameColorToken,
                                 })
                               }
-                            />
-                            <ColorPicker
-                              type="frame"
-                              value={element.frameColorToken}
-                              onChange={(val) =>
+                              onChangeFrameColor={(value) =>
                                 updateElementColors(element.id, {
                                   bgColorToken: element.bgColorToken,
-                                  frameColorToken: val,
+                                  frameColorToken: value,
                                 })
+                              }
+                            />
+                            <ElementAdvancedButton
+                              element={element}
+                              onApply={(patch) =>
+                                updateElementAdvanced(element.id, patch)
                               }
                             />
                           </div>
@@ -2119,6 +2225,9 @@ const App = () => {
                               bgColorToken: element.bgColorToken,
                               frameColorToken: value,
                             })
+                          }
+                          onApplyAdvanced={(patch) =>
+                            updateElementAdvanced(element.id, patch)
                           }
                           onRemove={() => removeElement(element.id)}
                         />

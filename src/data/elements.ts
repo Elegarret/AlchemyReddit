@@ -1,4 +1,5 @@
 import { GiClayBrick, GiFlour, GiMountaintop, GiPowder } from 'react-icons/gi';
+import type { ModElementEffect } from '../modding/types';
 
 export const ELEMENT_COLORS: Record<string, string> = {
 	air: 'bg-blue-400 border-blue-600',
@@ -348,4 +349,13 @@ export const ELEMENT_MESSAGES: Record<string, string> = {
 		'Ooops! Instead of burning, the dino turned into a terrible dragon!',
 	time:
 		'For many items there is both a (almost) scientific and magical way to obtain them!',
+};
+
+export const ELEMENT_EFFECTS: Record<string, ModElementEffect> = {
+	computer: 'computer',
+	earthquake: 'earthquake',
+	explode: 'explode',
+	light: 'light',
+	scientist: 'hint',
+	storm: 'storm',
 };

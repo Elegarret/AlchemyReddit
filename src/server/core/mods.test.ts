@@ -1,6 +1,7 @@
 import { expect, vi } from 'vitest';
 import { reddit } from '@devvit/web/server';
 import { test } from '../test';
+import type { ModElement } from '../../modding/types';
 import {
   getPublishedMod,
   listCatalogMods,
@@ -10,12 +11,14 @@ import {
   unpublishModForUser,
 } from './mods';
 
-const makeElement = (id: string, name: string) => ({
+const makeElement = (id: string, name: string): ModElement => ({
   id,
   name,
   emoji: name[0] ?? '?',
   bgColorToken: 'ice',
   frameColorToken: 'ocean',
+  message: '',
+  effect: 'none',
 });
 
 test('publishing creates a share post and unpublishing returns the mod to drafts', async ({
@@ -42,6 +45,7 @@ test('publishing creates a share post and unpublishing returns the mod to drafts
   const saved = await saveDraftForUser(userId, username, {
     title: 'Storm Lab',
     summary: 'Build storms from a compact recipe tree.',
+    intro: 'Welcome to the storm lab.',
     startingElementIds: ['air', 'water'],
     elements: [
       makeElement('air', 'Air'),

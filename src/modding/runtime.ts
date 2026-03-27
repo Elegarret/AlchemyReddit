@@ -1,5 +1,12 @@
 import { DEFAULT_MOD_BG_COLOR_TOKEN, DEFAULT_MOD_FRAME_COLOR_TOKEN, getModElementClasses, MOD_COLOR_TOKENS } from './colors';
-import type { ActiveRuleset, ModDoc, ModElement, ModReaction, SaveDraftInput, ValidationResult } from './types';
+import type {
+	ActiveRuleset,
+	ModDoc,
+	ModElement,
+	ModReaction,
+	SaveDraftInput,
+	ValidationResult,
+} from './types';
 
 export const MAX_MOD_ELEMENTS = 128;
 export const MAX_MOD_REACTIONS = 512;
@@ -85,10 +92,16 @@ export const getRecipesForElementInRuleset = (ruleset: ActiveRuleset, elementId:
 	return matches;
 };
 
-export const createModFingerprint = (mod: Pick<ModDoc, 'title' | 'summary' | 'startingElementIds' | 'elements' | 'reactions'>) => {
+export const createModFingerprint = (
+	mod: Pick<
+		ModDoc,
+		'title' | 'summary' | 'intro' | 'startingElementIds' | 'elements' | 'reactions'
+	>
+) => {
 	const source = JSON.stringify({
 		title: mod.title,
 		summary: mod.summary,
+		intro: mod.intro,
 		startingElementIds: mod.startingElementIds,
 		elements: mod.elements,
 		reactions: mod.reactions,
@@ -129,6 +142,7 @@ export const getReachableElementIds = (startingElementIds: string[], reactions: 
 export const validateModDraft = (draft: {
 	title: string;
 	summary: string;
+	intro: string;
 	startingElementIds: string[];
 	elements: ModElement[];
 	reactions: ModReaction[];
@@ -267,6 +281,8 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
   const elementNames: Record<string, string> = {};
   const elementStyles: Record<string, string> = {};
   const elementIcons: Record<string, string> = {};
+  const elementEffects: ActiveRuleset['elementEffects'] = {};
+  const elementMessages: Record<string, string> = {};
   for (const element of mod.elements) {
     elementNames[element.id] = element.name;
     elementStyles[element.id] = getModElementClasses(
@@ -274,6 +290,12 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
       element.frameColorToken ?? DEFAULT_MOD_FRAME_COLOR_TOKEN
 		);
 		elementIcons[element.id] = element.emoji;
+		if (element.effect !== 'none') {
+			elementEffects[element.id] = element.effect;
+		}
+		if (element.message) {
+			elementMessages[element.id] = element.message;
+		}
 	}
 
   return {
@@ -281,15 +303,17 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
     rulesetId: `mod:${mod.id}`,
     title: mod.title,
     summary: mod.summary,
+    intro: mod.intro,
     storageScope: `mod:${mod.id}:${mod.publishedHash ?? createModFingerprint(mod)}`,
     startingElements: mod.startingElementIds,
     recipes,
     elementNames,
     elementStyles,
     elementIcons,
+		elementEffects,
 		keyItems: [],
 		keyItemData: {},
-		elementMessages: {},
+		elementMessages,
 		sourceModId: mod.id,
 		ownerUsername: mod.ownerUsername,
 		...(mod.publishedHash ? { publishedHash: mod.publishedHash } : {}),
@@ -302,6 +326,7 @@ export const buildRulesetFromDraft = (draft: SaveDraftInput): ActiveRuleset =>
 		id: draft.id ?? 'draft',
 		title: draft.title,
 		summary: draft.summary,
+		intro: draft.intro,
 		ownerUserId: 'draft-user',
 		ownerUsername: 'draft-user',
 		startingElementIds: draft.startingElementIds,
@@ -312,6 +337,7 @@ export const buildRulesetFromDraft = (draft: SaveDraftInput): ActiveRuleset =>
 		publishedHash: createModFingerprint({
 			title: draft.title,
 			summary: draft.summary,
+			intro: draft.intro,
 			startingElementIds: draft.startingElementIds,
 			elements: draft.elements,
 			reactions: draft.reactions,
