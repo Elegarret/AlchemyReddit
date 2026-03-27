@@ -18,6 +18,7 @@ import {
   IoAddSharp,
   IoChevronDownSharp,
   IoCloseSharp,
+  IoColorPaletteSharp,
   IoEllipsisHorizontal,
   IoPlaySharp,
   IoRocketSharp,
@@ -453,6 +454,8 @@ const DualColorPicker = ({
   onChangeFrameColor,
   containerClassName,
   buttonClassName,
+  buttonStyle,
+  children,
   title,
   popoverWidth = 336,
 }: {
@@ -461,6 +464,8 @@ const DualColorPicker = ({
   onChangeFrameColor: (value: string) => void;
   containerClassName?: string;
   buttonClassName?: string;
+  buttonStyle?: CSSProperties;
+  children?: ReactNode;
   title?: string;
   popoverWidth?: number;
 }) => {
@@ -577,15 +582,19 @@ const DualColorPicker = ({
           buttonClassName ||
           'relative flex h-8 w-8 shrink-0 cursor-pointer items-end justify-end overflow-hidden rounded-lg border-2 outline-none transition-transform hover:scale-[1.04] focus-visible:scale-[1.04]'
         }
-        style={getDualColorButtonStyle(
-          element.bgColorToken,
-          element.frameColorToken
-        )}
+        style={
+          buttonStyle ||
+          getDualColorButtonStyle(element.bgColorToken, element.frameColorToken)
+        }
       >
-        <span className="absolute inset-0 bg-white/5" />
-        <span className="absolute right-0 bottom-0 rounded-tl bg-black/55 p-0.5 text-white">
-          <IoChevronDownSharp size={10} />
-        </span>
+        {children || (
+          <>
+            <span className="absolute inset-0 bg-white/5" />
+            <span className="absolute right-0 bottom-0 rounded-tl bg-black/55 p-0.5 text-white">
+              <IoChevronDownSharp size={10} />
+            </span>
+          </>
+        )}
       </button>
 
       {isOpen &&
@@ -722,11 +731,15 @@ const ElementAdvancedButton = ({
                       setEffectDraft(nextEffect.value);
                     }
                   }}
-                  className="realm-input w-full rounded-2xl border px-4 py-3 text-sm outline-none"
+                  className="realm-input w-full rounded-2xl border border-white/10 bg-slate-950/78 px-4 py-3 text-sm text-slate-100 outline-none"
                 >
                   {ELEMENT_EFFECT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                    <option
+                      key={option.value}
+                      value={option.value}
+                      className="bg-slate-950 text-slate-100"
+                    >
+                        {option.label}
                     </option>
                   ))}
                 </select>
@@ -763,19 +776,23 @@ const ElementAdvancedButton = ({
 const CompactElementTile = ({
   element,
   onRename,
+  onBlurName,
   onChangeEmoji,
   onChangeBgColor,
   onChangeFrameColor,
   onApplyAdvanced,
   onRemove,
+  inputRef,
 }: {
   element: ModElement;
   onRename: (name: string) => void;
+  onBlurName: () => void;
   onChangeEmoji: (emoji: string) => void;
   onChangeBgColor: (value: string) => void;
   onChangeFrameColor: (value: string) => void;
   onApplyAdvanced: (patch: Pick<ModElement, 'message' | 'effect'>) => void;
   onRemove: () => void;
+  inputRef?: (node: HTMLInputElement | null) => void;
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
 
@@ -784,7 +801,7 @@ const CompactElementTile = ({
       className={`group/element relative h-[60px] w-[60px] overflow-visible ${isEditingName ? 'z-40' : ''}`}
     >
       <div
-        className={`relative h-full w-full overflow-hidden rounded-[10px] border-[4px] ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}
+        className={`relative h-full w-full overflow-visible rounded-[10px] border-[4px] ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}
         style={getElementPreviewStyle(element)}
       >
         <DualColorPicker
@@ -792,8 +809,15 @@ const CompactElementTile = ({
           onChangeBgColor={onChangeBgColor}
           onChangeFrameColor={onChangeFrameColor}
           containerClassName="absolute -top-1.5 -left-1.5 z-30"
-          buttonClassName="flex h-[22px] w-[22px] cursor-pointer items-end justify-end overflow-hidden rounded-full border border-[color:rgba(44,36,26,0.3)] shadow-[0_2px_8px_rgba(44,36,26,0.18)] opacity-0 transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:opacity-100 focus-visible:opacity-100"
-        />
+          buttonClassName="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
+          buttonStyle={{
+            backgroundColor: 'rgba(234,223,190,0.94)',
+            borderColor: 'rgba(44,36,26,0.28)',
+          }}
+          title={`Edit ${element.name || 'element'} background and border colors`}
+        >
+          <IoColorPaletteSharp size={11} />
+        </DualColorPicker>
 
         <ElementAdvancedButton
           element={element}
@@ -830,12 +854,16 @@ const CompactElementTile = ({
 
       </div>
       <input
+        ref={inputRef}
         value={element.name}
         maxLength={32}
         onChange={(event) => onRename(event.target.value)}
         onClick={(event) => event.stopPropagation()}
         onFocus={() => setIsEditingName(true)}
-        onBlur={() => setIsEditingName(false)}
+        onBlur={() => {
+          setIsEditingName(false);
+          onBlurName();
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault();
@@ -1092,6 +1120,12 @@ const App = () => {
   const validationBlinkTimeoutRef = useRef<number | null>(null);
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
   const [reactionText, setReactionText] = useState('');
+  const [pendingElementFocusId, setPendingElementFocusId] = useState<
+    string | null
+  >(null);
+  const elementNameInputRefs = useRef<Record<string, HTMLInputElement | null>>(
+    {}
+  );
 
   const syncDraftFromText = (text: string) => {
     updateDraft((currentDraft) => {
@@ -1228,13 +1262,31 @@ const App = () => {
     setDraft((current) => updater(current));
   };
 
+  useEffect(() => {
+    if (!pendingElementFocusId) {
+      return;
+    }
+
+    const target = elementNameInputRefs.current[pendingElementFocusId];
+    if (!target) {
+      return;
+    }
+
+    target.focus();
+    const cursor = target.value.length;
+    target.setSelectionRange(cursor, cursor);
+    setPendingElementFocusId(null);
+  }, [draft.elements, pendingElementFocusId]);
+
   const addElement = () => {
     updateDraft((current) => {
       const baseName = getNextGeneratedElementName(current.elements);
       const nextElement = createStarterElement(
         ensureUniqueElementId(current.elements, baseName),
-        baseName
+        ''
       );
+
+      setPendingElementFocusId(nextElement.id);
 
       return {
         ...current,
@@ -1283,6 +1335,34 @@ const App = () => {
     }));
   };
 
+  const finalizeElementName = (elementId: string) => {
+    updateDraft((current) => {
+      const nextName = getNextGeneratedElementName(
+        current.elements.filter((element) => element.id !== elementId)
+      );
+
+      return {
+        ...current,
+        elements: current.elements.map((element) => {
+          if (element.id !== elementId || element.name.trim()) {
+            return element;
+          }
+
+          const shouldRefreshEmoji =
+            element.emoji === deriveElementGlyph(element.name);
+
+          return {
+            ...element,
+            name: nextName,
+            emoji: shouldRefreshEmoji
+              ? deriveElementGlyph(nextName)
+              : element.emoji,
+          };
+        }),
+      };
+    });
+  };
+
   const updateElementAdvanced = (
     elementId: string,
     patch: Pick<ModElement, 'message' | 'effect'>
@@ -1320,6 +1400,9 @@ const App = () => {
         }))
         .filter((reaction) => reaction.outputIds.length > 0),
     }));
+    setPendingElementFocusId((current) =>
+      current === elementId ? null : current
+    );
   };
 
   const addStartingElement = (name: string) => {
@@ -1347,27 +1430,16 @@ const App = () => {
   };
 
   const addReaction = () => {
-    const first = draft.elements[0]?.id;
-    const second = draft.elements[1]?.id ?? draft.elements[0]?.id;
-    if (!first || !second) {
+    if (draft.elements.length === 0) {
       showToast('Add elements first');
       return;
     }
-
-    const emptyReactionExists = draft.reactions.some(
-      (r) =>
-        r.leftId === first &&
-        r.rightId === second &&
-        r.outputIds.length === 1 &&
-        r.outputIds[0] === first
-    );
-    if (emptyReactionExists) return;
 
     updateDraft((current) => ({
       ...current,
       reactions: [
         ...current.reactions,
-        { leftId: first, rightId: second, outputIds: [first] },
+        { leftId: '', rightId: '', outputIds: [''] },
       ],
     }));
   };
@@ -1563,11 +1635,6 @@ const App = () => {
   };
 
   const playtestDraft = async (event: MouseEvent<HTMLButtonElement>) => {
-    if (!validation.isValid) {
-      showValidationFeedback();
-      return;
-    }
-
     setIsBusy(true);
     try {
       const modId = await persistDraftSilently();
@@ -2169,11 +2236,15 @@ const App = () => {
                           />
                           <div className="flex min-w-[12rem] flex-1 items-center gap-1.5 pr-1 sm:min-w-0">
                             <input
+                              ref={(node) => {
+                                elementNameInputRefs.current[element.id] = node;
+                              }}
                               value={element.name}
                               maxLength={32}
                               onChange={(event) =>
                                 renameElement(element.id, event.target.value)
                               }
+                              onBlur={() => finalizeElementName(element.id)}
                               placeholder="Name"
                               className="realm-input min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm outline-none"
                             />
@@ -2211,6 +2282,7 @@ const App = () => {
                           key={element.id}
                           element={element}
                           onRename={(name) => renameElement(element.id, name)}
+                          onBlurName={() => finalizeElementName(element.id)}
                           onChangeEmoji={(emoji) =>
                             updateElementEmoji(element.id, emoji)
                           }
@@ -2230,6 +2302,9 @@ const App = () => {
                             updateElementAdvanced(element.id, patch)
                           }
                           onRemove={() => removeElement(element.id)}
+                          inputRef={(node) => {
+                            elementNameInputRefs.current[element.id] = node;
+                          }}
                         />
                       ))}
                       <button

@@ -1056,28 +1056,28 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 		>
-			{isPlaytest && (
-				<div className="realm-panel-soft catalog-title-font absolute inset-x-0 top-0 z-[5000] flex items-center justify-between gap-3 px-4 py-3 text-sm font-bold backdrop-blur-sm">
-					<span>Playtesting draft mod</span>
-					<button
-						onClick={(event) => {
-							localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
-							if (ruleset.sourceModId) {
-								setEditorTargetModId(ruleset.sourceModId);
-							}
-							openEntry(event.nativeEvent, 'mod-editor');
-						}}
-						className="realm-button-muted cursor-pointer rounded-full px-3 py-1.5 text-xs uppercase tracking-wide"
-					>
-						Return to Editor
-					</button>
-				</div>
-			)}
 			{/* Worktable Area */}
 			<div
 				ref={containerRef}
 				className={`relative flex-1 bg-table-gradient ${isPlaytest ? 'pt-12' : ''}`}
 			>
+				{isPlaytest && (
+					<div className="catalog-title-font absolute inset-x-3 top-3 z-[5000] flex items-center justify-between gap-3 rounded-2xl border border-cyan-300/20 bg-slate-950/92 px-4 py-3 text-sm font-bold text-cyan-50 shadow-[0_10px_30px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+						<span>Playtesting draft mod</span>
+						<button
+							onClick={(event) => {
+								localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+								if (ruleset.sourceModId) {
+									setEditorTargetModId(ruleset.sourceModId);
+								}
+								openEntry(event.nativeEvent, 'mod-editor');
+							}}
+							className="cursor-pointer rounded-full border border-cyan-200/25 bg-cyan-400/12 px-3 py-1.5 text-xs uppercase tracking-wide text-cyan-50 transition-colors hover:bg-cyan-400/20"
+						>
+							Return to Editor
+						</button>
+					</div>
+				)}
 				{hasStorm && (
 					<div className="absolute inset-0 z-[1] pointer-events-none bg-slate-950/35 transition-opacity duration-700" />
 				)}
@@ -1124,21 +1124,21 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 						))}
 					</div>
 				)}
-				<div className="absolute inset-x-0 top-12 flex flex-col items-center pointer-events-none z-10 text-center px-6 opacity-50">
+				<div className="absolute inset-x-0 top-12 z-10 flex flex-col items-center px-6 text-center pointer-events-none">
 					{showRealmIntro ? (
-						<div className="max-w-2xl">
-							<h1 className="mb-2 text-xl font-bold tracking-tight text-primary opacity-40">
+						<div className="max-w-3xl rounded-[2rem] border border-white/8 bg-slate-950/18 px-6 py-5 shadow-[0_14px_44px_rgba(15,23,42,0.18)] backdrop-blur-sm">
+							<h1 className="mb-3 text-2xl font-black tracking-tight text-primary opacity-65">
 								{ruleset.title}
 							</h1>
-							<p className="text-base leading-relaxed text-tertiary sm:text-lg">
+							<p className="text-base leading-relaxed text-slate-100/72 sm:text-xl">
 								{ruleset.intro}
 							</p>
 						</div>
-					) : discovered.length === 4 ? (
+					) : ruleset.kind === 'base' && discovered.length === 4 ? (
 						<h2 className="text-2xl font-black tracking-tight text-primary animate-bounce-subtle">
 							Welcome to the Alchemy! Drag elements here to combine them and create the world!
 						</h2>
-					) : (
+					) : ruleset.kind === 'base' ? (
 						<>
 							<h1 className="text-xl font-bold tracking-tight text-primary opacity-40 mb-1">Alchemy Game</h1>
 							<p className="text-tertiary text-lg">
@@ -1151,6 +1151,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 								)}
 							</p>
 						</>
+					) : (
+						<h1 className="text-xl font-bold tracking-tight text-primary opacity-60">
+							{ruleset.title}
+						</h1>
 					)}
 				</div>
 
