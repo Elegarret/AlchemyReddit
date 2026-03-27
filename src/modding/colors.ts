@@ -1,85 +1,100 @@
 type ModColorDefinition = {
-	bgClass: string;
-	frameClass: string;
-	swatchClass: string;
+	bgColor: string;
+	frameColor: string;
 };
 
 export const MOD_COLOR_TOKENS: Record<string, ModColorDefinition> = {
 	ember: {
-		bgClass: 'bg-orange-300',
-		frameClass: 'border-orange-500',
-		swatchClass: 'bg-orange-300 border-orange-500',
+		bgColor: '#fdba74',
+		frameColor: '#eab308',
 	},
 	ocean: {
-		bgClass: 'bg-sky-200',
-		frameClass: 'border-sky-400',
-		swatchClass: 'bg-sky-200 border-sky-400',
+		bgColor: '#bae6fd',
+		frameColor: '#1d4ed8',
 	},
 	forest: {
-		bgClass: 'bg-emerald-500',
-		frameClass: 'border-emerald-700',
-		swatchClass: 'bg-emerald-500 border-emerald-700',
+		bgColor: '#10b981',
+		frameColor: '#84cc16',
 	},
 	stone: {
-		bgClass: 'bg-slate-400',
-		frameClass: 'border-slate-600',
-		swatchClass: 'bg-slate-400 border-slate-600',
+		bgColor: '#94a3b8',
+		frameColor: '#64748b',
 	},
 	sun: {
-		bgClass: 'bg-yellow-200',
-		frameClass: 'border-yellow-400',
-		swatchClass: 'bg-yellow-200 border-yellow-400',
+		bgColor: '#fef08a',
+		frameColor: '#facc15',
 	},
 	royal: {
-		bgClass: 'bg-indigo-400',
-		frameClass: 'border-indigo-600',
-		swatchClass: 'bg-indigo-400 border-indigo-600',
+		bgColor: '#818cf8',
+		frameColor: '#8b5cf6',
 	},
 	rose: {
-		bgClass: 'bg-rose-300',
-		frameClass: 'border-rose-500',
-		swatchClass: 'bg-rose-300 border-rose-500',
+		bgColor: '#fda4af',
+		frameColor: '#ec4899',
 	},
 	shadow: {
-		bgClass: 'bg-zinc-700',
-		frameClass: 'border-zinc-900',
-		swatchClass: 'bg-zinc-700 border-zinc-900',
+		bgColor: '#3f3f46',
+		frameColor: '#09090b',
 	},
 	mint: {
-		bgClass: 'bg-teal-300',
-		frameClass: 'border-teal-500',
-		swatchClass: 'bg-teal-300 border-teal-500',
+		bgColor: '#5eead4',
+		frameColor: '#10b981',
 	},
 	sand: {
-		bgClass: 'bg-amber-200',
-		frameClass: 'border-amber-400',
-		swatchClass: 'bg-amber-200 border-amber-400',
+		bgColor: '#fde68a',
+		frameColor: '#fb923c',
 	},
 	plum: {
-		bgClass: 'bg-fuchsia-300',
-		frameClass: 'border-fuchsia-500',
-		swatchClass: 'bg-fuchsia-300 border-fuchsia-500',
+		bgColor: '#f0abfc',
+		frameColor: '#f472b6',
 	},
 	ice: {
-		bgClass: 'bg-cyan-100',
-		frameClass: 'border-cyan-300',
-		swatchClass: 'bg-cyan-100 border-cyan-300',
+		bgColor: '#cffafe',
+		frameColor: '#38bdf8',
 	},
 };
 
-export const MOD_COLOR_OPTIONS = Object.entries(MOD_COLOR_TOKENS).map(([value, definition]) => ({
-	value,
-	label: value.charAt(0).toUpperCase() + value.slice(1),
-	swatchClass: definition.swatchClass,
-}));
+export const MOD_COLOR_OPTIONS = Object.entries(MOD_COLOR_TOKENS).map(
+	([value, definition]) => ({
+		value,
+		label: value.charAt(0).toUpperCase() + value.slice(1),
+		bgColor: definition.bgColor,
+		frameColor: definition.frameColor,
+	})
+);
 
 export const DEFAULT_MOD_BG_COLOR_TOKEN = 'ocean';
 export const DEFAULT_MOD_FRAME_COLOR_TOKEN = 'ocean';
 export const DEFAULT_MOD_COLOR_TOKEN = DEFAULT_MOD_BG_COLOR_TOKEN;
 
-export const getModElementClasses = (bgColorToken: string, frameColorToken: string) => {
-	const bgClass = bgColorToken.startsWith('#') ? `bg-[${bgColorToken}]` : (MOD_COLOR_TOKENS[bgColorToken]?.bgClass ?? 'bg-sky-200');
-	const frameClass = frameColorToken.startsWith('#') ? `border-[${frameColorToken}]` : (MOD_COLOR_TOKENS[frameColorToken]?.frameClass ?? 'border-sky-400');
+export const resolveModBgColor = (bgColorToken: string) =>
+	bgColorToken.startsWith('#')
+		? bgColorToken
+		: (MOD_COLOR_TOKENS[bgColorToken]?.bgColor ??
+			MOD_COLOR_TOKENS[DEFAULT_MOD_BG_COLOR_TOKEN]!.bgColor);
 
-	return `${bgClass} ${frameClass}`;
+export const resolveModFrameColor = (frameColorToken: string) =>
+	frameColorToken.startsWith('#')
+		? frameColorToken
+		: (MOD_COLOR_TOKENS[frameColorToken]?.frameColor ??
+			MOD_COLOR_TOKENS[DEFAULT_MOD_FRAME_COLOR_TOKEN]!.frameColor);
+
+export const resolveModElementColors = (
+	bgColorToken: string,
+	frameColorToken: string
+) => ({
+	bgColor: resolveModBgColor(bgColorToken),
+	frameColor: resolveModFrameColor(frameColorToken),
+});
+
+export const getModElementClasses = (
+	bgColorToken: string,
+	frameColorToken: string
+) => {
+	const { bgColor, frameColor } = resolveModElementColors(
+		bgColorToken,
+		frameColorToken
+	);
+
+	return `bg-[${bgColor}] border-[${frameColor}]`;
 };

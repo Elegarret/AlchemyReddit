@@ -3,6 +3,7 @@ import 'emoji-picker-element';
 import { navigateTo, showShareSheet, showToast } from '@devvit/web/client';
 import {
   StrictMode,
+  type CSSProperties,
   type DragEvent,
   useEffect,
   useMemo,
@@ -17,6 +18,7 @@ import {
   IoAddSharp,
   IoChevronDownSharp,
   IoCloseSharp,
+  IoColorPaletteSharp,
   IoPlaySharp,
   IoRocketSharp,
   IoSaveSharp,
@@ -30,6 +32,7 @@ import {
   getModElementClasses,
   MOD_COLOR_TOKENS,
   MOD_COLOR_OPTIONS,
+  resolveModElementColors,
 } from './modding/colors';
 import {
   DEFAULT_MOD_TITLE,
@@ -113,16 +116,30 @@ const createStarterElement = (
 });
 
 const getElementPreviewStyle = (element: ModElement) => {
-  const customBg = element.bgColorToken.startsWith('#')
-    ? element.bgColorToken
-    : undefined;
-  const customFrame = element.frameColorToken.startsWith('#')
-    ? element.frameColorToken
-    : undefined;
+  const { bgColor, frameColor } = resolveModElementColors(
+    element.bgColorToken,
+    element.frameColorToken
+  );
 
   return {
-    ...(customBg ? { backgroundColor: customBg } : {}),
-    ...(customFrame ? { borderColor: customFrame } : {}),
+    backgroundColor: bgColor,
+    borderColor: frameColor,
+  };
+};
+
+const getColorOptionSwatchStyle = (
+  value: string,
+  type: 'bg' | 'frame'
+): CSSProperties | undefined => {
+  const definition = MOD_COLOR_TOKENS[value];
+  if (!definition) {
+    return undefined;
+  }
+
+  return {
+    backgroundColor:
+      type === 'bg' ? definition.bgColor : definition.frameColor,
+    borderColor: 'rgba(255,255,255,0.2)',
   };
 };
 
@@ -373,6 +390,7 @@ const ColorPicker = ({
   type,
   containerClassName,
   buttonClassName,
+  buttonStyle,
   children,
   title,
 }: {
@@ -381,14 +399,22 @@ const ColorPicker = ({
   type: 'bg' | 'frame';
   containerClassName?: string;
   buttonClassName?: string;
+  buttonStyle?: CSSProperties | undefined;
   children?: ReactNode;
   title?: string;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: globalThis.MouseEvent) => {
+      if (popoverRef.current?.contains(event.target as Node)) {
+        return;
+      }
+
       if (ref.current && !ref.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
@@ -397,43 +423,66 @@ const ColorPicker = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const activeOption =
-    MOD_COLOR_OPTIONS.find((opt) => opt.value === value) ||
-    MOD_COLOR_OPTIONS[0]!;
   const isCustom = value.startsWith('#');
-  const activeDefinition =
-    MOD_COLOR_TOKENS[value] ?? MOD_COLOR_TOKENS[DEFAULT_MOD_BG_COLOR_TOKEN]!;
-  const framePreviewClass = !isCustom
-    ? activeDefinition.frameClass.replace('border-', 'bg-')
-    : undefined;
+  const typeLabel = type === 'bg' ? 'Background' : 'Border';
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const updatePopoverStyle = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+
+      const width = 160;
+      const margin = 12;
+      const left = Math.min(
+        window.innerWidth - width - margin,
+        Math.max(margin, rect.right - width)
+      );
+
+      setPopoverStyle({
+        position: 'fixed',
+        top: rect.bottom + 8,
+        left,
+        width,
+      });
+    };
+
+    updatePopoverStyle();
+    window.addEventListener('resize', updatePopoverStyle);
+    window.addEventListener('scroll', updatePopoverStyle, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePopoverStyle);
+      window.removeEventListener('scroll', updatePopoverStyle, true);
+    };
+  }, [isOpen]);
 
   return (
     <div className={containerClassName || 'relative'} ref={ref}>
       <button
+        ref={buttonRef}
         type="button"
         title={title}
         onClick={() => setIsOpen(!isOpen)}
         className={
           buttonClassName ||
-          `relative flex h-8 w-8 shrink-0 items-end justify-end overflow-hidden rounded-lg border-2 transition-opacity outline-none hover:opacity-90 ${
-            isCustom
-              ? 'border-white/20'
-              : type === 'bg'
-                ? activeOption.swatchClass
-                : `${framePreviewClass ?? 'bg-white/40'} border-white/20`
-          }`
+          'relative flex h-8 w-8 shrink-0 items-end justify-end overflow-hidden rounded-lg border-2 border-white/20 transition-opacity outline-none hover:opacity-90'
         }
         style={
-          buttonClassName
+          buttonStyle ||
+          (buttonClassName
             ? undefined
             : isCustom
-              ? type === 'bg'
-                ? { backgroundColor: value }
-                : {
-                    backgroundColor: value,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                  }
-              : undefined
+              ? {
+                  backgroundColor: value,
+                  borderColor: 'rgba(255,255,255,0.2)',
+                }
+              : getColorOptionSwatchStyle(value, type))
         }
       >
         {children || (
@@ -443,40 +492,211 @@ const ColorPicker = ({
         )}
       </button>
 
-      {isOpen && (
-        <div className="realm-panel absolute top-full right-0 z-50 mt-2 w-40 rounded-xl p-2 shadow-2xl">
-          <div className="mb-2 flex items-center justify-between px-1">
-            <div className="catalog-title-font realm-text-muted text-[10px] font-bold tracking-widest uppercase">
-              {type} Color
-            </div>
-            <div className="relative h-4 w-4 overflow-hidden rounded border border-white/20 shadow-sm">
-              <input
-                type="color"
-                value={isCustom ? value : '#2ba6ff'}
-                onChange={(e) => onChange(e.target.value)}
-                className="absolute -top-2 -left-2 h-8 w-8 cursor-pointer"
-              />
-            </div>
-          </div>
-          <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
-            {MOD_COLOR_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => {
-                  onChange(option.value);
-                  setIsOpen(false);
-                }}
-                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/10 ${value === option.value ? 'bg-white/10' : ''}`}
-              >
-                <div
-                  className={`h-4 w-4 rounded-sm border ${option.swatchClass}`}
+      {isOpen &&
+        popoverStyle &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="realm-panel z-[100000] rounded-xl p-2 shadow-2xl"
+            style={{
+              ...popoverStyle,
+              background: 'var(--catalog-card-fill)',
+              border: '1px solid var(--catalog-soft-border)',
+            }}
+          >
+            <div className="mb-2 flex items-center justify-between px-1">
+              <div className="catalog-title-font realm-text-muted text-[10px] font-bold tracking-widest uppercase">
+                {typeLabel} Color
+              </div>
+              <div className="relative h-4 w-4 overflow-hidden rounded border border-white/20 shadow-sm">
+                <input
+                  type="color"
+                  value={isCustom ? value : '#2ba6ff'}
+                  onChange={(e) => onChange(e.target.value)}
+                  className="absolute -top-2 -left-2 h-8 w-8 cursor-pointer"
                 />
-                <span className="realm-text-soft">{option.label}</span>
-              </button>
-            ))}
+              </div>
+            </div>
+            <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
+              {MOD_COLOR_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => {
+                    onChange(option.value);
+                    setIsOpen(false);
+                  }}
+                  className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/10 ${value === option.value ? 'bg-white/10' : ''}`}
+                >
+                  <div
+                    className="h-4 w-4 rounded-sm border border-white/20"
+                    style={getColorOptionSwatchStyle(option.value, type)}
+                  />
+                  <span className="realm-text-soft">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+};
+
+const CompactDualColorPicker = ({
+  element,
+  onChangeBgColor,
+  onChangeFrameColor,
+}: {
+  element: ModElement;
+  onChangeBgColor: (value: string) => void;
+  onChangeFrameColor: (value: string) => void;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: globalThis.MouseEvent) => {
+      if (popoverRef.current?.contains(event.target as Node)) {
+        return;
+      }
+
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const updatePopoverStyle = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+
+      const width = 336;
+      const margin = 12;
+      const left = Math.min(
+        window.innerWidth - width - margin,
+        Math.max(margin, rect.left - width / 2 + rect.width / 2)
+      );
+
+      setPopoverStyle({
+        position: 'fixed',
+        top: rect.bottom + 8,
+        left,
+        width,
+      });
+    };
+
+    updatePopoverStyle();
+    window.addEventListener('resize', updatePopoverStyle);
+    window.addEventListener('scroll', updatePopoverStyle, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePopoverStyle);
+      window.removeEventListener('scroll', updatePopoverStyle, true);
+    };
+  }, [isOpen]);
+
+  const renderColumn = (
+    columnType: 'bg' | 'frame',
+    label: string,
+    value: string,
+    onChange: (nextValue: string) => void
+  ) => {
+    const isCustom = value.startsWith('#');
+
+    return (
+      <div className="realm-panel-soft rounded-xl p-2">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <div className="catalog-title-font realm-text-muted text-[10px] font-bold tracking-widest uppercase">
+            {label}
+          </div>
+          <div className="relative h-4 w-4 overflow-hidden rounded border border-white/20 shadow-sm">
+            <input
+              type="color"
+              value={isCustom ? value : '#2ba6ff'}
+              onChange={(event) => onChange(event.target.value)}
+              className="absolute -top-2 -left-2 h-8 w-8 cursor-pointer"
+            />
           </div>
         </div>
-      )}
+        <div className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-1">
+          {MOD_COLOR_OPTIONS.map((option) => (
+            <button
+              key={`${label}-${option.value}`}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/10 ${
+                value === option.value ? 'bg-white/10' : ''
+              }`}
+            >
+              <div
+                className="h-4 w-4 rounded-sm border border-white/20"
+                style={getColorOptionSwatchStyle(option.value, columnType)}
+              />
+              <span className="realm-text-soft">{option.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="absolute -top-1 -left-1 z-30" ref={ref}>
+      <button
+        ref={buttonRef}
+        type="button"
+        title={`Edit ${element.name} background and border colors`}
+        onClick={() => setIsOpen((current) => !current)}
+        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
+      >
+        <IoColorPaletteSharp size={11} />
+      </button>
+
+      {isOpen &&
+        popoverStyle &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="realm-panel z-[100000] rounded-xl p-3 shadow-2xl"
+            style={{
+              ...popoverStyle,
+              background: 'var(--catalog-card-fill)',
+              border: '1px solid var(--catalog-soft-border)',
+            }}
+          >
+            <div className="catalog-title-font realm-text-muted mb-3 px-1 text-[10px] font-bold tracking-widest uppercase">
+              Element Colors
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {renderColumn(
+                'bg',
+                'Background',
+                element.bgColorToken,
+                onChangeBgColor
+              )}
+              {renderColumn(
+                'frame',
+                'Border',
+                element.frameColorToken,
+                onChangeFrameColor
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
@@ -495,66 +715,78 @@ const CompactElementTile = ({
   onChangeBgColor: (value: string) => void;
   onChangeFrameColor: (value: string) => void;
   onRemove: () => void;
-}) => (
-  <div className="group relative">
+}) => {
+  const [isEditingName, setIsEditingName] = useState(false);
+
+  return (
     <div
-      className={`relative h-[60px] w-[60px] overflow-hidden rounded-[10px] border-2 ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}
-      style={getElementPreviewStyle(element)}
+      className={`group/element relative h-[60px] w-[60px] overflow-visible ${isEditingName ? 'z-40' : ''}`}
     >
-      <ColorPicker
-        type="frame"
-        value={element.frameColorToken}
-        onChange={onChangeFrameColor}
-        title={`Edit ${element.name} frame color`}
-        containerClassName="absolute inset-0 z-0"
-        buttonClassName="h-full w-full cursor-pointer rounded-[10px] border-2 border-transparent bg-transparent transition-colors hover:border-white/70 focus-visible:border-white/80"
+      <div
+        className={`relative h-full w-full overflow-hidden rounded-[10px] border-[4px] ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}
+        style={getElementPreviewStyle(element)}
       >
-        <span className="sr-only">Edit frame color</span>
-      </ColorPicker>
-
-      <ColorPicker
-        type="bg"
-        value={element.bgColorToken}
-        onChange={onChangeBgColor}
-        title={`Edit ${element.name} background color`}
-        containerClassName="absolute inset-[3px] top-[3px] bottom-[14px] z-10"
-        buttonClassName="h-full w-full cursor-pointer rounded-[7px] bg-transparent transition-colors hover:bg-white/10 focus-visible:bg-white/10"
-      >
-        <span className="sr-only">Edit background color</span>
-      </ColorPicker>
-
-      <button
-        type="button"
-        onClick={onRemove}
-        title={`Remove ${element.name}`}
-        className="realm-button-muted absolute top-0.5 right-0.5 z-30 rounded-full p-0.5 text-[10px] text-white/70 opacity-0 transition-opacity group-hover:opacity-100"
-      >
-        <IoCloseSharp size={10} />
-      </button>
-
-      <div className="pointer-events-none relative z-20 flex h-full flex-col items-center justify-end">
-        <div className="flex flex-1 items-center justify-center px-1 pt-1">
-          <EmojiDropdown
-            emoji={element.emoji}
-            name={element.name}
-            onChange={onChangeEmoji}
-            title={`Edit ${element.name} icon`}
-            buttonClassName="pointer-events-auto absolute top-1/2 left-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-[60%] cursor-pointer items-center justify-center rounded-full bg-transparent text-[22px] font-black text-[color:var(--catalog-ink)] outline-none transition-all hover:scale-105 hover:bg-white/12 focus-visible:bg-white/12"
-          />
-        </div>
-
-        <input
-          value={element.name}
-          maxLength={32}
-          onChange={(event) => onRename(event.target.value)}
-          onClick={(event) => event.stopPropagation()}
-          title={`Rename ${element.name}`}
-          className="pointer-events-auto relative z-20 h-[14px] w-full bg-black/25 px-1 text-center text-[7px] font-bold tracking-[0.08em] text-white uppercase outline-none transition-colors hover:bg-black/40 focus:bg-black/45"
+        <CompactDualColorPicker
+          element={element}
+          onChangeBgColor={onChangeBgColor}
+          onChangeFrameColor={onChangeFrameColor}
         />
+
+        <button
+          type="button"
+          onClick={onRemove}
+          title={`Remove ${element.name}`}
+          className="absolute -top-1 -right-1 z-30 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
+        >
+          <IoCloseSharp size={10} />
+        </button>
+
+        <EmojiDropdown
+          emoji={element.emoji}
+          name={element.name}
+          onChange={onChangeEmoji}
+          title={`Edit ${element.name} icon`}
+          containerClassName="pointer-events-none absolute inset-0 z-20 h-[calc(100%-18px)] w-full"
+          buttonClassName="group/emoji pointer-events-auto absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-[58%] cursor-pointer appearance-none items-center justify-center rounded-xl border border-transparent bg-transparent text-[32px] font-black text-[color:var(--catalog-ink)] outline-none transition-all hover:scale-105 hover:bg-transparent focus-visible:scale-105 focus-visible:bg-transparent active:bg-transparent"
+        >
+          <div className="relative flex h-full w-full items-center justify-center">
+            <span className="pointer-events-none absolute inset-0 rounded-xl border border-transparent transition-all group-hover/emoji:border-white group-hover/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)] group-focus-within/emoji:border-white group-focus-within/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)]" />
+            <span className="leading-none">{element.emoji}</span>
+            <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/70 p-[1px] text-white opacity-0 transition-opacity group-hover/emoji:opacity-100">
+              <IoChevronDownSharp size={8} />
+            </span>
+          </div>
+        </EmojiDropdown>
+
       </div>
+      <input
+        value={element.name}
+        maxLength={32}
+        onChange={(event) => onRename(event.target.value)}
+        onClick={(event) => event.stopPropagation()}
+        onFocus={() => setIsEditingName(true)}
+        onBlur={() => setIsEditingName(false)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+        title={`Rename ${element.name}`}
+        className={`pointer-events-auto absolute z-20 px-1 text-center text-[9px] font-bold tracking-[0.08em] text-white uppercase outline-none transition-all hover:bg-black/40 focus:bg-black/55 ${
+          isEditingName
+            ? 'bottom-[4px] left-1/2 h-[18px] min-w-full max-w-none -translate-x-1/2 rounded-md bg-black/55 shadow-lg'
+            : 'right-[4px] bottom-[4px] left-[4px] h-[14px] rounded-b-[6px] bg-black/28'
+        }`}
+        style={
+          isEditingName
+            ? { width: `${Math.max(element.name.length + 4, 8)}ch` }
+            : undefined
+        }
+      />
     </div>
-  </div>
-);
+  );
+};
 
 const DroppableInput = ({
   value,
@@ -785,7 +1017,7 @@ const App = () => {
     null
   );
   const [elementPanelView, setElementPanelView] =
-    useState<ElementPanelView>('extended');
+    useState<ElementPanelView>('compact');
   const [isValidationBlinking, setIsValidationBlinking] = useState(false);
   const validationBlinkTimeoutRef = useRef<number | null>(null);
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
@@ -1655,12 +1887,9 @@ const App = () => {
 
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
                 <div>
-                  <div className="mb-2 flex items-center justify-between">
+                  <div className="mb-2">
                     <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                      Starting Elements
-                    </div>
-                    <div className="realm-text-muted text-xs">
-                      {draft.startingElementIds.length}
+                      Starting Elements ({draft.startingElementIds.length})
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1669,12 +1898,12 @@ const App = () => {
                       return el ? (
                         <div
                           key={`starting-${id}-${index}`}
-                          className="flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-400/18 py-1 pr-1 pl-2 text-sm font-bold text-emerald-50"
+                          className="editor-starter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
                         >
                           <span>{el.name}</span>
                           <button
                             onClick={() => removeStartingElement(index)}
-                            className="ml-0.5 text-emerald-200/70 hover:text-white"
+                            className="editor-starter-remove ml-0.5"
                           >
                             <IoCloseSharp size={16} />
                           </button>
@@ -1720,25 +1949,31 @@ const App = () => {
                   }`}
                 >
                   <div className="mb-3 flex items-center justify-between">
-                    <div className="catalog-title-font realm-text-ink text-sm font-black">
-                      Validation
+                    <div className="flex items-center gap-2">
+                      <div className="catalog-title-font realm-text-ink text-sm font-black">
+                        Validation
+                      </div>
+                      <div className="realm-text-soft text-sm">
+                        ({validation.reachableElementIds.length}/
+                        {validation.totalElements} reachable)
+                      </div>
                     </div>
                     <span
-                      className={`rounded-full px-3 py-1 text-[10px] font-bold tracking-[0.16em] uppercase ${validation.isValid ? 'bg-emerald-400/20 text-emerald-100' : 'bg-rose-400/20 text-rose-100'}`}
+                      className={`rounded-full px-3 py-1 text-[10px] font-bold tracking-[0.16em] uppercase ${
+                        validation.isValid
+                          ? 'editor-validation-badge-ready'
+                          : 'editor-validation-badge-blocked'
+                      }`}
                     >
                       {validation.isValid ? 'Ready' : 'Blocked'}
                     </span>
-                  </div>
-                  <div className="realm-text-soft mb-3 text-sm">
-                    {validation.reachableElementIds.length}/
-                    {validation.totalElements} reachable
                   </div>
                   {validation.errors.length > 0 && (
                     <div className="space-y-2">
                       {validation.errors.slice(0, 3).map((error) => (
                         <div
                           key={error}
-                          className="rounded-xl bg-rose-400/12 px-3 py-2 text-sm text-rose-100"
+                          className="editor-validation-error rounded-xl px-3 py-2 text-sm"
                         >
                           {error}
                         </div>
@@ -1748,13 +1983,13 @@ const App = () => {
                   {validation.errors.length === 0 &&
                     validation.warnings.length > 0 && (
                       <div className="space-y-2">
-                        {validation.warnings.slice(0, 2).map((warning) => (
-                          <div
-                            key={warning}
-                            className="rounded-xl bg-amber-300/12 px-3 py-2 text-sm text-amber-50"
-                          >
-                            {warning}
-                          </div>
+                      {validation.warnings.slice(0, 2).map((warning) => (
+                        <div
+                          key={warning}
+                          className="editor-validation-warning rounded-xl px-3 py-2 text-sm"
+                        >
+                          {warning}
+                        </div>
                         ))}
                       </div>
                     )}
@@ -1764,17 +1999,13 @@ const App = () => {
 
             <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
               <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                        Elements
-                      </div>
-                      <div className="realm-text-soft text-sm">
-                        {draft.elements.length} total
-                      </div>
+                <div className="mb-4 flex flex-nowrap items-start gap-3">
+                  <div className="min-w-[112px] shrink-0">
+                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                      Elements ({draft.elements.length})
                     </div>
                     <button
+                      type="button"
                       onClick={() =>
                         setElementPanelView((current) =>
                           current === 'extended' ? 'compact' : 'extended'
@@ -1787,25 +2018,26 @@ const App = () => {
                         : 'Extended View'}
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <DroppableInput
-                      value={elementSearch}
-                      onChange={setElementSearch}
-                      onClear={
-                        elementSearch ? () => setElementSearch('') : undefined
-                      }
-                      placeholder="Search elements"
-                      className="realm-input w-24 border sm:w-32 lg:w-44"
-                    />
-                    {elementPanelView === 'extended' && (
-                      <button
-                        onClick={addElement}
-                        className="realm-button-accent catalog-title-font shrink-0 cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
-                      >
-                        <IoAddSharp className="mr-1 inline-block" />
-                        Add Element
-                      </button>
-                    )}
+                  <div className="ml-auto flex min-w-0 flex-1 items-center gap-2">
+                    <div className="realm-input flex min-w-0 flex-1 items-center rounded-lg border">
+                      <DroppableInput
+                        value={elementSearch}
+                        onChange={setElementSearch}
+                        onClear={
+                          elementSearch ? () => setElementSearch('') : undefined
+                        }
+                        placeholder="Search element"
+                        className="w-full border-0"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addElement}
+                      title="Add element"
+                      className="realm-button-accent catalog-title-font flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-lg font-bold"
+                    >
+                      <IoAddSharp />
+                    </button>
                   </div>
                 </div>
 
@@ -1866,8 +2098,8 @@ const App = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="custom-scrollbar h-[500px] overflow-y-auto pr-1 pb-6">
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-3">
+                  <div className="custom-scrollbar h-[500px] overflow-x-visible overflow-y-auto pr-1 pb-6">
+                    <div className="grid grid-cols-4 gap-3">
                       {filteredElements.map((element) => (
                         <CompactElementTile
                           key={element.id}
@@ -1905,12 +2137,13 @@ const App = () => {
               </div>
 
               <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="mb-4 flex flex-nowrap items-start gap-3">
+                  <div className="min-w-[112px] shrink-0">
                     <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
                       Reactions
                     </div>
                     <button
+                      type="button"
                       onClick={toggleReactionView}
                       className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
                     >
@@ -1918,11 +2151,11 @@ const App = () => {
                         ? 'Text Editor'
                         : 'Visual Editor'}
                     </button>
-                    <div className="realm-text-soft hidden text-sm lg:block">
+                    <div className="realm-text-soft mt-1 hidden text-sm lg:block">
                       {draft.reactions.length} total
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
                     {reactionView === 'visual' && (
                       <>
                         <DroppableInput
