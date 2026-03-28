@@ -22,7 +22,7 @@ export const MOD_COLOR_TOKENS: Record<string, ModColorDefinition> = {
 	},
 	sun: {
 		bgColor: '#fef08a',
-		frameColor: '#facc15',
+		frameColor: '#FA4015',
 	},
 	royal: {
 		bgColor: '#818cf8',

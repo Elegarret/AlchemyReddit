@@ -44,6 +44,7 @@ This template uses a two-stage WebView pattern:
 
 - After making changes, run `npm run type-check` to make sure the Typescript types are compiling correctly.
 - Use `npm run test -- my-file-name` to run isolated tests against files
+- Keep `PROJECT.md` in the repo root updated whenever architecture, major flows, or important project conventions change.
 
 ## Code Style
 
