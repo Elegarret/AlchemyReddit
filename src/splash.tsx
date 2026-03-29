@@ -94,6 +94,16 @@ export const Splash = () => {
 				>
 					{progress ? 'Continue discovery' : 'Play Now'}
 				</button>
+				<button
+					className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-10 py-3 text-sm font-bold tracking-[0.14em] uppercase transition-all hover:scale-[1.02] active:scale-[0.98]"
+					onClick={(e) => {
+						localStorage.removeItem('override-mod-id');
+						localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+						requestExpandedMode(e.nativeEvent, 'mod-editor');
+					}}
+				>
+					Create a Mod
+				</button>
 			</div>
 
 			<div className="realm-text-muted absolute bottom-4 right-4 text-[10px] font-mono select-none tracking-wider uppercase">

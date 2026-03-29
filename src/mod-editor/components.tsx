@@ -4,6 +4,7 @@ import {
   type DragEvent,
   type ReactNode,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -11,8 +12,10 @@ import {
   IoAddSharp,
   IoChevronDownSharp,
   IoCloseSharp,
+  IoCodeSlash,
   IoColorPaletteSharp,
   IoEllipsisHorizontal,
+  IoReorderThreeSharp,
 } from 'react-icons/io5';
 import {
   getModElementClasses,
@@ -20,6 +23,12 @@ import {
   MOD_COLOR_TOKENS,
   resolveModElementColors,
 } from '../modding/colors';
+import {
+  formatReactionScript,
+  formatReactionScriptIssue,
+  hasReactionScript,
+  validateReactionScript,
+} from '../modding/reaction-script';
 import {
   MAX_ELEMENT_MESSAGE_LENGTH,
   type ModElement,
@@ -30,6 +39,7 @@ import {
   ELEMENT_EFFECT_OPTIONS,
   type ReactionWidgetProps,
 } from './constants';
+import { ReactionScriptAutocompleteTextarea } from './ReactionScriptAutocompleteTextarea';
 
 type EmojiPickerElement = HTMLElement & {
   shadowRoot: ShadowRoot | null;
@@ -45,6 +55,8 @@ const isEmojiPickerEvent = (
 
   return typeof Reflect.get(detail, 'unicode') === 'string';
 };
+
+const REACTION_DRAG_TYPE = 'application/x-alchemy-reaction-index';
 
 const getElementPreviewStyle = (element: ModElement) => {
   const { bgColor, frameColor } = resolveModElementColors(
@@ -687,6 +699,8 @@ export const DroppableInput = ({
   className,
   onEnter,
   onDropValue,
+  grow = true,
+  inputRef,
 }: {
   value: string;
   onChange: (val: string) => void;
@@ -696,6 +710,8 @@ export const DroppableInput = ({
   className?: string | undefined;
   onEnter?: (() => void) | undefined;
   onDropValue?: ((val: string) => void) | undefined;
+  grow?: boolean;
+  inputRef?: ((node: HTMLInputElement | null) => void) | undefined;
 }) => {
   const [dragOver, setDragOver] = useState(false);
 
@@ -715,9 +731,10 @@ export const DroppableInput = ({
 
   return (
     <div
-      className={`relative flex min-w-0 flex-1 items-center ${dragOver ? 'ring-2 ring-cyan-400' : ''} rounded-lg ${className}`}
+      className={`relative flex min-w-0 items-center rounded-lg ${grow ? 'flex-1' : 'shrink-0'} ${dragOver ? 'ring-2 ring-cyan-400' : ''} ${className}`}
     >
       <input
+        ref={inputRef}
         list={ELEMENT_DATALIST_ID}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -754,14 +771,18 @@ export const ReactionWidget = ({
   index,
   reaction,
   elements,
+  onAddMissingElement,
   onCommit,
+  onMoveReaction,
+  onUpdateScript,
   onDelete,
-  onNewReaction,
 }: ReactionWidgetProps) => {
   const outputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const isDragHandleActiveRef = useRef(false);
   const [pendingFocusIndex, setPendingFocusIndex] = useState<number | null>(
     null
   );
+  const [isScriptOpen, setIsScriptOpen] = useState(false);
 
   const leftName =
     elements.find((element) => element.id === reaction.leftId)?.name ?? '';
@@ -793,6 +814,27 @@ export const ReactionWidget = ({
     elements.map((element) => `${element.id}:${element.name}`).join('|'),
   ]);
 
+  const scriptText = reaction.script ?? '';
+  const hasScript = hasReactionScript(scriptText);
+  const scriptElementNames = useMemo(
+    () =>
+      elements
+        .map((element) => element.name.trim())
+        .filter((name) => name.length > 0),
+    [elements]
+  );
+  const scriptValidation = useMemo(
+    () =>
+      validateReactionScript(scriptText, {
+        counterNames: [],
+        elements: elements.map((element) => ({
+          id: element.id,
+          name: element.name,
+        })),
+      }),
+    [elements, scriptText]
+  );
+
   useEffect(() => {
     if (pendingFocusIndex === null) {
       return;
@@ -820,9 +862,92 @@ export const ReactionWidget = ({
     commit(leftText, rightText, next);
   };
 
+  const reactionFieldClassName =
+    'realm-input w-[5rem] border sm:w-[6.5rem]';
+  const scriptIssues =
+    hasScript && !scriptValidation.ok ? scriptValidation.errors : [];
+  const lastOutputIndex = outputTexts.length - 1;
+
+  const addOutputField = (focusIndex: number) => {
+    setOutputTexts((current) => [...current, '']);
+    setPendingFocusIndex(focusIndex);
+  };
+
+  const handleToggleScript = () => {
+    if (!isScriptOpen && !hasScript) {
+      const filledOutputNames = outputTexts
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+
+      if (filledOutputNames.length > 0) {
+        onUpdateScript(
+          index,
+          formatReactionScript(`add ${filledOutputNames.join(', ')}`) ??
+            `add ${filledOutputNames.join(', ')}`
+        );
+      }
+    }
+
+    setIsScriptOpen((current) => !current);
+  };
+
   return (
-    <div className="realm-panel-soft flex flex-col gap-2 overflow-hidden rounded-xl p-2">
-      <div className="flex w-full flex-nowrap items-center gap-1.5">
+    <div
+      draggable={true}
+      onDragStart={(event) => {
+        if (!isDragHandleActiveRef.current) {
+          event.preventDefault();
+          return;
+        }
+
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(REACTION_DRAG_TYPE, String(index));
+      }}
+      onDragEnd={() => {
+        isDragHandleActiveRef.current = false;
+      }}
+      className="realm-panel-soft relative flex flex-col gap-2 overflow-hidden rounded-xl p-2 pt-6"
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes(REACTION_DRAG_TYPE)) {
+          event.preventDefault();
+        }
+      }}
+      onDrop={(event) => {
+        const fromIndexText = event.dataTransfer.getData(REACTION_DRAG_TYPE);
+        const fromIndex = Number(fromIndexText);
+        if (Number.isNaN(fromIndex)) {
+          return;
+        }
+
+        event.preventDefault();
+        onMoveReaction(fromIndex, index);
+      }}
+    >
+      <button
+        type="button"
+        onMouseDown={() => {
+          isDragHandleActiveRef.current = true;
+        }}
+        onMouseUp={() => {
+          isDragHandleActiveRef.current = false;
+        }}
+        onBlur={() => {
+          isDragHandleActiveRef.current = false;
+        }}
+        className="realm-button-muted absolute -top-2 -left-2 z-10 flex h-6 w-6 cursor-grab items-center justify-center rounded-full hover:bg-white/10 active:cursor-grabbing"
+        title="Drag to reorder reaction"
+      >
+        <IoReorderThreeSharp size={15} />
+      </button>
+      <button
+        type="button"
+        onClick={() => onDelete(index)}
+        className="realm-button-muted absolute -top-2 -right-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full hover:bg-rose-500/20 hover:text-rose-300"
+        title="Remove reaction"
+      >
+        <IoCloseSharp size={14} />
+      </button>
+      <div className="flex w-full min-w-0 flex-nowrap items-center gap-1.5 pr-8">
         <DroppableInput
           value={leftText}
           onChange={setLeftText}
@@ -833,7 +958,8 @@ export const ReactionWidget = ({
           }}
           onEnter={() => commit()}
           placeholder="A"
-          className="realm-input border"
+          className={reactionFieldClassName}
+          grow={false}
         />
         <div className="catalog-title-font realm-text-ink shrink-0 text-center font-black">+</div>
         <DroppableInput
@@ -846,48 +972,130 @@ export const ReactionWidget = ({
           }}
           onEnter={() => commit()}
           placeholder="B"
-          className="realm-input border"
+          className={reactionFieldClassName}
+          grow={false}
         />
         <button
-          onClick={() => onDelete(index)}
-          className="realm-button-muted ml-1 shrink-0 rounded p-1 hover:bg-rose-500/20 hover:text-rose-300"
+          type="button"
+          onClick={handleToggleScript}
+          className={`catalog-title-font ml-auto flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-[10px] font-bold tracking-[0.16em] uppercase transition-colors ${
+            isScriptOpen || hasScript
+              ? 'bg-cyan-500/18 text-cyan-100'
+              : 'realm-button-muted'
+          }`}
+          title={hasScript ? 'Edit scripted override' : 'Open scripted override'}
         >
-          <IoCloseSharp size={16} />
+          <IoCodeSlash size={14} />
         </button>
       </div>
 
-      <div className="flex w-full flex-wrap items-center gap-1.5 pl-1">
-        <div className="shrink-0 font-black text-emerald-300">=</div>
-        {outputTexts.map((outputText, outputIndex) => (
-          <DroppableInput
-            key={`reaction-${index}-output-${outputIndex}`}
-            value={outputText}
-            onChange={(val) => {
-              const next = [...outputTexts];
-              next[outputIndex] = val;
-              setOutputTexts(next);
-            }}
-            onBlur={() => commit(leftText, rightText, outputTexts)}
-            onClear={() => removeOutput(outputIndex)}
-            onEnter={() => {
-              commit(leftText, rightText, outputTexts);
-              if (outputIndex === outputTexts.length - 1 && onNewReaction) {
-                onNewReaction();
-              }
-            }}
-            placeholder={`Result ${outputIndex + 1}`}
-            className="realm-input min-w-[6rem] border"
-          />
-        ))}
-        <button
-          onClick={() => {
-            setOutputTexts((current) => [...current, '']);
-            setPendingFocusIndex(outputTexts.length);
-          }}
-          className="realm-button-accent shrink-0 rounded-lg p-1"
-        >
-          <IoAddSharp size={16} />
-        </button>
+      <div className="flex flex-col gap-2 pl-1">
+        <div className="flex items-center gap-2">
+          {isScriptOpen && (
+            <div className="realm-text-soft text-xs">
+              Script overrides visual outputs when non-empty.
+            </div>
+          )}
+        </div>
+
+        {isScriptOpen ? (
+          <div className="flex flex-col gap-2">
+            <ReactionScriptAutocompleteTextarea
+              className="realm-input custom-scrollbar min-h-[7.5rem] w-full resize-y rounded-xl border px-3 py-2 font-mono text-sm outline-none"
+              counterNames={[]}
+              elementNames={scriptElementNames}
+              mode="script"
+              value={scriptText}
+              onChange={(nextValue) => onUpdateScript(index, nextValue)}
+              placeholder={`add dust\nmessage("The cupboard is locked.")\nif (count(health) < 10) add bandage`}
+            />
+
+            <div className="realm-text-soft text-xs leading-relaxed">
+			  Press `Enter` or `Tab` to accept, `Esc` to close.
+            </div>
+
+            {scriptIssues.length > 0 && (
+              <div className="space-y-1">
+                {scriptIssues.slice(0, 4).map((issue) => {
+                  const unknownElementMatch = issue.message.match(
+                    /^Unknown element "(.+)"\.$/
+                  );
+                  const missingElementName = unknownElementMatch?.[1] ?? null;
+
+                  return (
+                    <div
+                      key={`${issue.line}-${issue.message}`}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border border-rose-400/20 bg-rose-500/12 px-3 py-2 text-xs text-rose-100"
+                    >
+                      <span>{formatReactionScriptIssue(issue)}</span>
+                      {missingElementName && (
+                        <button
+                          type="button"
+                          onClick={() => onAddMissingElement(missingElementName)}
+                          className="realm-button-accent cursor-pointer rounded-full px-2 py-1 text-[10px] font-bold"
+                        >
+                          Add {missingElementName}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : !hasScript ? (
+          <div className="flex w-full flex-wrap items-center gap-1.5">
+            <div className="shrink-0 font-black text-emerald-300">=</div>
+            {outputTexts.map((outputText, outputIndex) => {
+              const isLastOutput = outputIndex === lastOutputIndex;
+
+              return (
+                <div
+                  key={`reaction-${index}-output-${outputIndex}`}
+                  className={`flex items-stretch ${isLastOutput ? 'gap-0' : ''}`}
+                >
+                  <DroppableInput
+                    inputRef={(node) => {
+                      outputRefs.current[outputIndex] = node;
+                    }}
+                    value={outputText}
+                    onChange={(val) => {
+                      const next = [...outputTexts];
+                      next[outputIndex] = val;
+                      setOutputTexts(next);
+                    }}
+                    onBlur={() => commit(leftText, rightText, outputTexts)}
+                    onClear={() => removeOutput(outputIndex)}
+                    onEnter={() => {
+                      commit(leftText, rightText, outputTexts);
+                      if (outputIndex === outputTexts.length - 1) {
+                        addOutputField(outputTexts.length);
+                        return;
+                      }
+
+                      setPendingFocusIndex(outputIndex + 1);
+                    }}
+                    placeholder={`Result ${outputIndex + 1}`}
+                    className={`${reactionFieldClassName} ${
+                      isLastOutput ? 'rounded-r-none' : ''
+                    }`}
+                    grow={false}
+                  />
+                  {isLastOutput && (
+                    <button
+                      onClick={() => {
+                        addOutputField(outputTexts.length);
+                      }}
+                      className="realm-button-accent shrink-0 rounded-r-lg rounded-l-none border border-l-0 border-white/10 px-2"
+                    >
+                      <IoAddSharp size={16} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
     </div>
   );

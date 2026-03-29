@@ -6,6 +6,7 @@ import {
   DEFAULT_MOD_TITLE,
   createElementIdFromName,
 } from '../modding/runtime';
+import { formatReactionScript } from '../modding/reaction-script';
 import {
   MAX_REALM_SUMMARY_LENGTH,
   type ModElement,
@@ -143,46 +144,76 @@ export const applyReactionTextToDraft = (
 ) => {
   let nextDraft = draft;
   const reactions: SaveDraftInput['reactions'] = [];
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
 
-  for (const line of text.split('\n')) {
-    const parts = line.split('=');
-    const inputsRaw = parts[0]?.trim() ?? '';
-    const outputsRaw = parts.slice(1).join('=').trim();
-    if (!inputsRaw || !outputsRaw) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? '';
+    if (!line) {
       continue;
     }
 
-    const inputParts = inputsRaw
-      .split('+')
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const outputParts = outputsRaw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const leftName = inputParts[0];
-    if (!leftName || outputParts.length === 0) {
+    const equalIndex = line.indexOf('=');
+    const plusIndex = line.indexOf('+');
+    if (equalIndex <= 0 || plusIndex <= 0 || plusIndex > equalIndex) {
       continue;
     }
 
-    const rightName = inputParts[1] ?? leftName;
+    const leftName = line.slice(0, plusIndex).trim();
+    const rightName = line.slice(plusIndex + 1, equalIndex).trim();
+    const inlineResult = line.slice(equalIndex + 1).trim();
+    if (!leftName || !rightName) {
+      continue;
+    }
+
     const leftResolved = ensureElementInDraft(nextDraft, leftName);
     nextDraft = leftResolved.draft;
 
     const rightResolved = ensureElementInDraft(nextDraft, rightName);
     nextDraft = rightResolved.draft;
 
-    const outputIds: string[] = [];
-    for (const outputName of outputParts) {
-      const resolved = ensureElementInDraft(nextDraft, outputName);
-      nextDraft = resolved.draft;
-      outputIds.push(resolved.elementId);
+    if (inlineResult) {
+      const outputIds: string[] = [];
+      inlineResult
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .forEach((outputName) => {
+          const resolved = ensureElementInDraft(nextDraft, outputName);
+          nextDraft = resolved.draft;
+          outputIds.push(resolved.elementId);
+        });
+
+      reactions.push({
+        leftId: leftResolved.elementId,
+        rightId: rightResolved.elementId,
+        outputIds,
+      });
+      continue;
+    }
+
+    const scriptLines: string[] = [];
+    while (index + 1 < lines.length) {
+      const nextLine = lines[index + 1] ?? '';
+      if (nextLine.startsWith('    ')) {
+        scriptLines.push(nextLine.slice(4));
+        index += 1;
+        continue;
+      }
+
+      if (nextLine.startsWith('\t')) {
+        scriptLines.push(nextLine.slice(1));
+        index += 1;
+        continue;
+      }
+
+      break;
     }
 
     reactions.push({
       leftId: leftResolved.elementId,
       rightId: rightResolved.elementId,
-      outputIds,
+      outputIds: [],
+      script: formatReactionScript(scriptLines.join('\n')) ?? scriptLines.join('\n'),
     });
   }
 
@@ -206,8 +237,17 @@ export const formatReactionText = (draft: SaveDraftInput) => {
           draft.elements.find((element) => element.id === outputId)?.name ?? ''
       )
       .join(', ');
+    const script = reaction.script?.trim() ?? '';
 
-    return `${left} + ${right} = ${outputs}`;
+    if (script) {
+      const formattedScript = formatReactionScript(script) ?? script;
+      return [
+        `${left}+${right}=`,
+        ...formattedScript.split('\n').map((line) => `    ${line}`),
+      ].join('\n');
+    }
+
+    return `${left}+${right}=${outputs}`;
   });
 
   return lines.join('\n') + (lines.length > 0 ? '\n' : '');

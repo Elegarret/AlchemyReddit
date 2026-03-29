@@ -1,4 +1,4 @@
-import { context } from '@devvit/web/client';
+import { context, showToast } from '@devvit/web/client';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   IoCloseSharp,
@@ -10,10 +10,11 @@ import { BASE_RULESET } from '../modding/base-ruleset';
 import {
   getLocalStorageKeys,
   getProgressScope,
-  getRecipeResultForRuleset,
   getRecipesForElementInRuleset,
   getValidDiscoveredItems,
+  hasReactionForRuleset,
   PLAYTEST_RULESET_STORAGE_KEY,
+  resolveReactionForRuleset,
 } from '../modding/runtime';
 import {
   LEGACY_ELEMENT_EFFECTS,
@@ -36,6 +37,9 @@ type GameSessionProps = {
 
 let elementIdCounter = 0;
 const createElementId = () => `el-${++elementIdCounter}`;
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === 'object' && value !== null;
+
 const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScope, isPlaytest }: GameSessionProps) => {
 	const storageKeys = getLocalStorageKeys(ruleset);
 	const introStorageKey = `${storageKeys.discovered}-intro-dismissed`;
@@ -67,6 +71,30 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 			console.error('Failed to load elements', e);
 		}
 		return [];
+	});
+	const [counterValues, setCounterValues] = useState<Record<string, number>>(() => {
+		try {
+			const saved = localStorage.getItem(storageKeys.counters);
+			if (!saved) {
+				return {};
+			}
+
+			const parsed = JSON.parse(saved);
+			if (!isRecord(parsed)) {
+				return {};
+			}
+
+			const nextCounters: Record<string, number> = {};
+			Object.entries(parsed).forEach(([key, value]) => {
+				if (typeof value === 'number') {
+					nextCounters[key] = value;
+				}
+			});
+			return nextCounters;
+		} catch (error) {
+			console.error('Failed to load counters', error);
+			return {};
+		}
 	});
 	const [layoutCols, setLayoutCols] = useState(6);
 
@@ -215,6 +243,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	useEffect(() => {
 		localStorage.setItem(storageKeys.elements, JSON.stringify(elements));
 	}, [elements]);
+
+	useEffect(() => {
+		localStorage.setItem(storageKeys.counters, JSON.stringify(counterValues));
+	}, [counterValues, storageKeys.counters]);
 
 	useEffect(() => {
 		localStorage.setItem(storageKeys.page, currentPage.toString());
@@ -587,7 +619,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 				if (
 					targetEl &&
 					(
-						getRecipeResultForRuleset(ruleset, draggedEl.name, targetEl.name) ||
+						hasReactionForRuleset(ruleset, draggedEl.name, targetEl.name) ||
 						hasElementEffect(draggedEl.name, 'computer') ||
 						hasElementEffect(targetEl.name, 'computer')
 					)
@@ -639,8 +671,30 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 				setComputerPopup(elementToShow);
 			}
 
-			const result = getRecipeResultForRuleset(ruleset, draggedEl.name, targetEl.name);
-			if (result) {
+			const reactionResolution = resolveReactionForRuleset({
+				counterValues,
+				currentTableElements: elements.map((element) => ({
+					elementId: element.name,
+					id: element.id,
+				})),
+				discoveredElementIds: discovered,
+				leftId: draggedEl.name,
+				rightId: targetEl.name,
+				ruleset,
+			});
+			if (reactionResolution) {
+				if (!reactionResolution.ok) {
+					showToast(
+						reactionResolution.errors[0]
+							? `Reaction script error: ${reactionResolution.errors[0].message}`
+							: 'Reaction script error.'
+					);
+					setDragging(null);
+					setReactiveIDs([]);
+					return;
+				}
+
+				const result = reactionResolution.result;
 				const midX = (draggedEl.x + targetEl.x) / 2;
 				const midY = (draggedEl.y + targetEl.y) / 2;
 
@@ -648,15 +702,20 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 				setFlash({ x: midX, y: midY, id: ++flashCounter.current });
 				setTimeout(() => setFlash(null), 500);
 
+				const removedElementIds = new Set([
+					dragging,
+					targetEl.id,
+					...result.removedTableElementIds,
+				]);
 				const filteredElements = elements.filter(
-					(el) => el.id !== dragging && el.id !== targetEl.id
+					(el) => !removedElementIds.has(el.id)
 				);
 
 				// Prepare next discovery state to correctly generate hints
 				let nextDiscovered = [...discovered];
 				let newlyDiscoveredKeyItem = null;
 				let newlyDiscoveredInfoItem = null;
-				result.forEach((name) => {
+				result.emittedElementIds.forEach((name) => {
 					if (!nextDiscovered.includes(name)) {
 						nextDiscovered.push(name);
 						if (ruleset.keyItems.includes(name)) {
@@ -678,7 +737,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 					return el;
 				});
 
-				const newResultElements = result.map((name) => {
+				const newResultElements = result.emittedElementIds.map((name) => {
 					const icon = getRandomTableIcon(name);
 					const hint = hasElementEffect(name, 'hint')
 						? (getRandomHint(nextDiscovered) ?? 'nothing')
@@ -691,6 +750,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 						...(hint ? { hint } : {}),
 						...(icon ? { icon } : {}),
 					};
+				});
+				setCounterValues(result.counterValues);
+				result.messages.forEach((message) => {
+					showToast(message);
 				});
 
 				// Update discovered list
@@ -722,7 +785,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 							prev.map((el) => {
 								const resIdx = newResultElements.findIndex((r) => r.id === el.id);
 								if (resIdx !== -1) {
-									const angle = (resIdx / result.length) * Math.PI * 2;
+									const angle = (resIdx / newResultElements.length) * Math.PI * 2;
 									const dist = 50;
 									return {
 										...el,
@@ -1259,9 +1322,11 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 										const basic = ruleset.startingElements;
 										setDiscovered(basic);
 										setElements([]);
+										setCounterValues({});
 										setCurrentPage(0);
 										localStorage.setItem(storageKeys.discovered, JSON.stringify(basic));
 										localStorage.setItem(storageKeys.elements, JSON.stringify([]));
+										localStorage.setItem(storageKeys.counters, JSON.stringify({}));
 										localStorage.setItem(storageKeys.page, '0');
 										localStorage.removeItem(introStorageKey);
 										setShowRealmIntro(Boolean(ruleset.intro.trim()));

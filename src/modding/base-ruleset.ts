@@ -18,10 +18,12 @@ export const BASE_RULESET: ActiveRuleset = {
 	storageScope: 'base',
 	startingElements: ['air', 'fire', 'earth', 'water'],
 	recipes: RECIPES,
+	reactionScripts: {},
 	elementStyles: ELEMENT_COLORS,
 	elementIcons: ELEMENT_ICONS,
 	elementEffects: ELEMENT_EFFECTS,
 	keyItems: KEY_ITEMS,
 	keyItemData: KEY_ITEMS_DATA,
 	elementMessages: ELEMENT_MESSAGES,
+	counterNames: [],
 };

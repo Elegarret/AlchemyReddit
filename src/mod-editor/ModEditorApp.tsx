@@ -36,6 +36,7 @@ import {
   ElementPreview,
   ReactionWidget,
 } from './components';
+import { ReactionScriptAutocompleteTextarea } from './ReactionScriptAutocompleteTextarea';
 import {
   ELEMENT_DATALIST_ID,
   type EditorTab,
@@ -297,7 +298,11 @@ export const ModEditorApp = () => {
             (outputId) => outputId !== elementId
           ),
         }))
-        .filter((reaction) => reaction.outputIds.length > 0),
+        .filter(
+          (reaction) =>
+            reaction.outputIds.length > 0 ||
+            (reaction.script?.trim().length ?? 0) > 0
+        ),
     }));
     setPendingElementFocusId((current) =>
       current === elementId ? null : current
@@ -338,7 +343,7 @@ export const ModEditorApp = () => {
       ...current,
       reactions: [
         ...current.reactions,
-        { leftId: '', rightId: '', outputIds: [''] },
+        { leftId: '', rightId: '', outputIds: [''], script: '' },
       ],
     }));
   };
@@ -384,10 +389,25 @@ export const ModEditorApp = () => {
               leftId: leftResolved.elementId,
               rightId: rightResolved.elementId,
               outputIds,
+              script: reaction.script,
             }
           : reaction
       ),
     });
+  };
+
+  const updateReactionScript = (index: number, script: string) => {
+    updateDraft((current) => ({
+      ...current,
+      reactions: current.reactions.map((reaction, reactionIndex) =>
+        reactionIndex === index
+          ? {
+              ...reaction,
+              script,
+            }
+          : reaction
+      ),
+    }));
   };
 
   const deleteReaction = (index: number) => {
@@ -397,6 +417,39 @@ export const ModEditorApp = () => {
         (_, reactionIndex) => reactionIndex !== index
       ),
     }));
+  };
+
+  const moveReaction = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) {
+      return;
+    }
+
+    updateDraft((current) => {
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= current.reactions.length ||
+        toIndex >= current.reactions.length
+      ) {
+        return current;
+      }
+
+      const reactions = [...current.reactions];
+      const [movedReaction] = reactions.splice(fromIndex, 1);
+      if (!movedReaction) {
+        return current;
+      }
+
+      reactions.splice(toIndex, 0, movedReaction);
+      return {
+        ...current,
+        reactions,
+      };
+    });
+  };
+
+  const addMissingReactionElement = (name: string) => {
+    updateDraft((current) => ensureElementInDraft(current, name).draft);
   };
 
   const persistDraftSilently = async () => {
@@ -635,28 +688,33 @@ export const ModEditorApp = () => {
     element.name.toLowerCase().includes(elementSearch.toLowerCase())
   );
 
-  const filteredReactions = draft.reactions.filter((reaction) => {
-    if (!reactionSearch) {
-      return true;
-    }
+  const filteredReactions = draft.reactions
+    .map((reaction, index) => ({
+      index,
+      reaction,
+    }))
+    .filter(({ reaction }) => {
+      if (!reactionSearch) {
+        return true;
+      }
 
-    const leftName =
-      draft.elements.find((element) => element.id === reaction.leftId)?.name ??
-      '';
-    const rightName =
-      draft.elements.find((element) => element.id === reaction.rightId)?.name ??
-      '';
-    const outputNames = reaction.outputIds
-      .map(
-        (outputId) =>
-          draft.elements.find((element) => element.id === outputId)?.name ?? ''
-      )
-      .join(' ');
+      const leftName =
+        draft.elements.find((element) => element.id === reaction.leftId)?.name ??
+        '';
+      const rightName =
+        draft.elements.find((element) => element.id === reaction.rightId)?.name ??
+        '';
+      const outputNames = reaction.outputIds
+        .map(
+          (outputId) =>
+            draft.elements.find((element) => element.id === outputId)?.name ?? ''
+        )
+        .join(' ');
 
-    return `${leftName} ${rightName} ${outputNames}`
-      .toLowerCase()
-      .includes(reactionSearch.toLowerCase());
-  });
+      return `${leftName} ${rightName} ${outputNames} ${reaction.script ?? ''}`
+        .toLowerCase()
+        .includes(reactionSearch.toLowerCase());
+    });
 
   return (
     <div className="realm-page min-h-screen">
@@ -852,19 +910,19 @@ export const ModEditorApp = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     disabled={isBusy}
-                    onClick={playtestDraft}
-                    className={`${editorActionButtonClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
-                  >
-                    <IoPlaySharp className="mr-1 inline-block" />
-                    Playtest
-                  </button>
-                  <button
-                    disabled={isBusy}
                     onClick={saveDraft}
                     className={`${editorActionButtonClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     <IoSaveSharp className="mr-1 inline-block" />
                     Save
+                  </button>
+                  <button
+                    disabled={isBusy}
+                    onClick={playtestDraft}
+                    className={`${editorActionButtonClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    <IoPlaySharp className="mr-1 inline-block" />
+                    Playtest
                   </button>
                   <button
                     type="button"
@@ -1068,7 +1126,104 @@ export const ModEditorApp = () => {
               </div>
             </div>
 
-            <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+            <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+              <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
+                <div className="mb-4 flex flex-nowrap items-start gap-3">
+                  <div className="min-w-[112px] shrink-0">
+                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                      Reactions
+                    </div>
+                    <button
+                      type="button"
+                      onClick={toggleReactionView}
+                      className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
+                    >
+                      {reactionView === 'visual'
+                        ? 'Text Editor'
+                        : 'Visual Editor'}
+                    </button>
+                    <div className="realm-text-soft mt-1 hidden text-sm lg:block">
+                      {draft.reactions.length} total
+                    </div>
+                  </div>
+                  <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
+                    {reactionView === 'visual' && (
+                      <>
+                        <DroppableInput
+                          value={reactionSearch}
+                          onChange={setReactionSearch}
+                          onClear={
+                            reactionSearch
+                              ? () => setReactionSearch('')
+                              : undefined
+                          }
+                          placeholder="Search reactions"
+                          className="realm-input w-24 border sm:w-32 lg:w-44"
+                        />
+                        <button
+                          onClick={addReaction}
+                          className="realm-button-accent shrink-0 rounded-md px-3 py-1.5 font-bold"
+                        >
+                          <IoAddSharp size={18} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {reactionView === 'visual' ? (
+                  <div className="custom-scrollbar h-[500px] space-y-3 overflow-y-auto pr-2 pb-6">
+                    {filteredReactions.map(({ reaction, index }) => (
+                      <ReactionWidget
+                        key={`${reaction.leftId}-${reaction.rightId}-${index}`}
+                        index={index}
+                        reaction={reaction}
+                        elements={draft.elements}
+                        onAddMissingElement={addMissingReactionElement}
+                        onCommit={commitReaction}
+                        onMoveReaction={moveReaction}
+                        onUpdateScript={updateReactionScript}
+                        onDelete={deleteReaction}
+                        onNewReaction={addReaction}
+                      />
+                    ))}
+
+                    {filteredReactions.length === 0 && (
+                      <div className="realm-panel-soft realm-text-soft rounded-xl border border-dashed p-6 text-center text-sm">
+                        <div>
+                          No reactions yet. Add one to make the realm playable.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={addReaction}
+                          className="realm-button-accent catalog-title-font mt-4 cursor-pointer rounded-full px-4 py-2 font-bold"
+                        >
+                          Add First Reaction
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="h-[500px] pb-6">
+                    <ReactionScriptAutocompleteTextarea
+                      className="realm-input custom-scrollbar h-full w-full resize-none rounded-xl border p-4 font-mono text-sm font-bold outline-none"
+                      counterNames={[]}
+                      elementNames={draft.elements
+                        .map((element) => element.name.trim())
+                        .filter((name) => name.length > 0)}
+                      mode="reaction-text"
+                      onBlur={() => syncDraftFromText(reactionText)}
+                      onChange={setReactionText}
+                      placeholder={
+                        'Water+Fire=Steam, Fog\nCupboard+Key=\n    message("It opens.")\n    add Treasure'
+                      }
+                      rows={18}
+                      value={reactionText}
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
                 <div className="mb-4 flex flex-nowrap items-start gap-3">
                   <div className="min-w-[112px] shrink-0">
@@ -1215,98 +1370,6 @@ export const ModEditorApp = () => {
                         +
                       </button>
                     </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
-                <div className="mb-4 flex flex-nowrap items-start gap-3">
-                  <div className="min-w-[112px] shrink-0">
-                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                      Reactions
-                    </div>
-                    <button
-                      type="button"
-                      onClick={toggleReactionView}
-                      className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
-                    >
-                      {reactionView === 'visual'
-                        ? 'Text Editor'
-                        : 'Visual Editor'}
-                    </button>
-                    <div className="realm-text-soft mt-1 hidden text-sm lg:block">
-                      {draft.reactions.length} total
-                    </div>
-                  </div>
-                  <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
-                    {reactionView === 'visual' && (
-                      <>
-                        <DroppableInput
-                          value={reactionSearch}
-                          onChange={setReactionSearch}
-                          onClear={
-                            reactionSearch
-                              ? () => setReactionSearch('')
-                              : undefined
-                          }
-                          placeholder="Search reactions"
-                          className="realm-input w-24 border sm:w-32 lg:w-44"
-                        />
-                        <button
-                          onClick={addReaction}
-                          className="realm-button-accent shrink-0 rounded-md px-3 py-1.5 font-bold"
-                        >
-                          <IoAddSharp size={18} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {reactionView === 'visual' ? (
-                  <div className="custom-scrollbar h-[500px] space-y-3 overflow-y-auto pr-2 pb-6">
-                    {filteredReactions.map((reaction, index) => (
-                      <ReactionWidget
-                        key={`${reaction.leftId}-${reaction.rightId}-${index}`}
-                        index={index}
-                        reaction={reaction}
-                        elements={draft.elements}
-                        onCommit={commitReaction}
-                        onDelete={deleteReaction}
-                        onNewReaction={addReaction}
-                      />
-                    ))}
-
-                    {filteredReactions.length === 0 && (
-                      <div className="realm-panel-soft realm-text-soft rounded-xl border border-dashed p-6 text-center text-sm">
-                        <div>
-                          No reactions yet. Add one to make the realm playable.
-                        </div>
-                        <button
-                          type="button"
-                          onClick={addReaction}
-                          className="realm-button-accent catalog-title-font mt-4 cursor-pointer rounded-full px-4 py-2 font-bold"
-                        >
-                          Add First Reaction
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="h-[500px] pb-6">
-                    <textarea
-                      value={reactionText}
-                      onChange={(e) => setReactionText(e.target.value)}
-                      onBlur={() => syncDraftFromText(reactionText)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const val = e.currentTarget.value + '\n';
-                          setTimeout(() => syncDraftFromText(val), 0);
-                        }
-                      }}
-                      placeholder="Water + Fire = Steam, Fog&#10;Earth + Air = Dust"
-                      className="realm-input custom-scrollbar h-full w-full resize-none rounded-xl border p-4 font-mono text-sm font-bold outline-none"
-                    />
                   </div>
                 )}
               </div>

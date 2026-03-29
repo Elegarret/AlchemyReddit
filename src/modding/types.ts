@@ -13,6 +13,7 @@ export type ElementIconValue =
 export const MAX_REALM_SUMMARY_LENGTH = 128;
 export const MAX_REALM_INTRO_LENGTH = 512;
 export const MAX_ELEMENT_MESSAGE_LENGTH = 512;
+export const MAX_REACTION_SCRIPT_LENGTH = 4096;
 export const MOD_ELEMENT_EFFECT_VALUES = [
   'none',
   'explode',
@@ -70,7 +71,8 @@ export type ModElement = z.infer<typeof modElementSchema>;
 export const modReactionSchema = z.object({
   leftId: z.string().min(1).max(48),
   rightId: z.string().min(1).max(48),
-  outputIds: z.array(z.string().min(1).max(48)).min(1).max(4),
+  outputIds: z.array(z.string().min(1).max(48)).max(4),
+  script: z.string().max(MAX_REACTION_SCRIPT_LENGTH).optional(),
 });
 
 export type ModReaction = z.infer<typeof modReactionSchema>;
@@ -142,6 +144,7 @@ export type ActiveRuleset = {
   storageScope: string;
   startingElements: string[];
   recipes: Record<string, string[]>;
+  reactionScripts: Record<string, string>;
   elementNames?: Record<string, string>;
   elementStyles: Record<string, string>;
   elementIcons: Record<string, ElementIconValue>;
@@ -149,6 +152,7 @@ export type ActiveRuleset = {
   keyItems: string[];
   keyItemData: Record<string, KeyItemData>;
   elementMessages: Record<string, string>;
+  counterNames: string[];
   sourceModId?: string;
   publishedHash?: string;
   ownerUsername?: string;

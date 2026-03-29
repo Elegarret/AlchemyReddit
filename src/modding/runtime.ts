@@ -1,4 +1,11 @@
 import { DEFAULT_MOD_BG_COLOR_TOKEN, DEFAULT_MOD_FRAME_COLOR_TOKEN, getModElementClasses, MOD_COLOR_TOKENS } from './colors';
+import {
+	executeReactionScript,
+	hasReactionScript,
+	validateReactionScript,
+	type ReactionScriptIssue,
+	type ReactionScriptTableElement,
+} from './reaction-script';
 import type {
 	ActiveRuleset,
 	ModDoc,
@@ -45,6 +52,7 @@ export const createSlug = (title: string) => {
 export const getLocalStorageKeys = (ruleset: ActiveRuleset) => {
 	if (ruleset.kind === 'base') {
 		return {
+			counters: 'alchemy-counters',
 			discovered: 'alchemy-discovered',
 			elements: 'alchemy-table-elements',
 			page: 'alchemy-current-page',
@@ -53,6 +61,7 @@ export const getLocalStorageKeys = (ruleset: ActiveRuleset) => {
 
 	const prefix = `alchemy-${ruleset.storageScope}`;
 	return {
+		counters: `${prefix}-counters`,
 		discovered: `${prefix}-discovered`,
 		elements: `${prefix}-table-elements`,
 		page: `${prefix}-current-page`,
@@ -62,23 +71,153 @@ export const getLocalStorageKeys = (ruleset: ActiveRuleset) => {
 export const getProgressScope = (ruleset: ActiveRuleset) =>
 	ruleset.kind === 'base' ? 'base' : ruleset.storageScope;
 
-export const getAllRecipeOutputs = (recipes: Record<string, string[]>) => {
+const getRulesetScriptElements = (ruleset: ActiveRuleset) =>
+	Object.keys(ruleset.elementStyles).map((id) => ({
+		id,
+		...(ruleset.elementNames?.[id] ? { name: ruleset.elementNames[id] } : {}),
+	}));
+
+const getReactionEmittedOutputs = (
+	reaction: ModReaction,
+	elements: ModElement[],
+	counterNames: string[]
+) => {
+	if (!hasReactionScript(reaction.script)) {
+		return reaction.outputIds;
+	}
+
+	const validation = validateReactionScript(reaction.script ?? '', {
+		counterNames,
+		elements: elements.map((element) => ({
+			id: element.id,
+			name: element.name,
+		})),
+	});
+
+	return validation.ok ? validation.emittedElementIds : [];
+};
+
+export const getAllRecipeOutputs = (ruleset: ActiveRuleset) => {
 	const outputs = new Set<string>();
-	Object.values(recipes).forEach((recipeOutputs) => {
+	Object.values(ruleset.recipes).forEach((recipeOutputs) => {
 		recipeOutputs.forEach((output) => outputs.add(output));
 	});
+
+	Object.values(ruleset.reactionScripts).forEach((script) => {
+		const validation = validateReactionScript(script, {
+			counterNames: ruleset.counterNames,
+			elements: getRulesetScriptElements(ruleset),
+		});
+		if (!validation.ok) {
+			return;
+		}
+
+		validation.emittedElementIds.forEach((output) => outputs.add(output));
+	});
+
 	return outputs;
 };
 
 export const getValidDiscoveredItems = (ruleset: ActiveRuleset, items: string[]) => {
-	const allOutputs = getAllRecipeOutputs(ruleset.recipes);
+	const allOutputs = getAllRecipeOutputs(ruleset);
 	const filtered = items.filter((item) => ruleset.startingElements.includes(item) || allOutputs.has(item));
 	return Array.from(new Set([...ruleset.startingElements, ...filtered]));
 };
 
 export const getRecipeResultForRuleset = (ruleset: ActiveRuleset, leftId: string, rightId: string) => {
 	const key = normalizeReactionKey(leftId, rightId);
-	return ruleset.recipes[key] ?? null;
+	const outputs = ruleset.recipes[key];
+	return outputs && outputs.length > 0 ? outputs : null;
+};
+
+export const getReactionScriptForRuleset = (
+	ruleset: ActiveRuleset,
+	leftId: string,
+	rightId: string
+) => {
+	const key = normalizeReactionKey(leftId, rightId);
+	return ruleset.reactionScripts[key] ?? null;
+};
+
+export const hasReactionForRuleset = (
+	ruleset: ActiveRuleset,
+	leftId: string,
+	rightId: string
+) => {
+	const key = normalizeReactionKey(leftId, rightId);
+	return ruleset.recipes[key] !== undefined || ruleset.reactionScripts[key] !== undefined;
+};
+
+export type ResolvedReactionResult = {
+	counterValues: Record<string, number>;
+	emittedElementIds: string[];
+	messages: string[];
+	removedTableElementIds: string[];
+	stopped: boolean;
+	usedScript: boolean;
+};
+
+export const resolveReactionForRuleset = (params: {
+	counterValues: Record<string, number>;
+	currentTableElements: ReactionScriptTableElement[];
+	discoveredElementIds: string[];
+	leftId: string;
+	rightId: string;
+	ruleset: ActiveRuleset;
+}):
+	| {
+			ok: true;
+			result: ResolvedReactionResult;
+	  }
+	| {
+			errors: ReactionScriptIssue[];
+			ok: false;
+	  }
+	| null => {
+	const { counterValues, currentTableElements, discoveredElementIds, leftId, rightId, ruleset } = params;
+	const key = normalizeReactionKey(leftId, rightId);
+	const script = ruleset.reactionScripts[key];
+	if (script !== undefined) {
+		const execution = executeReactionScript({
+			counterNames: ruleset.counterNames,
+			counters: counterValues,
+			discoveredElementIds,
+			elements: getRulesetScriptElements(ruleset),
+			script,
+			tableElements: currentTableElements,
+		});
+		if (!execution.ok) {
+			return {
+				errors: execution.errors,
+				ok: false,
+			};
+		}
+
+		return {
+			ok: true,
+			result: {
+				...execution.result,
+				usedScript: true,
+			},
+		};
+	}
+
+	const outputs = ruleset.recipes[key];
+	if (!outputs || outputs.length === 0) {
+		return null;
+	}
+
+	return {
+		ok: true,
+		result: {
+			counterValues,
+			emittedElementIds: outputs,
+			messages: [],
+			removedTableElementIds: [],
+			stopped: false,
+			usedScript: false,
+		},
+	};
 };
 
 export const getRecipesForElementInRuleset = (ruleset: ActiveRuleset, elementId: string) => {
@@ -116,7 +255,12 @@ export const createModFingerprint = (
 	return Math.abs(hash).toString(36).padStart(8, '0');
 };
 
-export const getReachableElementIds = (startingElementIds: string[], reactions: ModReaction[]) => {
+export const getReachableElementIds = (
+	startingElementIds: string[],
+	reactions: ModReaction[],
+	elements: ModElement[],
+	counterNames: string[] = []
+) => {
 	const reachable = new Set(startingElementIds);
 	let changed = true;
 
@@ -126,7 +270,7 @@ export const getReachableElementIds = (startingElementIds: string[], reactions: 
 			if (!reachable.has(reaction.leftId) || !reachable.has(reaction.rightId)) {
 				continue;
 			}
-			for (const outputId of reaction.outputIds) {
+			for (const outputId of getReactionEmittedOutputs(reaction, elements, counterNames)) {
 				if (reachable.has(outputId)) {
 					continue;
 				}
@@ -212,13 +356,15 @@ export const validateModDraft = (draft: {
 
 	const seenReactions = new Set<string>();
 	for (const reaction of draft.reactions) {
+		const usesScript = hasReactionScript(reaction.script);
+
 		if (!elementIds.has(reaction.leftId) || !elementIds.has(reaction.rightId)) {
 			errors.push(
 				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} references a missing element.`
 			);
 		}
 
-		if (reaction.outputIds.length === 0) {
+		if (!usesScript && reaction.outputIds.length === 0) {
 			errors.push(
 				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} has no outputs.`
 			);
@@ -238,6 +384,21 @@ export const validateModDraft = (draft: {
 			}
 		}
 
+		if (usesScript) {
+			const scriptValidation = validateReactionScript(reaction.script ?? '', {
+				counterNames: [],
+				elements: draft.elements.map((element) => ({
+					id: element.id,
+					name: element.name,
+				})),
+			});
+			scriptValidation.errors.forEach((error) => {
+				errors.push(
+					`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} script line ${error.line}: ${error.message}`
+				);
+			});
+		}
+
 		const normalizedKey = normalizeReactionKey(reaction.leftId, reaction.rightId);
 		if (seenReactions.has(normalizedKey)) {
 			errors.push(
@@ -247,7 +408,11 @@ export const validateModDraft = (draft: {
 		seenReactions.add(normalizedKey);
 	}
 
-	const reachableElementIds = getReachableElementIds(draft.startingElementIds, draft.reactions);
+	const reachableElementIds = getReachableElementIds(
+		draft.startingElementIds,
+		draft.reactions,
+		draft.elements
+	);
 	const unreachableIds = draft.elements
 		.map((element) => element.id)
 		.filter((elementId) => !reachableElementIds.includes(elementId));
@@ -275,8 +440,16 @@ export const validateModDraft = (draft: {
 };
 
 export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
-  const recipes = Object.fromEntries(
-    mod.reactions.map((reaction) => [normalizeReactionKey(reaction.leftId, reaction.rightId), reaction.outputIds])
+	const recipes = Object.fromEntries(
+		mod.reactions.map((reaction) => [normalizeReactionKey(reaction.leftId, reaction.rightId), reaction.outputIds])
+	);
+  const reactionScripts = Object.fromEntries(
+    mod.reactions
+      .filter((reaction) => hasReactionScript(reaction.script))
+      .map((reaction) => [
+        normalizeReactionKey(reaction.leftId, reaction.rightId),
+        reaction.script?.trim() ?? '',
+      ])
   );
   const elementNames: Record<string, string> = {};
   const elementStyles: Record<string, string> = {};
@@ -307,6 +480,7 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
     storageScope: `mod:${mod.id}:${mod.publishedHash ?? createModFingerprint(mod)}`,
     startingElements: mod.startingElementIds,
     recipes,
+    reactionScripts,
     elementNames,
     elementStyles,
     elementIcons,
@@ -314,6 +488,7 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 		keyItems: [],
 		keyItemData: {},
 		elementMessages,
+		counterNames: [],
 		sourceModId: mod.id,
 		ownerUsername: mod.ownerUsername,
 		...(mod.publishedHash ? { publishedHash: mod.publishedHash } : {}),

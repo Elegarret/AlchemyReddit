@@ -31,6 +31,8 @@ Keep this file updated when architecture, major flows, or important project conv
 - `src/mod-editor/components.tsx`: reusable editor controls/widgets
 - `src/mod-editor/constants.ts`: editor-local types and option lists
 - `src/mod-editor/draft.ts`: editor draft helpers, reaction text conversion, and draft creation utilities
+- `src/modding/reaction-script-autocomplete.ts`: lightweight per-reaction script autocomplete context detection and insertion helpers
+- `src/modding/reaction-script.ts`: handwritten reaction script parser, validator, and execution helpers shared by editor validation and gameplay runtime
 
 ## Backend Structure
 
@@ -43,9 +45,12 @@ Keep this file updated when architecture, major flows, or important project conv
 ## Key Flows
 
 - Game progress is stored locally per ruleset and synced to Reddit progress for non-playtest sessions.
+- Game state now also persists per-ruleset script counters locally, even though the editor does not expose a counter-definition UI yet.
 - Playtest sessions use `PLAYTEST_RULESET_STORAGE_KEY` in local storage and bypass Reddit progress syncing.
 - Editor saves persist draft data through tRPC, then publish/share actions operate on the saved draft id.
 - Published realms can be shared to a Reddit post and reopened from the game/options flow for authors.
+- Mod reactions can optionally carry per-reaction script text. Non-empty scripts override `outputIds` at runtime, and the editor validates script lines inline plus during overall draft validation.
+- Reaction script syntax now canonically uses `add`, `set(...)`, `message(...)`, `not_discovered(...)`, and `count(...)` comparisons. The per-reaction textarea exposes lightweight local autocomplete for those token families, while the full text editor serializes valid scripts back out in canonical form.
 
 ## Commands
 

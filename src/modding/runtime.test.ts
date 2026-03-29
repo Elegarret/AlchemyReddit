@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRulesetFromDraft,
   DEFAULT_MOD_TITLE,
+  resolveReactionForRuleset,
   validateModDraft,
 } from './runtime';
 import type { ModElement } from './types';
@@ -104,5 +105,74 @@ describe('validateModDraft', () => {
     expect(result.intro).toBe('Read this before your first reaction.');
     expect(result.elementMessages.light).toBe('This element glows with intent.');
     expect(result.elementEffects.light).toBe('light');
+  });
+
+  it('keeps plain reactions working without scripts', () => {
+    const ruleset = buildRulesetFromDraft({
+      title: 'Steam Realm',
+      summary: 'Plain reactions still resolve through the runtime helper.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        makeElement('steam', 'Steam'),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: ['steam'],
+        },
+      ],
+    });
+
+    const resolved = resolveReactionForRuleset({
+      counterValues: {},
+      currentTableElements: [
+        { elementId: 'air', id: 'table-1' },
+        { elementId: 'fire', id: 'table-2' },
+      ],
+      discoveredElementIds: ['air', 'fire'],
+      leftId: 'air',
+      rightId: 'fire',
+      ruleset,
+    });
+
+    expect(resolved?.ok).toBe(true);
+    if (!resolved || !resolved.ok) {
+      return;
+    }
+
+    expect(resolved.result).toEqual({
+      counterValues: {},
+      emittedElementIds: ['steam'],
+      messages: [],
+      removedTableElementIds: [],
+      stopped: false,
+      usedScript: false,
+    });
+  });
+
+  it('reports invalid scripted reactions during draft validation', () => {
+    const result = validateModDraft({
+      title: 'Broken Script Realm',
+      summary: 'Script validation should be line-aware.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      elements: [makeElement('air', 'Air'), makeElement('fire', 'Fire')],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: [],
+          script: 'if (count(money) >= 1) add air',
+        },
+      ],
+    });
+
+    expect(result.errors).toContain(
+      'Reaction Air + Fire script line 1: Unknown counter "money".'
+    );
   });
 });

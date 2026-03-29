@@ -10,6 +10,7 @@ type PersistedRuleset = {
   storageScope: string;
   startingElements: string[];
   recipes: ActiveRuleset['recipes'];
+  reactionScripts?: ActiveRuleset['reactionScripts'];
   elementNames?: ActiveRuleset['elementNames'];
   elementStyles: ActiveRuleset['elementStyles'];
   elementIcons: ActiveRuleset['elementIcons'];
@@ -17,6 +18,7 @@ type PersistedRuleset = {
   keyItems?: ActiveRuleset['keyItems'];
   keyItemData?: ActiveRuleset['keyItemData'];
   elementMessages?: ActiveRuleset['elementMessages'];
+  counterNames?: ActiveRuleset['counterNames'];
   sourceModId?: string;
   publishedHash?: string;
   ownerUsername?: string;
@@ -64,12 +66,14 @@ export const readPlaytestRuleset = (): ActiveRuleset | null => {
       storageScope: parsed.storageScope,
       startingElements: parsed.startingElements,
       recipes: parsed.recipes,
+      reactionScripts: parsed.reactionScripts ?? {},
       elementStyles: parsed.elementStyles,
       elementIcons: parsed.elementIcons,
       elementEffects: parsed.elementEffects ?? {},
       keyItems: parsed.keyItems ?? [],
       keyItemData: parsed.keyItemData ?? {},
       elementMessages: parsed.elementMessages ?? {},
+      counterNames: parsed.counterNames ?? [],
       ...(parsed.elementNames ? { elementNames: parsed.elementNames } : {}),
       ...(parsed.sourceModId ? { sourceModId: parsed.sourceModId } : {}),
       ...(parsed.publishedHash ? { publishedHash: parsed.publishedHash } : {}),
