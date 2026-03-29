@@ -104,7 +104,9 @@ export const ModEditorApp = () => {
   const loadedSharePostUrl = loadedMod ? getSharePostUrl(loadedMod) : null;
   const publishBlockedReason =
     !isLoadedModPublished && !validation.isValid
-      ? validation.errors[0] ?? 'Fix validation errors first'
+      ? validation.errors[0] ??
+        validation.scriptErrors[0] ??
+        'Fix validation errors first'
       : null;
   const shareBlockedReason = !isLoadedModPublished
     ? 'Publish this realm first.'
@@ -141,7 +143,12 @@ export const ModEditorApp = () => {
   };
 
   const showValidationFeedback = (message?: string) => {
-    showToast(message ?? validation.errors[0] ?? 'Fix validation errors first');
+    showToast(
+      message ??
+        validation.errors[0] ??
+        validation.scriptErrors[0] ??
+        'Fix validation errors first'
+    );
     blinkValidation();
   };
 

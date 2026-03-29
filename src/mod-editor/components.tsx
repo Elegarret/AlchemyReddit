@@ -783,6 +783,8 @@ export const ReactionWidget = ({
     null
   );
   const [isScriptOpen, setIsScriptOpen] = useState(false);
+  const [shouldShowScriptValidation, setShouldShowScriptValidation] =
+    useState(true);
 
   const leftName =
     elements.find((element) => element.id === reaction.leftId)?.name ?? '';
@@ -823,16 +825,22 @@ export const ReactionWidget = ({
         .filter((name) => name.length > 0),
     [elements]
   );
-  const scriptValidation = useMemo(
+  const scriptIssues = useMemo(
     () =>
-      validateReactionScript(scriptText, {
-        counterNames: [],
-        elements: elements.map((element) => ({
-          id: element.id,
-          name: element.name,
-        })),
-      }),
-    [elements, scriptText]
+      hasScript && shouldShowScriptValidation
+        ? (() => {
+            const validation = validateReactionScript(scriptText, {
+              counterNames: [],
+              elements: elements.map((element) => ({
+                id: element.id,
+                name: element.name,
+              })),
+            });
+
+            return validation.ok ? [] : validation.errors;
+          })()
+        : [],
+    [elements, hasScript, scriptText, shouldShowScriptValidation]
   );
 
   useEffect(() => {
@@ -864,9 +872,8 @@ export const ReactionWidget = ({
 
   const reactionFieldClassName =
     'realm-input w-[5rem] border sm:w-[6.5rem]';
-  const scriptIssues =
-    hasScript && !scriptValidation.ok ? scriptValidation.errors : [];
   const lastOutputIndex = outputTexts.length - 1;
+  const hasSettledScriptError = scriptIssues.length > 0;
 
   const addOutputField = (focusIndex: number) => {
     setOutputTexts((current) => [...current, '']);
@@ -888,6 +895,7 @@ export const ReactionWidget = ({
       }
     }
 
+    setShouldShowScriptValidation(true);
     setIsScriptOpen((current) => !current);
   };
 
@@ -979,7 +987,9 @@ export const ReactionWidget = ({
           type="button"
           onClick={handleToggleScript}
           className={`catalog-title-font ml-auto flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-[10px] font-bold tracking-[0.16em] uppercase transition-colors ${
-            isScriptOpen || hasScript
+            hasSettledScriptError
+              ? 'bg-rose-500/18 text-rose-200 ring-1 ring-rose-400/40'
+              : isScriptOpen || hasScript
               ? 'bg-cyan-500/18 text-cyan-100'
               : 'realm-button-muted'
           }`}
@@ -1006,13 +1016,13 @@ export const ReactionWidget = ({
               elementNames={scriptElementNames}
               mode="script"
               value={scriptText}
-              onChange={(nextValue) => onUpdateScript(index, nextValue)}
+              onChange={(nextValue) => {
+                setShouldShowScriptValidation(false);
+                onUpdateScript(index, nextValue);
+              }}
+              onEditingSettled={() => setShouldShowScriptValidation(true)}
               placeholder={`add dust\nmessage("The cupboard is locked.")\nif (count(health) < 10) add bandage`}
             />
-
-            <div className="realm-text-soft text-xs leading-relaxed">
-			  Press `Enter` or `Tab` to accept, `Esc` to close.
-            </div>
 
             {scriptIssues.length > 0 && (
               <div className="space-y-1">

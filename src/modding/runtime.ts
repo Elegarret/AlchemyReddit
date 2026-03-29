@@ -283,6 +283,14 @@ export const getReachableElementIds = (
 	return Array.from(reachable);
 };
 
+const formatReactionScriptValidationMessage = (message: string) => {
+	if (message === 'If conditions cannot be empty.') {
+		return 'If() conditions cannot be empty.';
+	}
+
+	return message;
+};
+
 export const validateModDraft = (draft: {
 	title: string;
 	summary: string;
@@ -292,6 +300,7 @@ export const validateModDraft = (draft: {
 	reactions: ModReaction[];
 }): ValidationResult => {
 	const errors: string[] = [];
+	const scriptErrors: string[] = [];
 	const warnings: string[] = [];
 	const title = draft.title.trim();
 	const summary = draft.summary.trim();
@@ -393,8 +402,8 @@ export const validateModDraft = (draft: {
 				})),
 			});
 			scriptValidation.errors.forEach((error) => {
-				errors.push(
-					`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} script line ${error.line}: ${error.message}`
+				scriptErrors.push(
+					`"${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)}" script line ${error.line}: ${formatReactionScriptValidationMessage(error.message)}`
 				);
 			});
 		}
@@ -408,14 +417,20 @@ export const validateModDraft = (draft: {
 		seenReactions.add(normalizedKey);
 	}
 
-	const reachableElementIds = getReachableElementIds(
-		draft.startingElementIds,
-		draft.reactions,
-		draft.elements
-	);
-	const unreachableIds = draft.elements
-		.map((element) => element.id)
-		.filter((elementId) => !reachableElementIds.includes(elementId));
+	const reachableElementIds =
+		scriptErrors.length === 0
+			? getReachableElementIds(
+					draft.startingElementIds,
+					draft.reactions,
+					draft.elements
+				)
+			: draft.startingElementIds.filter((elementId) => elementIds.has(elementId));
+	const unreachableIds =
+		scriptErrors.length === 0
+			? draft.elements
+					.map((element) => element.id)
+					.filter((elementId) => !reachableElementIds.includes(elementId))
+			: [];
 
 	if (unreachableIds.length > 0) {
 		errors.push(
@@ -431,8 +446,9 @@ export const validateModDraft = (draft: {
 	}
 
 	return {
-		isValid: errors.length === 0,
+		isValid: errors.length === 0 && scriptErrors.length === 0,
 		errors,
+		scriptErrors,
 		warnings,
 		reachableElementIds,
 		totalElements: draft.elements.length,

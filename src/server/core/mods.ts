@@ -286,7 +286,11 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
   });
 
   if (!validation.isValid) {
-    throw new Error(validation.errors[0] ?? 'Draft validation failed.');
+    throw new Error(
+      validation.errors[0] ??
+        validation.scriptErrors[0] ??
+        'Draft validation failed.'
+    );
   }
 
   const publishedAt = new Date().toISOString();

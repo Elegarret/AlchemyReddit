@@ -2,6 +2,7 @@ import { parseReactionScript } from './reaction-script';
 
 export type ReactionScriptAutocompleteSuggestion = {
   cursorOffset: number;
+  description?: string;
   label: string;
   replaceEnd: number;
   replaceStart: number;
@@ -14,6 +15,7 @@ export type ReactionScriptAutocompleteResult = {
 
 type SuggestionTemplate = {
   cursorOffset: number;
+  description?: string;
   label: string;
   text: string;
 };
@@ -44,17 +46,20 @@ const TOP_LEVEL_ACTION_TEMPLATES: SuggestionTemplate[] = [
   },
   {
     cursorOffset: 'add '.length,
-    label: 'add element',
+    description: 'add element',
+    label: 'add',
     text: 'add ',
   },
   {
     cursorOffset: 'remove '.length,
-    label: 'remove element',
+    description: 'remove element',
+    label: 'remove',
     text: 'remove ',
   },
   {
     cursorOffset: 'remove_all '.length,
-    label: 'remove elements of a kind',
+    description: 'remove elements of a kind',
+    label: 'remove_all',
     text: 'remove_all ',
   },
   {
@@ -64,12 +69,14 @@ const TOP_LEVEL_ACTION_TEMPLATES: SuggestionTemplate[] = [
   },
   {
     cursorOffset: 'message("'.length,
-    label: 'show text message',
+    description: 'show text message',
+    label: 'message',
     text: 'message("")',
   },
   {
     cursorOffset: 'stop'.length,
-    label: 'ignore remaining script',
+    description: 'ignore remaining script',
+    label: 'stop',
     text: 'stop',
   },
 ];
@@ -108,7 +115,8 @@ const CONDITION_TEMPLATES: SuggestionTemplate[] = [
 
 const AND_TEMPLATE: SuggestionTemplate = {
   cursorOffset: 'and '.length,
-  label: 'logical and',
+  description: 'logical and',
+  label: 'and',
   text: 'and ',
 };
 
@@ -156,6 +164,9 @@ const buildSuggestions = (
     )
     .map((template) => ({
       cursorOffset: template.cursorOffset,
+      ...(template.description
+        ? { description: template.description }
+        : {}),
       label: template.label,
       replaceEnd,
       replaceStart,
@@ -345,6 +356,9 @@ const getConditionSuggestions = (params: {
     return [
       {
         cursorOffset: AND_TEMPLATE.cursorOffset,
+        ...(AND_TEMPLATE.description
+          ? { description: AND_TEMPLATE.description }
+          : {}),
         label: AND_TEMPLATE.label,
         replaceEnd,
         replaceStart: replaceEnd,

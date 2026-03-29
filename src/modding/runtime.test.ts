@@ -160,19 +160,28 @@ describe('validateModDraft', () => {
       summary: 'Script validation should be line-aware.',
       intro: '',
       startingElementIds: ['air', 'fire'],
-      elements: [makeElement('air', 'Air'), makeElement('fire', 'Fire')],
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        makeElement('steam', 'Steam'),
+      ],
       reactions: [
         {
           leftId: 'air',
           rightId: 'fire',
-          outputIds: [],
+          outputIds: ['steam'],
           script: 'if (count(money) >= 1) add air',
         },
       ],
     });
 
-    expect(result.errors).toContain(
-      'Reaction Air + Fire script line 1: Unknown counter "money".'
+    expect(result.errors).not.toContain(
+      '"Air + Fire" script line 1: Unknown counter "money".'
     );
+    expect(result.errors).not.toContain('Unreachable elements: Steam');
+    expect(result.scriptErrors).toContain(
+      '"Air + Fire" script line 1: Unknown counter "money".'
+    );
+    expect(result.isValid).toBe(false);
   });
 });

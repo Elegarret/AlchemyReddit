@@ -162,6 +162,7 @@ export type ActiveRuleset = {
 export type ValidationResult = {
   isValid: boolean;
   errors: string[];
+  scriptErrors: string[];
   warnings: string[];
   reachableElementIds: string[];
   totalElements: number;

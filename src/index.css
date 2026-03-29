@@ -390,25 +390,34 @@
 .custom-scrollbar {
 	-ms-overflow-style: auto !important;
 	scrollbar-width: thin !important;
+	scrollbar-color:
+		color-mix(in srgb, var(--catalog-card-border) 72%, transparent)
+		color-mix(in srgb, var(--catalog-header-fill) 88%, transparent) !important;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
 	display: block !important;
-	width: 6px;
+	width: 8px;
+	height: 8px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-	background: rgba(0, 0, 0, 0.2);
-	border-radius: 10px;
+	background: color-mix(in srgb, var(--catalog-header-fill) 88%, transparent);
+	border-radius: 999px;
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--catalog-soft-border) 70%, transparent);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-	background: rgba(59, 130, 246, 0.3);
-	border-radius: 10px;
+	background: color-mix(in srgb, var(--catalog-card-border) 72%, transparent);
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background-clip: padding-box;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-	background: rgba(59, 130, 246, 0.5);
+	background: color-mix(in srgb, var(--catalog-ink) 82%, transparent);
+	border: 2px solid transparent;
+	background-clip: padding-box;
 }
 
 .element-transition {

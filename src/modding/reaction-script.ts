@@ -815,8 +815,13 @@ const formatAction = (action: ReactionScriptAction) => {
 export const hasReactionScript = (script: string | undefined) =>
   (script ?? '').trim().length > 0;
 
+const formatReactionScriptIssueMessage = (message: string) =>
+  message === 'If conditions cannot be empty.'
+    ? 'If() conditions cannot be empty.'
+    : message;
+
 export const formatReactionScriptIssue = (issue: ReactionScriptIssue) =>
-  `Line ${issue.line}: ${issue.message}`;
+  `Line ${issue.line}: ${formatReactionScriptIssueMessage(issue.message)}`;
 
 export const parseReactionScript = (
   scriptText: string
