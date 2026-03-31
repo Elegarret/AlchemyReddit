@@ -3,7 +3,9 @@ import { parseReactionScript } from './reaction-script';
 export type ReactionScriptAutocompleteSuggestion = {
   cursorOffset: number;
   description?: string;
+  insertText?: string;
   label: string;
+  previewText?: string;
   replaceEnd: number;
   replaceStart: number;
   text: string;
@@ -64,6 +66,7 @@ const TOP_LEVEL_ACTION_TEMPLATES: SuggestionTemplate[] = [
   },
   {
     cursorOffset: 'set('.length,
+    description: 'set(counter +=/-=/= value)',
     label: 'set',
     text: 'set()',
   },
@@ -72,6 +75,24 @@ const TOP_LEVEL_ACTION_TEMPLATES: SuggestionTemplate[] = [
     description: 'show text message',
     label: 'message',
     text: 'message("")',
+  },
+  {
+    cursorOffset: 'popup("'.length,
+    description: 'show blocking popup',
+    label: 'popup',
+    text: 'popup("")',
+  },
+  {
+    cursorOffset: 'win("'.length,
+    description: 'show blocking win screen',
+    label: 'win',
+    text: 'win("")',
+  },
+  {
+    cursorOffset: 'lose("'.length,
+    description: 'show blocking lose screen',
+    label: 'lose',
+    text: 'lose("")',
   },
   {
     cursorOffset: 'stop'.length,
@@ -119,6 +140,43 @@ const AND_TEMPLATE: SuggestionTemplate = {
   label: 'and',
   text: 'and ',
 };
+
+const SET_OPERATOR_TEMPLATES: Array<
+  SuggestionTemplate & {
+    text: ' = ' | ' += ' | ' -= ';
+  }
+> = [
+  {
+    cursorOffset: ' = '.length,
+    description: 'set to value',
+    label: '=',
+    text: ' = ',
+  },
+  {
+    cursorOffset: ' += '.length,
+    description: 'add value',
+    label: '+=',
+    text: ' += ',
+  },
+  {
+    cursorOffset: ' -= '.length,
+    description: 'subtract value',
+    label: '-=',
+    text: ' -= ',
+  },
+];
+
+const REACTION_SCRIPT_BLOCK_SUGGESTION = {
+  cursorOffset: '\n    '.length,
+  description: 'start scripted block',
+  insertText: '\n    ',
+  label: '</>script',
+  previewText: '</>script',
+  text: '</>script',
+} satisfies Omit<
+  ReactionScriptAutocompleteSuggestion,
+  'replaceEnd' | 'replaceStart'
+>;
 
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -384,15 +442,79 @@ const getActionSuggestions = (params: {
   allowIf: boolean;
   counterNames: string[];
   elementNames: string[];
+  iconElementNames: string[];
   prefix: string;
 }) => {
-  const { absoluteStart, allowIf, counterNames, elementNames, prefix } = params;
+  const {
+    absoluteStart,
+    allowIf,
+    counterNames,
+    elementNames,
+    iconElementNames,
+    prefix,
+  } = params;
   const setCall = getOpenCallContext(prefix, ['set']);
   if (setCall) {
+    const rawArgument = setCall.argumentText;
+    if (rawArgument.includes(',')) {
+      return [];
+    }
+
+    const exactCounterMatch = rawArgument.match(
+      /^(\s*)([A-Za-z][A-Za-z0-9_-]*)(\s*)$/
+    );
+    if (exactCounterMatch) {
+      const exactCounterName = exactCounterMatch[2] ?? '';
+      const isExactCounter = counterNames.some(
+        (counterName) => normalizeName(counterName) === normalizeName(exactCounterName)
+      );
+      if (isExactCounter) {
+        const leadingWhitespace = exactCounterMatch[1]?.length ?? 0;
+        const counterNameLength = exactCounterName.length;
+        const replaceStart =
+          absoluteStart + setCall.replaceStart + leadingWhitespace + counterNameLength;
+        const replaceEnd = absoluteStart + setCall.replaceStart + rawArgument.length;
+
+        return SET_OPERATOR_TEMPLATES.map((template) => ({
+          cursorOffset: template.cursorOffset,
+          ...(template.description
+            ? { description: template.description }
+            : {}),
+          label: template.label,
+          replaceEnd,
+          replaceStart,
+          text: template.text,
+        }));
+      }
+    }
+
+    if (/^\s*[A-Za-z][A-Za-z0-9_-]*\s*(?:\+=|-=|=)/.test(rawArgument)) {
+      return [];
+    }
+
+    const trimmedArgument = rawArgument.trimStart();
+    if (!/^[A-Za-z0-9_-]*$/.test(trimmedArgument)) {
+      return [];
+    }
+
     return buildNameSuggestions(
       counterNames,
-      setCall.argumentText,
-      absoluteStart + setCall.replaceStart,
+      trimmedArgument,
+      absoluteStart + setCall.replaceStart + (rawArgument.length - trimmedArgument.length),
+      absoluteStart + prefix.length
+    );
+  }
+
+  const popupStyleMatch = prefix.match(
+    /^(\s*(?:popup|win|lose)\s*\(\s*"(?:\\.|[^"\\])*"\s*,\s*)(.*)$/s
+  );
+  if (popupStyleMatch) {
+    const keywordPrefix = popupStyleMatch[1] ?? '';
+    const partial = popupStyleMatch[2] ?? '';
+    return buildNameSuggestions(
+      iconElementNames,
+      partial,
+      absoluteStart + keywordPrefix.length,
       absoluteStart + prefix.length
     );
   }
@@ -449,9 +571,16 @@ export const getReactionScriptAutocomplete = (params: {
   counterNames: string[];
   cursor: number;
   elementNames: string[];
+  iconElementNames?: string[];
   value: string;
 }): ReactionScriptAutocompleteResult => {
-  const { counterNames, cursor, elementNames, value } = params;
+  const {
+    counterNames,
+    cursor,
+    elementNames,
+    iconElementNames = elementNames,
+    value,
+  } = params;
   const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
   const linePrefix = value.slice(lineStart, cursor);
   const ifContext = getLineIfContext(linePrefix);
@@ -474,6 +603,7 @@ export const getReactionScriptAutocomplete = (params: {
         allowIf: false,
         counterNames,
         elementNames,
+        iconElementNames,
         prefix: ifContext.prefix,
       }),
     };
@@ -485,8 +615,132 @@ export const getReactionScriptAutocomplete = (params: {
       allowIf: true,
       counterNames,
       elementNames,
+      iconElementNames,
       prefix: linePrefix,
     }),
+  };
+};
+
+export const getReactionTextAutocomplete = (params: {
+  counterNames: string[];
+  cursor: number;
+  elementNames: string[];
+  iconElementNames?: string[];
+  value: string;
+}): ReactionScriptAutocompleteResult => {
+  const {
+    counterNames,
+    cursor,
+    elementNames,
+    iconElementNames = elementNames,
+    value,
+  } = params;
+  const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
+  const linePrefix = value.slice(lineStart, cursor);
+
+  if (linePrefix.startsWith('    ') || linePrefix.startsWith('\t')) {
+    const indentLength = linePrefix.startsWith('    ') ? 4 : 1;
+    const lineCursor = cursor - lineStart - indentLength;
+    if (lineCursor < 0) {
+      return { suggestions: [] };
+    }
+
+    const lineEndIndex = value.indexOf('\n', cursor);
+    const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
+    const lineValue = value.slice(lineStart + indentLength, lineEnd);
+
+    return {
+      suggestions: getReactionScriptAutocomplete({
+        counterNames,
+        cursor: Math.min(lineCursor, lineValue.length),
+        elementNames,
+        iconElementNames,
+        value: lineValue,
+      }).suggestions.map((suggestion) => ({
+        ...suggestion,
+        replaceEnd: suggestion.replaceEnd + lineStart + indentLength,
+        replaceStart: suggestion.replaceStart + lineStart + indentLength,
+      })),
+    };
+  }
+
+  if (/^\s/.test(linePrefix)) {
+    return { suggestions: [] };
+  }
+
+  const absoluteEnd = lineStart + linePrefix.length;
+  const plusIndex = linePrefix.indexOf('+');
+  const equalsIndex = linePrefix.indexOf('=');
+  const colonIndex = linePrefix.indexOf(':');
+  const hasScriptBlockColon =
+    colonIndex !== -1 && (equalsIndex === -1 || colonIndex < equalsIndex);
+
+  if (
+    plusIndex === -1 ||
+    (equalsIndex !== -1 && plusIndex > equalsIndex) ||
+    (hasScriptBlockColon && plusIndex > colonIndex)
+  ) {
+    const trimmedPrefix = linePrefix.trimStart();
+    return {
+      suggestions: buildNameSuggestions(
+        elementNames,
+        trimmedPrefix,
+        lineStart + (linePrefix.length - trimmedPrefix.length),
+        absoluteEnd
+      ),
+    };
+  }
+
+  if (hasScriptBlockColon) {
+    return { suggestions: [] };
+  }
+
+  if (equalsIndex === -1) {
+    const rightPrefix = linePrefix.slice(plusIndex + 1);
+    const trimmedRightPrefix = rightPrefix.trimStart();
+    return {
+      suggestions: buildNameSuggestions(
+        elementNames,
+        trimmedRightPrefix,
+        lineStart + plusIndex + 1 + (rightPrefix.length - trimmedRightPrefix.length),
+        absoluteEnd
+      ),
+    };
+  }
+
+  const outputsPrefix = linePrefix.slice(equalsIndex + 1);
+  const trimmedOutputsPrefix = outputsPrefix.trim();
+  const outputSegmentStart = outputsPrefix.lastIndexOf(',') + 1;
+  const outputSegment = outputsPrefix.slice(outputSegmentStart);
+  const trimmedOutputSegment = outputSegment.trimStart();
+  const replaceStart =
+    lineStart +
+    equalsIndex +
+    1 +
+    outputSegmentStart +
+    (outputSegment.length - trimmedOutputSegment.length);
+  const outputSuggestions = buildNameSuggestions(
+    elementNames,
+    trimmedOutputSegment,
+    replaceStart,
+    absoluteEnd
+  );
+
+  if (!trimmedOutputsPrefix) {
+    return {
+      suggestions: [
+        {
+          ...REACTION_SCRIPT_BLOCK_SUGGESTION,
+          replaceEnd: absoluteEnd,
+          replaceStart: lineStart + equalsIndex + 1,
+        },
+        ...outputSuggestions,
+      ],
+    };
+  }
+
+  return {
+    suggestions: outputSuggestions,
   };
 };
 
@@ -497,7 +751,7 @@ export const applyReactionScriptAutocompleteSuggestion = (params: {
   const { suggestion, value } = params;
   const nextValue =
     value.slice(0, suggestion.replaceStart) +
-    suggestion.text +
+    (suggestion.insertText ?? suggestion.text) +
     value.slice(suggestion.replaceEnd);
   const cursor = suggestion.replaceStart + suggestion.cursorOffset;
 

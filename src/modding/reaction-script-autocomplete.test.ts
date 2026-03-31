@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyReactionScriptAutocompleteSuggestion,
   getReactionScriptAutocomplete,
+  getReactionTextAutocomplete,
 } from './reaction-script-autocomplete';
 
 const elementNames = ['Dust', 'Bandage', 'Key'];
@@ -23,6 +24,9 @@ describe('getReactionScriptAutocomplete', () => {
       'remove_all',
       'set',
       'message',
+      'popup',
+      'win',
+      'lose',
       'stop',
     ]);
   });
@@ -108,6 +112,71 @@ describe('getReactionScriptAutocomplete', () => {
     ]);
   });
 
+  it('suggests set operators after an exact counter name and stops on commas', () => {
+    const operatorValue = 'set(money';
+    const operatorResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: operatorValue.length,
+      elementNames,
+      value: operatorValue,
+    });
+    const commaValue = 'set(money, ';
+    const commaResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: commaValue.length,
+      elementNames,
+      value: commaValue,
+    });
+
+    expect(operatorResult.suggestions.map((suggestion) => suggestion.label)).toEqual(
+      ['=', '+=', '-=']
+    );
+    expect(operatorResult.suggestions.map((suggestion) => suggestion.text)).toEqual([
+      ' = ',
+      ' += ',
+      ' -= ',
+    ]);
+    expect(commaResult.suggestions).toEqual([]);
+  });
+
+  it('does not suggest counters in add, but still suggests them for popup icons', () => {
+    const addValue = 'add He';
+    const addResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: addValue.length,
+      elementNames,
+      iconElementNames: [...elementNames, 'Health'],
+      value: addValue,
+    });
+    const popupValue = 'popup("Found a clue.", He';
+    const popupResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: popupValue.length,
+      elementNames,
+      iconElementNames: [...elementNames, 'Health'],
+      value: popupValue,
+    });
+
+    expect(addResult.suggestions).toEqual([]);
+    expect(popupResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'Health',
+    ]);
+  });
+
+  it('suggests element names as optional popup icons', () => {
+    const value = 'popup("Found a clue.", Ke';
+    const result = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'Key',
+    ]);
+  });
+
   it('stops suggesting after an exact token has been accepted', () => {
     const addValue = 'add Dust';
     const addResult = getReactionScriptAutocomplete({
@@ -171,5 +240,116 @@ describe('getReactionScriptAutocomplete', () => {
       cursor: 'if ('.length,
       value: 'if () ',
     });
+  });
+});
+
+describe('getReactionTextAutocomplete', () => {
+  it('suggests top-level left and right reaction ingredients', () => {
+    const leftValue = 'Du';
+    const leftResult = getReactionTextAutocomplete({
+      counterNames,
+      cursor: leftValue.length,
+      elementNames,
+      value: leftValue,
+    });
+    const rightValue = 'Dust + Ba';
+    const rightResult = getReactionTextAutocomplete({
+      counterNames,
+      cursor: rightValue.length,
+      elementNames,
+      value: rightValue,
+    });
+
+    expect(leftResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'Dust',
+    ]);
+    expect(rightResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'Bandage',
+    ]);
+  });
+
+  it('suggests inline outputs and the script block option after =', () => {
+    const value = 'Dust + Key = ';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      '</>script',
+      'Bandage',
+      'Dust',
+      'Key',
+    ]);
+  });
+
+  it('inserts a script block as a newline plus indent', () => {
+    const value = 'Dust + Key =';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+    const scriptSuggestion = result.suggestions.find(
+      (suggestion) => suggestion.label === '</>script'
+    );
+
+    expect(scriptSuggestion).toBeDefined();
+    if (!scriptSuggestion) {
+      return;
+    }
+
+    expect(
+      applyReactionScriptAutocompleteSuggestion({
+        suggestion: scriptSuggestion,
+        value,
+      })
+    ).toEqual({
+      cursor: 'Dust + Key =\n    '.length,
+      value: 'Dust + Key =\n    ',
+    });
+  });
+
+  it('suggests inline reaction outputs after commas', () => {
+    const value = 'Dust + Key = Dust, Ba';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'Bandage',
+    ]);
+  });
+
+  it('switches to standard script suggestions on indented lines', () => {
+    const value = 'Dust + Key =\n    se';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'set',
+    ]);
+  });
+
+  it('does not open autocomplete after a script block colon header', () => {
+    const value = 'Dust + Key:';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions).toEqual([]);
   });
 });

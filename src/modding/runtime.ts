@@ -3,12 +3,14 @@ import {
 	executeReactionScript,
 	hasReactionScript,
 	validateReactionScript,
+	type ReactionScriptPopupEvent,
 	type ReactionScriptIssue,
 	type ReactionScriptTableElement,
 } from './reaction-script';
 import type {
 	ActiveRuleset,
 	ModDoc,
+	ModCounterDefinition,
 	ModElement,
 	ModReaction,
 	SaveDraftInput,
@@ -20,6 +22,12 @@ export const MAX_MOD_REACTIONS = 512;
 export const MAX_REACTION_OUTPUTS = 4;
 export const PLAYTEST_RULESET_STORAGE_KEY = 'alchemy-playtest-ruleset';
 export const DEFAULT_MOD_TITLE = 'Unknown Realm';
+
+const clamp = (value: number, min: number, max: number) =>
+	Math.min(Math.max(value, min), max);
+
+const normalizeName = (value: string) =>
+	value.trim().toLowerCase().replace(/\s+/g, ' ');
 
 export const normalizeReactionKey = (leftId: string, rightId: string) =>
 	[leftId, rightId].sort((a, b) => a.localeCompare(b)).join('+');
@@ -77,10 +85,52 @@ const getRulesetScriptElements = (ruleset: ActiveRuleset) =>
 		...(ruleset.elementNames?.[id] ? { name: ruleset.elementNames[id] } : {}),
 	}));
 
+const getRulesetCounterElementIds = (ruleset: ActiveRuleset) =>
+	ruleset.counterDefinitions.map((counter) => counter.elementId);
+
+const buildCounterDefinitions = (
+	counters: ModCounterDefinition[],
+	elementNamesById: Record<string, string>
+): ActiveRuleset['counterDefinitions'] =>
+	counters.flatMap((counter) => {
+		const name = elementNamesById[counter.elementId];
+		return name
+			? [
+					{
+						...counter,
+						name,
+					},
+				]
+			: [];
+	});
+
+export const getRulesetCounterValues = (
+	ruleset: ActiveRuleset,
+	persistedValues: Record<string, number> = {}
+) => {
+	const persistedEntries = Object.entries(persistedValues);
+	const values: Record<string, number> = {};
+
+	ruleset.counterDefinitions.forEach((counter) => {
+		const persistedEntry = persistedEntries.find(
+			([key]) => normalizeName(key) === normalizeName(counter.name)
+		);
+		const persistedValue = persistedEntry?.[1];
+		values[counter.name] = clamp(
+			typeof persistedValue === 'number' ? persistedValue : counter.initial,
+			counter.min,
+			counter.max
+		);
+	});
+
+	return values;
+};
+
 const getReactionEmittedOutputs = (
 	reaction: ModReaction,
 	elements: ModElement[],
-	counterNames: string[]
+	counterNames: string[],
+	counterElementIds: string[] = []
 ) => {
 	if (!hasReactionScript(reaction.script)) {
 		return reaction.outputIds;
@@ -92,6 +142,7 @@ const getReactionEmittedOutputs = (
 			id: element.id,
 			name: element.name,
 		})),
+		nonGameplayElementIds: counterElementIds,
 	});
 
 	return validation.ok ? validation.emittedElementIds : [];
@@ -107,6 +158,7 @@ export const getAllRecipeOutputs = (ruleset: ActiveRuleset) => {
 		const validation = validateReactionScript(script, {
 			counterNames: ruleset.counterNames,
 			elements: getRulesetScriptElements(ruleset),
+			nonGameplayElementIds: getRulesetCounterElementIds(ruleset),
 		});
 		if (!validation.ok) {
 			return;
@@ -152,6 +204,7 @@ export type ResolvedReactionResult = {
 	counterValues: Record<string, number>;
 	emittedElementIds: string[];
 	messages: string[];
+	popupEvents: ReactionScriptPopupEvent[];
 	removedTableElementIds: string[];
 	stopped: boolean;
 	usedScript: boolean;
@@ -181,8 +234,10 @@ export const resolveReactionForRuleset = (params: {
 		const execution = executeReactionScript({
 			counterNames: ruleset.counterNames,
 			counters: counterValues,
+			counterDefinitions: ruleset.counterDefinitions,
 			discoveredElementIds,
 			elements: getRulesetScriptElements(ruleset),
+			nonGameplayElementIds: getRulesetCounterElementIds(ruleset),
 			script,
 			tableElements: currentTableElements,
 		});
@@ -213,11 +268,40 @@ export const resolveReactionForRuleset = (params: {
 			counterValues,
 			emittedElementIds: outputs,
 			messages: [],
+			popupEvents: [],
 			removedTableElementIds: [],
 			stopped: false,
 			usedScript: false,
 		},
 	};
+};
+
+export const getAutoRemovedReactionElementIds = (params: {
+	draggedTableElementId: string;
+	leftId: string;
+	rightId: string;
+	ruleset: ActiveRuleset;
+	targetTableElementId: string;
+}) => {
+	const {
+		draggedTableElementId,
+		leftId,
+		rightId,
+		ruleset,
+		targetTableElementId,
+	} = params;
+	const nonConsumableElementIds = new Set(ruleset.nonConsumableElementIds);
+	const removedTableElementIds: string[] = [];
+
+	if (!nonConsumableElementIds.has(leftId)) {
+		removedTableElementIds.push(draggedTableElementId);
+	}
+
+	if (!nonConsumableElementIds.has(rightId)) {
+		removedTableElementIds.push(targetTableElementId);
+	}
+
+	return removedTableElementIds;
 };
 
 export const getRecipesForElementInRuleset = (ruleset: ActiveRuleset, elementId: string) => {
@@ -234,7 +318,14 @@ export const getRecipesForElementInRuleset = (ruleset: ActiveRuleset, elementId:
 export const createModFingerprint = (
 	mod: Pick<
 		ModDoc,
-		'title' | 'summary' | 'intro' | 'startingElementIds' | 'elements' | 'reactions'
+		| 'title'
+		| 'summary'
+		| 'intro'
+		| 'startingElementIds'
+		| 'counters'
+		| 'showPalette'
+		| 'elements'
+		| 'reactions'
 	>
 ) => {
 	const source = JSON.stringify({
@@ -242,6 +333,8 @@ export const createModFingerprint = (
 		summary: mod.summary,
 		intro: mod.intro,
 		startingElementIds: mod.startingElementIds,
+		counters: mod.counters,
+		showPalette: mod.showPalette,
 		elements: mod.elements,
 		reactions: mod.reactions,
 	});
@@ -259,7 +352,8 @@ export const getReachableElementIds = (
 	startingElementIds: string[],
 	reactions: ModReaction[],
 	elements: ModElement[],
-	counterNames: string[] = []
+	counterNames: string[] = [],
+	counterElementIds: string[] = []
 ) => {
 	const reachable = new Set(startingElementIds);
 	let changed = true;
@@ -270,7 +364,12 @@ export const getReachableElementIds = (
 			if (!reachable.has(reaction.leftId) || !reachable.has(reaction.rightId)) {
 				continue;
 			}
-			for (const outputId of getReactionEmittedOutputs(reaction, elements, counterNames)) {
+			for (const outputId of getReactionEmittedOutputs(
+				reaction,
+				elements,
+				counterNames,
+				counterElementIds
+			)) {
 				if (reachable.has(outputId)) {
 					continue;
 				}
@@ -296,6 +395,8 @@ export const validateModDraft = (draft: {
 	summary: string;
 	intro: string;
 	startingElementIds: string[];
+	counters: ModCounterDefinition[];
+	showPalette: boolean;
 	elements: ModElement[];
 	reactions: ModReaction[];
 }): ValidationResult => {
@@ -363,6 +464,31 @@ export const validateModDraft = (draft: {
 	const describeElement = (elementId: string) =>
 		elementNamesById.get(elementId) ?? elementId;
 
+	const counterIds = new Set<string>();
+	const counterNames: string[] = [];
+	for (const counter of draft.counters) {
+		if (counterIds.has(counter.elementId)) {
+			errors.push(`Duplicate counter: ${describeElement(counter.elementId)}.`);
+			continue;
+		}
+
+		if (!elementIds.has(counter.elementId)) {
+			errors.push(`Counter ${counter.elementId} does not exist.`);
+			continue;
+		}
+
+		counterIds.add(counter.elementId);
+		counterNames.push(describeElement(counter.elementId));
+	}
+
+	draft.startingElementIds.forEach((elementId) => {
+		if (counterIds.has(elementId)) {
+			errors.push(
+				`Counter ${describeElement(elementId)} cannot also be a starting element.`
+			);
+		}
+	});
+
 	const seenReactions = new Set<string>();
 	for (const reaction of draft.reactions) {
 		const usesScript = hasReactionScript(reaction.script);
@@ -370,6 +496,12 @@ export const validateModDraft = (draft: {
 		if (!elementIds.has(reaction.leftId) || !elementIds.has(reaction.rightId)) {
 			errors.push(
 				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} references a missing element.`
+			);
+		}
+
+		if (counterIds.has(reaction.leftId) || counterIds.has(reaction.rightId)) {
+			errors.push(
+				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} cannot use counters as ingredients.`
 			);
 		}
 
@@ -390,16 +522,21 @@ export const validateModDraft = (draft: {
 				errors.push(
 					`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} outputs missing element ${describeElement(outputId)}.`
 				);
+			} else if (counterIds.has(outputId)) {
+				errors.push(
+					`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} cannot output counter ${describeElement(outputId)} as a normal element.`
+				);
 			}
 		}
 
 		if (usesScript) {
 			const scriptValidation = validateReactionScript(reaction.script ?? '', {
-				counterNames: [],
+				counterNames,
 				elements: draft.elements.map((element) => ({
 					id: element.id,
 					name: element.name,
 				})),
+				nonGameplayElementIds: Array.from(counterIds),
 			});
 			scriptValidation.errors.forEach((error) => {
 				scriptErrors.push(
@@ -422,14 +559,22 @@ export const validateModDraft = (draft: {
 			? getReachableElementIds(
 					draft.startingElementIds,
 					draft.reactions,
-					draft.elements
+					draft.elements,
+					counterNames,
+					Array.from(counterIds)
 				)
-			: draft.startingElementIds.filter((elementId) => elementIds.has(elementId));
+			: draft.startingElementIds.filter(
+					(elementId) => elementIds.has(elementId) && !counterIds.has(elementId)
+				);
 	const unreachableIds =
 		scriptErrors.length === 0
 			? draft.elements
 					.map((element) => element.id)
-					.filter((elementId) => !reachableElementIds.includes(elementId))
+					.filter(
+						(elementId) =>
+							!counterIds.has(elementId) &&
+							!reachableElementIds.includes(elementId)
+					)
 			: [];
 
 	if (unreachableIds.length > 0) {
@@ -451,7 +596,8 @@ export const validateModDraft = (draft: {
 		scriptErrors,
 		warnings,
 		reachableElementIds,
-		totalElements: draft.elements.length,
+		totalElements: draft.elements.filter((element) => !counterIds.has(element.id))
+			.length,
 	};
 };
 
@@ -472,6 +618,7 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
   const elementIcons: Record<string, string> = {};
   const elementEffects: ActiveRuleset['elementEffects'] = {};
   const elementMessages: Record<string, string> = {};
+  const nonConsumableElementIds: string[] = [];
   for (const element of mod.elements) {
     elementNames[element.id] = element.name;
     elementStyles[element.id] = getModElementClasses(
@@ -485,7 +632,11 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 		if (element.message) {
 			elementMessages[element.id] = element.message;
 		}
+    if (element.nonConsumable) {
+      nonConsumableElementIds.push(element.id);
+    }
 	}
+  const counterDefinitions = buildCounterDefinitions(mod.counters, elementNames);
 
   return {
     kind: 'mod',
@@ -504,7 +655,10 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 		keyItems: [],
 		keyItemData: {},
 		elementMessages,
-		counterNames: [],
+    nonConsumableElementIds,
+		counterDefinitions,
+		counterNames: counterDefinitions.map((counter) => counter.name),
+		showPalette: mod.showPalette,
 		sourceModId: mod.id,
 		ownerUsername: mod.ownerUsername,
 		...(mod.publishedHash ? { publishedHash: mod.publishedHash } : {}),
@@ -521,6 +675,8 @@ export const buildRulesetFromDraft = (draft: SaveDraftInput): ActiveRuleset =>
 		ownerUserId: 'draft-user',
 		ownerUsername: 'draft-user',
 		startingElementIds: draft.startingElementIds,
+		counters: draft.counters,
+		showPalette: draft.showPalette,
 		elements: draft.elements,
 		reactions: draft.reactions,
 		status: 'draft',
@@ -530,6 +686,8 @@ export const buildRulesetFromDraft = (draft: SaveDraftInput): ActiveRuleset =>
 			summary: draft.summary,
 			intro: draft.intro,
 			startingElementIds: draft.startingElementIds,
+			counters: draft.counters,
+			showPalette: draft.showPalette,
 			elements: draft.elements,
 			reactions: draft.reactions,
 		}),

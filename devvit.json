@@ -55,6 +55,11 @@
         "type": "string",
         "label": "Game Post Title",
         "defaultValue": "Play Alchemy Game"
+      },
+      "authorsHelpPage": {
+        "type": "string",
+        "label": "Authors Help Page URL",
+        "defaultValue": ""
       }
     }
   },

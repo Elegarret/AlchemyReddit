@@ -1,7 +1,7 @@
 import { initTRPC } from '@trpc/server';
 import { transformer } from '../transformer';
 import { Context } from './context';
-import { context, reddit } from '@devvit/web/server';
+import { context, reddit, settings } from '@devvit/web/server';
 import { countDecrement, countGet, countIncrement } from './core/count';
 import { z } from 'zod';
 import { saveDraftInputSchema } from '../modding/types';
@@ -25,6 +25,7 @@ import {
   resolveRulesetForModId,
   resolveRulesetFromPostData,
   saveDraftForUser,
+  isCurrentUserModerator,
   unpublishModForUser,
   validateDraftInput,
 } from './core/mods';
@@ -76,9 +77,11 @@ export const appRouter = t.router({
             ? getPublishedModListItem(resolvedRuleset.modId)
             : Promise.resolve(null),
         ]);
+        const isModerator = await isCurrentUserModerator(username);
 
         return {
           count,
+          isModerator,
           postId: context.postId,
           username,
           redditDiscovered,
@@ -128,6 +131,15 @@ export const appRouter = t.router({
     getPublished: publicProcedure
       .input(z.string().min(1).max(64))
       .query(async ({ input }) => await getPublishedMod(input)),
+    getEditorSettings: publicProcedure.query(async () => {
+      const authorsHelpPageUrl =
+        (await settings.get<string>('authorsHelpPage'))?.trim() ?? '';
+
+      return {
+        authorsHelpPageUrl:
+          authorsHelpPageUrl.length > 0 ? authorsHelpPageUrl : null,
+      };
+    }),
     validateDraft: publicProcedure
       .input(saveDraftInputSchema)
       .mutation(async ({ input }) => validateDraftInput(input)),

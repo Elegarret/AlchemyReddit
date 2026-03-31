@@ -19,6 +19,10 @@ One statement per line. Lines run top to bottom. A bare element name is shorthan
 - `set(money -= 1)`
 - `set(health = 10)`
 - `message("The cupboard is locked.")`
+- `popup("The cupboard is locked.")`
+- `popup("The cupboard is locked.", key)`
+- `win("You restored the realm.")`
+- `lose("The realm is lost.", corpse)`
 - `stop`
 
 ## Conditions
@@ -40,6 +44,7 @@ Use `if (...) action` for a single conditional action. Conditions are flat and A
 - `if (on_table(flashlight) and not_discovered(jacket)) add jacket`
 - `if (count(health) < 10) add bandage`
 - `if (not_on_table(key)) message("It is locked.")`
+- `if (not_on_table(key)) popup("It is locked.", key)`
 - `if (not_on_table(key)) stop`
 
 Bracketed tokens are whitespace-tolerant on input, so `if(count(health)<10)add bandage` also parses, but canonical output uses one space where needed.
@@ -48,8 +53,13 @@ Bracketed tokens are whitespace-tolerant on input, so `if(count(health)<10)add b
 
 ```txt
 message("The cupboard is locked.")
+popup("You found a hidden compartment.", key)
 if (not_on_table(key)) stop
 remove flashlight
 add scratched-note, bandage
 set(money += 1)
+
+`message(...)` shows a non-blocking toast.
+`popup(...)` shows a blocking modal the player must dismiss.
+`win(...)` and `lose(...)` show blocking end-state screens.
 ```

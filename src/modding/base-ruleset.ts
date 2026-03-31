@@ -25,5 +25,8 @@ export const BASE_RULESET: ActiveRuleset = {
 	keyItems: KEY_ITEMS,
 	keyItemData: KEY_ITEMS_DATA,
 	elementMessages: ELEMENT_MESSAGES,
+	nonConsumableElementIds: [],
+	counterDefinitions: [],
 	counterNames: [],
+	showPalette: true,
 };

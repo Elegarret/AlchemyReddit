@@ -45,18 +45,35 @@ Keep this file updated when architecture, major flows, or important project conv
 ## Key Flows
 
 - Game progress is stored locally per ruleset and synced to Reddit progress for non-playtest sessions.
-- Game state now also persists per-ruleset script counters locally, even though the editor does not expose a counter-definition UI yet.
+- Mod realms now expose authored counters with min/max/initial values in both the editor and the game. Counter values persist locally per ruleset, reset to authored initial values, and clamp during scripted updates.
 - Playtest sessions use `PLAYTEST_RULESET_STORAGE_KEY` in local storage and bypass Reddit progress syncing.
 - Editor saves persist draft data through tRPC, then publish/share actions operate on the saved draft id.
 - Published realms can be shared to a Reddit post and reopened from the game/options flow for authors.
 - Mod reactions can optionally carry per-reaction script text. Non-empty scripts override `outputIds` at runtime, and the editor validates script lines inline plus during overall draft validation.
-- Reaction script syntax now canonically uses `add`, `set(...)`, `message(...)`, `not_discovered(...)`, and `count(...)` comparisons. The per-reaction textarea exposes lightweight local autocomplete for those token families, while the full text editor serializes valid scripts back out in canonical form.
+- Reaction script syntax now canonically uses `add`, `set(...)`, `message(...)`, `popup(...)`, `win(...)`, `lose(...)`, `not_discovered(...)`, and `count(...)` comparisons. The per-reaction textarea exposes lightweight local autocomplete for those token families, while the full text editor serializes valid scripts back out in canonical form.
+- The full-text reaction editor now opens expanded by default when authors switch into text mode, can compact back to the split layout, autocompletes top-level `A + B =` reaction lines, and falls through to standard script autocomplete on indented lines.
+- Counter-marked elements remain editable in the general element list for icon/name/style changes, but they are treated as non-gameplay elements by validation and script authoring.
+- Elements can be marked `non-consumable`; those elements stay on the table after successful reactions unless a script explicitly removes them.
+- Scripted `popup(...)` actions render queued blocking modals, while scripted `win(...)` and `lose(...)` actions render blocking end-state screens with reset and realm-list navigation actions.
+- Realms can hide the palette for quest-like play. In that mode the game removes the footer palette entirely and seeds starter elements onto the table in a circular layout around the viewport center on first load and reset.
+- The mod editor emoji picker uses a self-hosted dataset at `public/emoji-data.json`, sourced from `emoji-picker-element-data/en/emojibase/data.json` via `npm run sync:emoji-data`.
+- The emoji picker follows `prefers-color-scheme` by default, so it renders in light or dark mode to match the rest of the app instead of forcing dark mode.
+
+## Future Plans
+
+- Add a user-facing tutorial, including guidance for reaction scripts and other modding flows where needed.
+- starred mods - >90% upvotes
+- featured mods, section on the main page, choose 5 random featured every time
+- Advanced realm settings: 
+- - inventory-style palette. Opened elements don't get there automatically, only by special script action. Same elememnts must stack there, i.e if stone was added twice, display as stone and (2) in the corner. Elements are not permamnet there, they being consumed when dragged out.
+- add user profiles
 
 ## Commands
 
 - `npm run type-check`: required after changes
 - `npm test -- my-file-name`: targeted test execution
 - `npm test`: full test suite
+- `npm run sync:emoji-data`: refreshes `public/emoji-data.json` from the installed official emoji dataset
 
 ## Current Known Verification Note
 

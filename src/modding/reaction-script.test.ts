@@ -36,6 +36,9 @@ describe('parseReactionScript', () => {
         'remove flashlight',
         'remove_all dust',
         'message("The cupboard is locked.")',
+        'popup("A hidden clue appears.", key)',
+        'win("You escaped.")',
+        'lose("The room collapses.", dust)',
         'stop',
       ].join('\n')
     );
@@ -102,9 +105,32 @@ describe('parseReactionScript', () => {
         line: 8,
       },
       {
-        action: { kind: 'stop' },
+        action: {
+          iconElementRef: 'key',
+          kind: 'popup',
+          text: 'A hidden clue appears.',
+        },
         conditions: [],
         line: 9,
+      },
+      {
+        action: { kind: 'win', text: 'You escaped.' },
+        conditions: [],
+        line: 10,
+      },
+      {
+        action: {
+          iconElementRef: 'dust',
+          kind: 'lose',
+          text: 'The room collapses.',
+        },
+        conditions: [],
+        line: 11,
+      },
+      {
+        action: { kind: 'stop' },
+        conditions: [],
+        line: 12,
       },
     ]);
   });
@@ -158,6 +184,8 @@ describe('parseReactionScript', () => {
         'if(count(health)<10)bandage',
         'if (on_table(flashlight) and undiscovered(jacket)) jacket',
         'message("Done.")',
+        'popup("A hidden clue appears.", key)',
+        'lose("The room collapses.")',
       ].join('\n')
     );
 
@@ -168,6 +196,8 @@ describe('parseReactionScript', () => {
         'if (count(health) < 10) add bandage',
         'if (on_table(flashlight) and not_discovered(jacket)) add jacket',
         'message("Done.")',
+        'popup("A hidden clue appears.", key)',
+        'lose("The room collapses.")',
       ].join('\n')
     );
   });
@@ -178,6 +208,7 @@ describe('parseReactionScript', () => {
         'if (health < 10) add bandage',
         'money += 1',
         'if (on_table(flashlight) or not_discovered(jacket)) add jacket',
+        'popup mystery',
       ].join('\n')
     );
 
@@ -199,6 +230,11 @@ describe('parseReactionScript', () => {
       {
         line: 3,
         message: 'Only "and" conditions are supported.',
+      },
+      {
+        line: 4,
+        message:
+          'popup(...) must contain a double-quoted string and an optional element name.',
       },
     ]);
   });
@@ -235,6 +271,48 @@ describe('validateReactionScript', () => {
       'bandage',
       'jacket',
     ]);
+  });
+
+  it('rejects unknown popup icon element refs', () => {
+    const validation = validateReactionScript('popup("A hidden clue appears.", relic)', {
+      counterNames: [],
+      elements: elementRefs,
+    });
+
+    expect(validation.ok).toBe(false);
+    expect(validation.errors).toEqual([
+      {
+        line: 1,
+        message: 'Unknown element "relic".',
+      },
+    ]);
+  });
+
+  it('rejects counters when they are used as normal elements', () => {
+    const validation = validateReactionScript('add health', {
+      counterNames: ['health'],
+      elements: [...elementRefs, { id: 'health', name: 'Health' }],
+      nonGameplayElementIds: ['health'],
+    });
+
+    expect(validation.ok).toBe(false);
+    expect(validation.errors).toEqual([
+      {
+        line: 1,
+        message:
+          'Counter "health" cannot act as a normal element here. Use count(...) or set(...) instead.',
+      },
+    ]);
+  });
+
+  it('still allows counters as popup icons', () => {
+    const validation = validateReactionScript('popup("A hidden clue appears.", Health)', {
+      counterNames: ['health'],
+      elements: [...elementRefs, { id: 'health', name: 'Health' }],
+      nonGameplayElementIds: ['health'],
+    });
+
+    expect(validation.ok).toBe(true);
   });
 });
 
@@ -274,9 +352,53 @@ describe('executeReactionScript', () => {
       },
       emittedElementIds: ['bandage', 'key'],
       messages: ['It is locked.'],
+      popupEvents: [],
       removedTableElementIds: ['table-1', 'table-2', 'table-3'],
       stopped: false,
     });
+  });
+
+  it('queues popup events and stops on terminal win or lose actions', () => {
+    const execution = executeReactionScript({
+      counterNames: [],
+      counters: {},
+      discoveredElementIds: [],
+      elements: elementRefs,
+      script: parseOrThrow(
+        [
+          'popup("The room shifts.", dust)',
+          'popup("A key turns.", key)',
+          'win("You escaped.", jacket)',
+          'add bandage',
+        ].join('\n')
+      ),
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.emittedElementIds).toEqual([]);
+    expect(execution.result.popupEvents).toEqual([
+      {
+        iconElementId: 'dust',
+        kind: 'popup',
+        text: 'The room shifts.',
+      },
+      {
+        iconElementId: 'key',
+        kind: 'popup',
+        text: 'A key turns.',
+      },
+      {
+        iconElementId: 'jacket',
+        kind: 'win',
+        text: 'You escaped.',
+      },
+    ]);
+    expect(execution.result.stopped).toBe(true);
   });
 
   it('stops execution after stop', () => {
@@ -295,6 +417,7 @@ describe('executeReactionScript', () => {
     }
 
     expect(execution.result.emittedElementIds).toEqual(['dust']);
+    expect(execution.result.popupEvents).toEqual([]);
     expect(execution.result.stopped).toBe(true);
   });
 
@@ -312,5 +435,34 @@ describe('executeReactionScript', () => {
         message: 'add has an empty element name.',
       },
     ]);
+  });
+
+  it('clamps counter mutations to authored bounds', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Health'],
+      counterDefinitions: [
+        {
+          name: 'Health',
+          min: 0,
+          max: 10,
+        },
+      ],
+      counters: {
+        Health: 8,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      script: ['set(health += 10)', 'set(Health -= 99)'].join('\n'),
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.counterValues).toEqual({
+      Health: 0,
+    });
   });
 });

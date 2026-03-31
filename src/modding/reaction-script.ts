@@ -1,3 +1,5 @@
+import type { ActiveCounterDefinition } from './types';
+
 export type ReactionScriptAst = {
   statements: ReactionScriptStatement[];
 };
@@ -6,6 +8,14 @@ export type ReactionScriptStatement = {
   action: ReactionScriptAction;
   conditions: ReactionScriptCondition[];
   line: number;
+};
+
+export type ReactionScriptPopupKind = 'popup' | 'win' | 'lose';
+
+export type ReactionScriptPopupEvent = {
+  iconElementId: string | null;
+  kind: ReactionScriptPopupKind;
+  text: string;
 };
 
 export type ReactionScriptAction =
@@ -29,6 +39,11 @@ export type ReactionScriptAction =
     }
   | {
       kind: 'message';
+      text: string;
+    }
+  | {
+      iconElementRef?: string;
+      kind: ReactionScriptPopupKind;
       text: string;
     }
   | {
@@ -72,6 +87,7 @@ export type ReactionScriptValidationContext = {
     id: string;
     name?: string;
   }>;
+  nonGameplayElementIds?: string[];
 };
 
 export type ReactionScriptValidationResult = {
@@ -88,6 +104,7 @@ export type ReactionScriptTableElement = {
 
 export type ReactionScriptExecutionContext = ReactionScriptValidationContext & {
   counters: Record<string, number>;
+  counterDefinitions?: Array<Pick<ActiveCounterDefinition, 'max' | 'min' | 'name'>>;
   discoveredElementIds: string[];
   script: ReactionScriptAst | string;
   tableElements: ReactionScriptTableElement[];
@@ -104,6 +121,7 @@ export type ReactionScriptExecutionResult =
         counterValues: Record<string, number>;
         emittedElementIds: string[];
         messages: string[];
+        popupEvents: ReactionScriptPopupEvent[];
         removedTableElementIds: string[];
         stopped: boolean;
       };
@@ -131,6 +149,9 @@ const isReactionScriptIssue = (
 
 const normalizeLookupKey = (value: string) =>
   value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
 
 const parseInteger = (value: string) => {
   if (!/^-?\d+$/.test(value)) {
@@ -461,6 +482,55 @@ const parseMessageAction = (
   };
 };
 
+const parsePopupStyleAction = (
+  rawAction: string,
+  line: number,
+  kind: ReactionScriptPopupKind
+): ReactionScriptAction | ReactionScriptIssue | null => {
+  const wrappedArgument = parseWrappedArgument(rawAction, kind);
+  if (wrappedArgument === null) {
+    if (new RegExp(`^${kind}\\b`).test(rawAction)) {
+      return {
+        line,
+        message: `${kind}(...) must contain a double-quoted string and an optional element name.`,
+      };
+    }
+
+    return null;
+  }
+
+  const trimmedArgument = wrappedArgument.trim();
+  const textMatch = trimmedArgument.match(/^("(?:\\.|[^"\\])*")(?:\s*,\s*(.+))?$/s);
+  if (!textMatch) {
+    return {
+      line,
+      message: `${kind}(...) must contain a double-quoted string and an optional element name.`,
+    };
+  }
+
+  const text = parseQuotedText(textMatch[1] ?? '');
+  if (text === null) {
+    return {
+      line,
+      message: `${kind}(...) must contain a double-quoted string and an optional element name.`,
+    };
+  }
+
+  const rawIconElementRef = textMatch[2]?.trim() ?? '';
+  if (rawIconElementRef.includes(',')) {
+    return {
+      line,
+      message: `${kind}(...) accepts at most one optional element name.`,
+    };
+  }
+
+  return {
+    ...(rawIconElementRef ? { iconElementRef: rawIconElementRef } : {}),
+    kind,
+    text,
+  };
+};
+
 const parseElementAction = (
   rawAction: string,
   line: number,
@@ -517,6 +587,21 @@ const parseAction = (
   const messageAction = parseMessageAction(rawAction, line);
   if (messageAction !== null) {
     return messageAction;
+  }
+
+  const popupAction = parsePopupStyleAction(rawAction, line, 'popup');
+  if (popupAction !== null) {
+    return popupAction;
+  }
+
+  const winAction = parsePopupStyleAction(rawAction, line, 'win');
+  if (winAction !== null) {
+    return winAction;
+  }
+
+  const loseAction = parsePopupStyleAction(rawAction, line, 'lose');
+  if (loseAction !== null) {
+    return loseAction;
   }
 
   const setAction = parseSetAction(rawAction, line);
@@ -688,8 +773,20 @@ const createElementResolver = (context: ReactionScriptValidationContext) => {
   };
 };
 
-const createCounterSet = (counterNames: string[]) =>
-  new Set(counterNames.map((counterName) => normalizeLookupKey(counterName)));
+const createCounterResolver = (counterNames: string[]) => {
+  const byName = new Map(
+    counterNames.map((counterName) => [
+      normalizeLookupKey(counterName),
+      counterName,
+    ])
+  );
+
+  return (counterName: string) =>
+    byName.get(normalizeLookupKey(counterName)) ?? null;
+};
+
+const createNonGameplayElementSet = (nonGameplayElementIds: string[] = []) =>
+  new Set(nonGameplayElementIds.map((elementId) => normalizeLookupKey(elementId)));
 
 const validateElementRef = (
   elementRef: string,
@@ -716,27 +813,59 @@ const validateElementRef = (
 const validateCounterName = (
   counterName: string,
   line: number,
-  counters: Set<string>
+  resolveCounterName: (counterName: string) => string | null
 ) => {
-  if (counters.has(normalizeLookupKey(counterName))) {
-    return null;
+  const canonicalName = resolveCounterName(counterName);
+  return canonicalName
+    ? {
+        canonicalName,
+        error: null,
+      }
+    : {
+        canonicalName: null,
+        error: {
+          line,
+          message: `Unknown counter "${counterName}".`,
+        },
+      };
+};
+
+const validateGameplayElementRef = (
+  elementRef: string,
+  line: number,
+  resolveElementId: (elementRef: string) => string | null,
+  nonGameplayElements: Set<string>
+) => {
+  const result = validateElementRef(elementRef, line, resolveElementId);
+  if (result.error || result.elementId === null) {
+    return result;
   }
 
-  return {
-    line,
-    message: `Unknown counter "${counterName}".`,
-  };
+  if (nonGameplayElements.has(normalizeLookupKey(result.elementId))) {
+    return {
+      elementId: result.elementId,
+      error: {
+        line,
+        message: `Counter "${elementRef}" cannot act as a normal element here. Use count(...) or set(...) instead.`,
+      },
+    };
+  }
+
+  return result;
 };
 
 const evaluateCondition = (
   condition: ReactionScriptCondition,
   resolveElementId: (elementRef: string) => string | null,
+  resolveCounterName: (counterName: string) => string | null,
   discoveredElementIds: Set<string>,
   tableElements: ReactionScriptTableElement[],
   counterValues: Record<string, number>
 ) => {
   if (condition.kind === 'count_compare') {
-    const counterValue = counterValues[condition.counterName] ?? 0;
+    const counterName =
+      resolveCounterName(condition.counterName) ?? condition.counterName;
+    const counterValue = counterValues[counterName] ?? 0;
     switch (condition.operator) {
       case '<':
         return counterValue < condition.value;
@@ -807,6 +936,12 @@ const formatAction = (action: ReactionScriptAction) => {
       return `remove_all ${action.elementRef}`;
     case 'message':
       return `message(${formatQuotedText(action.text)})`;
+    case 'popup':
+    case 'win':
+    case 'lose':
+      return `${action.kind}(${formatQuotedText(action.text)}${
+        action.iconElementRef ? `, ${action.iconElementRef}` : ''
+      })`;
     case 'stop':
       return 'stop';
   }
@@ -896,7 +1031,10 @@ export const validateReactionScript = (
   }
 
   const resolveElementId = createElementResolver(context);
-  const counterSet = createCounterSet(context.counterNames);
+  const resolveCounterName = createCounterResolver(context.counterNames);
+  const nonGameplayElements = createNonGameplayElementSet(
+    context.nonGameplayElementIds
+  );
   const emittedElementIds = new Set<string>();
   const referencedCounterNames = new Set<string>();
   const errors: ReactionScriptIssue[] = [];
@@ -904,22 +1042,23 @@ export const validateReactionScript = (
   for (const statement of parsed.ast.statements) {
     for (const condition of statement.conditions) {
       if (condition.kind === 'count_compare') {
-        referencedCounterNames.add(condition.counterName);
-        const error = validateCounterName(
+        const result = validateCounterName(
           condition.counterName,
           statement.line,
-          counterSet
+          resolveCounterName
         );
-        if (error) {
-          errors.push(error);
+        referencedCounterNames.add(result.canonicalName ?? condition.counterName);
+        if (result.error) {
+          errors.push(result.error);
         }
         continue;
       }
 
-      const result = validateElementRef(
+      const result = validateGameplayElementRef(
         condition.elementRef,
         statement.line,
-        resolveElementId
+        resolveElementId,
+        nonGameplayElements
       );
       if (result.error) {
         errors.push(result.error);
@@ -927,14 +1066,34 @@ export const validateReactionScript = (
     }
 
     if (statement.action.kind === 'set') {
-      referencedCounterNames.add(statement.action.counterName);
-      const error = validateCounterName(
+      const result = validateCounterName(
         statement.action.counterName,
         statement.line,
-        counterSet
+        resolveCounterName
       );
-      if (error) {
-        errors.push(error);
+      referencedCounterNames.add(result.canonicalName ?? statement.action.counterName);
+      if (result.error) {
+        errors.push(result.error);
+      }
+      continue;
+    }
+
+    if (
+      statement.action.kind === 'popup' ||
+      statement.action.kind === 'win' ||
+      statement.action.kind === 'lose'
+    ) {
+      if (!statement.action.iconElementRef) {
+        continue;
+      }
+
+      const result = validateElementRef(
+        statement.action.iconElementRef,
+        statement.line,
+        resolveElementId
+      );
+      if (result.error) {
+        errors.push(result.error);
       }
       continue;
     }
@@ -946,10 +1105,11 @@ export const validateReactionScript = (
     ) {
       if (statement.action.kind === 'add') {
         statement.action.elementRefs.forEach((elementRef) => {
-          const result = validateElementRef(
+          const result = validateGameplayElementRef(
             elementRef,
             statement.line,
-            resolveElementId
+            resolveElementId,
+            nonGameplayElements
           );
           if (result.error) {
             errors.push(result.error);
@@ -963,10 +1123,11 @@ export const validateReactionScript = (
         continue;
       }
 
-      const result = validateElementRef(
+      const result = validateGameplayElementRef(
         statement.action.elementRef,
         statement.line,
-        resolveElementId
+        resolveElementId,
+        nonGameplayElements
       );
       if (result.error) {
         errors.push(result.error);
@@ -1002,12 +1163,20 @@ export const executeReactionScript = (
   }
 
   const resolveElementId = createElementResolver(context);
+  const resolveCounterName = createCounterResolver(context.counterNames);
   const discoveredElementIds = new Set(context.discoveredElementIds);
   const tableElements = [...context.tableElements];
   const counterValues = { ...context.counters };
+  const counterBounds = new Map(
+    (context.counterDefinitions ?? []).map((counter) => [
+      normalizeLookupKey(counter.name),
+      counter,
+    ])
+  );
   const emittedElementIds: string[] = [];
   const removedTableElementIds: string[] = [];
   const messages: string[] = [];
+  const popupEvents: ReactionScriptPopupEvent[] = [];
   let stopped = false;
 
   for (const statement of parsed.ast.statements) {
@@ -1015,6 +1184,7 @@ export const executeReactionScript = (
       evaluateCondition(
         condition,
         resolveElementId,
+        resolveCounterName,
         discoveredElementIds,
         tableElements,
         counterValues
@@ -1035,16 +1205,22 @@ export const executeReactionScript = (
     }
 
     if (statement.action.kind === 'set') {
-      const currentValue = counterValues[statement.action.counterName] ?? 0;
+      const counterName =
+        resolveCounterName(statement.action.counterName) ??
+        statement.action.counterName;
+      const currentValue = counterValues[counterName] ?? 0;
+      const bounds = counterBounds.get(normalizeLookupKey(counterName));
+      let nextValue = currentValue;
       if (statement.action.operator === '=') {
-        counterValues[statement.action.counterName] = statement.action.value;
+        nextValue = statement.action.value;
       } else if (statement.action.operator === '+=') {
-        counterValues[statement.action.counterName] =
-          currentValue + statement.action.value;
+        nextValue = currentValue + statement.action.value;
       } else {
-        counterValues[statement.action.counterName] =
-          currentValue - statement.action.value;
+        nextValue = currentValue - statement.action.value;
       }
+      counterValues[counterName] = bounds
+        ? clamp(nextValue, bounds.min, bounds.max)
+        : nextValue;
       continue;
     }
 
@@ -1094,6 +1270,27 @@ export const executeReactionScript = (
       continue;
     }
 
+    if (
+      statement.action.kind === 'popup' ||
+      statement.action.kind === 'win' ||
+      statement.action.kind === 'lose'
+    ) {
+      popupEvents.push({
+        iconElementId: statement.action.iconElementRef
+          ? resolveElementId(statement.action.iconElementRef)
+          : null,
+        kind: statement.action.kind,
+        text: statement.action.text,
+      });
+
+      if (statement.action.kind !== 'popup') {
+        stopped = true;
+        break;
+      }
+
+      continue;
+    }
+
     stopped = true;
     break;
   }
@@ -1104,6 +1301,7 @@ export const executeReactionScript = (
       counterValues,
       emittedElementIds,
       messages,
+      popupEvents,
       removedTableElementIds,
       stopped,
     },

@@ -44,6 +44,7 @@ export const modElementSchema = z
     colorToken: z.string().min(1).max(32).optional(),
     message: z.string().max(MAX_ELEMENT_MESSAGE_LENGTH).optional(),
     effect: modElementEffectSchema.optional(),
+    nonConsumable: z.boolean().optional(),
   })
   .transform((element) => ({
     normalizedLegacyEffect:
@@ -60,6 +61,7 @@ export const modElementSchema = z
       DEFAULT_MOD_FRAME_COLOR_TOKEN,
     message: element.message?.trim() ?? '',
     effect: element.effect,
+    nonConsumable: element.nonConsumable ?? false,
   }))
   .transform(({ normalizedLegacyEffect, ...element }) => ({
     ...element,
@@ -77,6 +79,24 @@ export const modReactionSchema = z.object({
 
 export type ModReaction = z.infer<typeof modReactionSchema>;
 
+export const modCounterSchema = z
+  .object({
+    elementId: z.string().min(1).max(48),
+    initial: z.number().int(),
+    max: z.number().int(),
+    min: z.number().int(),
+  })
+  .transform((counter) => {
+    const max = Math.max(counter.min, counter.max);
+    return {
+      ...counter,
+      initial: Math.min(Math.max(counter.initial, counter.min), max),
+      max,
+    };
+  });
+
+export type ModCounterDefinition = z.infer<typeof modCounterSchema>;
+
 export const modStatusSchema = z.enum(['draft', 'published', 'hidden']);
 export type ModStatus = z.infer<typeof modStatusSchema>;
 
@@ -92,6 +112,8 @@ export const modDocSchema = z.object({
   ownerUserId: z.string().min(1).max(64),
   ownerUsername: z.string().min(1).max(64),
   startingElementIds: z.array(z.string().min(1).max(48)).min(2).max(8),
+  counters: z.array(modCounterSchema).max(128).optional().default([]),
+  showPalette: z.boolean().optional().default(true),
   elements: z.array(modElementSchema).max(128),
   reactions: z.array(modReactionSchema).max(512),
   status: modStatusSchema,
@@ -113,6 +135,8 @@ export const modListItemSchema = z.object({
   publishedHash: z.string().min(1).max(64).optional(),
   sharePostId: z.string().min(1).max(64).optional(),
   status: modStatusSchema,
+  hasDraftVersion: z.boolean().optional().default(false),
+  hasPublishedVersion: z.boolean().optional().default(false),
   elementCount: z.number().int().nonnegative(),
   reactionCount: z.number().int().nonnegative(),
   upvotes: z.number().int().optional(),
@@ -135,6 +159,14 @@ export type KeyItemData = {
   motivation: string;
 };
 
+export type ActiveCounterDefinition = {
+  elementId: string;
+  initial: number;
+  max: number;
+  min: number;
+  name: string;
+};
+
 export type ActiveRuleset = {
   kind: 'base' | 'mod';
   rulesetId: string;
@@ -152,7 +184,10 @@ export type ActiveRuleset = {
   keyItems: string[];
   keyItemData: Record<string, KeyItemData>;
   elementMessages: Record<string, string>;
+  nonConsumableElementIds: string[];
+  counterDefinitions: ActiveCounterDefinition[];
   counterNames: string[];
+  showPalette: boolean;
   sourceModId?: string;
   publishedHash?: string;
   ownerUsername?: string;
@@ -178,6 +213,8 @@ export const saveDraftInputSchema = z.object({
     .optional()
     .transform((value) => value ?? ''),
   startingElementIds: z.array(z.string().min(1).max(48)).min(2).max(8),
+  counters: z.array(modCounterSchema).max(128).optional().default([]),
+  showPalette: z.boolean().optional().default(true),
   elements: z.array(modElementSchema).max(128),
   reactions: z.array(modReactionSchema).max(512),
 });

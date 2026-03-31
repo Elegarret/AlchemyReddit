@@ -1,5 +1,11 @@
 import { context, showToast } from '@devvit/web/client';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+	useEffect,
+	useRef,
+	useState,
+	type CSSProperties,
+	type MouseEvent as ReactMouseEvent,
+} from 'react';
 import {
   IoCloseSharp,
   IoCreateOutline,
@@ -8,9 +14,11 @@ import {
 } from 'react-icons/io5';
 import { BASE_RULESET } from '../modding/base-ruleset';
 import {
+  getAutoRemovedReactionElementIds,
   getLocalStorageKeys,
   getProgressScope,
   getRecipesForElementInRuleset,
+  getRulesetCounterValues,
   getValidDiscoveredItems,
   hasReactionForRuleset,
   PLAYTEST_RULESET_STORAGE_KEY,
@@ -21,6 +29,7 @@ import {
   type ActiveRuleset,
   type ModElementEffect,
 } from '../modding/types';
+import type { ReactionScriptPopupEvent } from '../modding/reaction-script';
 import { trpc } from '../trpc';
 import { openEntry, setEditorTargetModId } from '../webview-navigation';
 import { readPlaytestRuleset } from './playtest';
@@ -30,17 +39,99 @@ import { createSnowBackdropFlakes, createSnowPaletteHills } from './visuals';
 type GameSessionProps = {
   ruleset: ActiveRuleset;
   initialUsername: string | null;
+  isModerator: boolean;
   initialDiscovered: string[];
   progressScope: string;
   isPlaytest: boolean;
+};
+
+type ModalElementCardSize = 'compact' | 'hero';
+
+type CounterChipDelta = {
+	counterName: string;
+	delta: number;
+	id: number;
 };
 
 let elementIdCounter = 0;
 const createElementId = () => `el-${++elementIdCounter}`;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
+const STARTER_ELEMENT_SIZE = 80;
+const STARTER_ELEMENT_GAP = 28;
+const STARTER_EDGE_MARGIN = 56;
 
-const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScope, isPlaytest }: GameSessionProps) => {
+const getStarterElementIcon = (ruleset: ActiveRuleset, elementId: string) => {
+	const rawIcon = ruleset.elementIcons[elementId];
+	if (Array.isArray(rawIcon)) {
+		return rawIcon[0];
+	}
+
+	return rawIcon;
+};
+
+const createStarterTableElements = (ruleset: ActiveRuleset): Element[] => {
+	if (typeof window === 'undefined') {
+		return [];
+	}
+
+	const starterCount = ruleset.startingElements.length;
+	if (starterCount === 0) {
+		return [];
+	}
+
+	const centerX = window.innerWidth / 2;
+	const centerY = window.innerHeight / 2;
+	if (starterCount === 1) {
+		const onlyElementId = ruleset.startingElements[0];
+		if (!onlyElementId) {
+			return [];
+		}
+
+		const icon = getStarterElementIcon(ruleset, onlyElementId);
+		return [
+			{
+				id: createElementId(),
+				name: onlyElementId,
+				x: centerX,
+				y: centerY,
+				...(icon ? { icon } : {}),
+			},
+		];
+	}
+
+	const minimumCircumference =
+		starterCount * (STARTER_ELEMENT_SIZE + STARTER_ELEMENT_GAP);
+	const desiredRadius = minimumCircumference / (2 * Math.PI);
+	const maxRadius = Math.max(
+		0,
+		Math.min(window.innerWidth, window.innerHeight) / 2 -
+			STARTER_EDGE_MARGIN -
+			STARTER_ELEMENT_SIZE / 2
+	);
+	const radius = Math.min(desiredRadius, maxRadius);
+
+	return ruleset.startingElements.map((elementId, index) => {
+		const angle = -Math.PI / 2 + (index / starterCount) * Math.PI * 2;
+		const icon = getStarterElementIcon(ruleset, elementId);
+		return {
+			id: createElementId(),
+			name: elementId,
+			x: centerX + Math.cos(angle) * radius,
+			y: centerY + Math.sin(angle) * radius,
+			...(icon ? { icon } : {}),
+		};
+	});
+};
+
+const GameSession = ({
+	ruleset,
+	initialUsername,
+	isModerator,
+	initialDiscovered,
+	progressScope,
+	isPlaytest,
+}: GameSessionProps) => {
 	const storageKeys = getLocalStorageKeys(ruleset);
 	const introStorageKey = `${storageKeys.discovered}-intro-dismissed`;
 	const [discovered, setDiscovered] = useState<string[]>(() => {
@@ -70,32 +161,38 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		} catch (e) {
 			console.error('Failed to load elements', e);
 		}
-		return [];
+		return ruleset.showPalette ? [] : createStarterTableElements(ruleset);
 	});
 	const [counterValues, setCounterValues] = useState<Record<string, number>>(() => {
 		try {
 			const saved = localStorage.getItem(storageKeys.counters);
 			if (!saved) {
-				return {};
+				return getRulesetCounterValues(ruleset);
 			}
 
 			const parsed = JSON.parse(saved);
 			if (!isRecord(parsed)) {
-				return {};
+				return getRulesetCounterValues(ruleset);
 			}
 
-			const nextCounters: Record<string, number> = {};
+			const persistedCounters: Record<string, number> = {};
 			Object.entries(parsed).forEach(([key, value]) => {
 				if (typeof value === 'number') {
-					nextCounters[key] = value;
+					persistedCounters[key] = value;
 				}
 			});
-			return nextCounters;
+			return getRulesetCounterValues(ruleset, persistedCounters);
 		} catch (error) {
 			console.error('Failed to load counters', error);
-			return {};
+			return getRulesetCounterValues(ruleset);
 		}
 	});
+	const [pulsingCounterTokens, setPulsingCounterTokens] = useState<
+		Record<string, number>
+	>({});
+	const [counterChipDeltas, setCounterChipDeltas] = useState<
+		CounterChipDelta[]
+	>([]);
 	const [layoutCols, setLayoutCols] = useState(6);
 
 	useEffect(() => {
@@ -124,10 +221,17 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	const username = initialUsername;
 	const authorUsername = ruleset.ownerUsername ?? 'Unknown';
 	const isAuthor = !!username && username === ruleset.ownerUsername;
+	const canCopyModData =
+		ruleset.kind === 'mod' &&
+		!!ruleset.sourceModId &&
+		(isAuthor || isModerator);
 	const [discoveryPopup, setDiscoveryPopup] = useState<string | null>(null);
 	const [confirmWipe, setConfirmWipe] = useState(false);
 	const [infoPopup, setInfoPopup] = useState<string | null>(null);
 	const [computerPopup, setComputerPopup] = useState<string | null>(null);
+	const [scriptedPopupQueue, setScriptedPopupQueue] = useState<
+		ReactionScriptPopupEvent[]
+	>([]);
 	const [filterQuery, setFilterQuery] = useState('');
 	const [showMobileFilter, setShowMobileFilter] = useState(false);
 	const [isQuaking, setIsQuaking] = useState(false);
@@ -154,6 +258,75 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 	const hasElementEffect = (elementId: string, effect: ModElementEffect) =>
 		getElementEffect(elementId) === effect;
+
+	const hasLegacyOverlayPopup =
+		discoveryPopup !== null || infoPopup !== null || computerPopup !== null;
+	const activeScriptedPopup = hasLegacyOverlayPopup
+		? null
+		: (scriptedPopupQueue[0] ?? null);
+	const hasBlockingScriptedPopup = scriptedPopupQueue.length > 0;
+	const areBoardInteractionsLocked =
+		hasBlockingScriptedPopup || hasLegacyOverlayPopup;
+
+	const renderElementPreviewIcon = (
+		elementId: string,
+		size: ModalElementCardSize = 'compact'
+	) => {
+		const rawIcon = ruleset.elementIcons[elementId];
+		const icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
+		const colorClass =
+			ruleset.elementStyles[elementId] ?? 'bg-gray-300 border-gray-500';
+		const weightMatch = colorClass.match(/-(\d{3})/);
+		const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
+
+		if (typeof icon === 'string') {
+			if (icon.startsWith('/') || icon.startsWith('http')) {
+				return (
+					<img
+						src={icon}
+						alt=""
+						className={
+							size === 'hero'
+								? 'h-20 w-20 object-contain'
+								: 'h-12 w-12 object-contain'
+						}
+					/>
+				);
+			}
+
+			return (
+				<span className={size === 'hero' ? 'text-7xl leading-none drop-shadow-2xl' : 'text-4xl leading-none drop-shadow-lg'}>
+					{icon}
+				</span>
+			);
+		}
+
+		if (!icon) {
+			return null;
+		}
+
+		const IconComponent = icon;
+		return (
+			<div className={weight < 500 ? 'text-black/50' : 'text-white/50'}>
+				<IconComponent size={size === 'hero' ? 80 : 40} />
+			</div>
+		);
+	};
+
+	const renderModalElementCard = (
+		elementId: string,
+		size: ModalElementCardSize = 'compact'
+	) => (
+		<div
+			className={`flex items-center justify-center border-2 ${
+				size === 'hero'
+					? 'h-32 w-32 rounded-2xl border-4 shadow-2xl'
+					: 'h-20 w-20 rounded-xl shadow-lg'
+			} ${ruleset.elementStyles[elementId] ?? 'bg-gray-300 border-gray-500'}`}
+		>
+			{renderElementPreviewIcon(elementId, size)}
+		</div>
+	);
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -203,9 +376,27 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 	const itemsPerPage = layoutCols * 3;
 	const hasStorm = elements.some(el => hasElementEffect(el.name, 'storm'));
+	const activeCounters = ruleset.counterDefinitions.map((counter) => ({
+		...counter,
+		value: counterValues[counter.name] ?? counter.initial,
+	}));
+	const counterChipDeltasByName = counterChipDeltas.reduce<Record<string, CounterChipDelta[]>>(
+		(grouped, delta) => {
+			if (!grouped[delta.counterName]) {
+				grouped[delta.counterName] = [];
+			}
+			grouped[delta.counterName]?.push(delta);
+			return grouped;
+		},
+		{}
+	);
 	const pagesCount = Math.ceil(discovered.length / itemsPerPage);
 	const prevPagesCount = useRef(pagesCount);
 	const prevDiscoveredLen = useRef(discovered.length);
+	const previousCounterValuesRef = useRef<Record<string, number> | null>(null);
+	const counterPulseTimeouts = useRef<Record<string, number>>({});
+	const counterDeltaTimeouts = useRef<Record<number, number>>({});
+	const counterDeltaIdRef = useRef(0);
 
 	useEffect(() => {
 		// Only jump to new page if we actually discovered something new
@@ -247,6 +438,72 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	useEffect(() => {
 		localStorage.setItem(storageKeys.counters, JSON.stringify(counterValues));
 	}, [counterValues, storageKeys.counters]);
+
+	useEffect(() => {
+		const currentCounterValues = Object.fromEntries(
+			ruleset.counterDefinitions.map((counter) => [
+				counter.name,
+				counterValues[counter.name] ?? counter.initial,
+			])
+		);
+		const previousCounterValues = previousCounterValuesRef.current;
+		previousCounterValuesRef.current = currentCounterValues;
+
+		if (previousCounterValues === null) {
+			return;
+		}
+
+		ruleset.counterDefinitions.forEach((counter) => {
+			const previousValue =
+				previousCounterValues[counter.name] ?? counter.initial;
+			const nextValue = currentCounterValues[counter.name] ?? counter.initial;
+			const delta = nextValue - previousValue;
+
+			if (delta === 0) {
+				return;
+			}
+
+			const pulseToken = Date.now() + Math.random();
+			setPulsingCounterTokens((current) => ({
+				...current,
+				[counter.name]: pulseToken,
+			}));
+
+			const existingPulseTimeout = counterPulseTimeouts.current[counter.name];
+			if (existingPulseTimeout !== undefined) {
+				window.clearTimeout(existingPulseTimeout);
+			}
+
+			counterPulseTimeouts.current[counter.name] = window.setTimeout(() => {
+				setPulsingCounterTokens((current) => {
+					if (current[counter.name] !== pulseToken) {
+						return current;
+					}
+
+					const next = { ...current };
+					delete next[counter.name];
+					return next;
+				});
+				delete counterPulseTimeouts.current[counter.name];
+			}, 520);
+
+			const deltaId = ++counterDeltaIdRef.current;
+			setCounterChipDeltas((current) => [
+				...current,
+				{
+					counterName: counter.name,
+					delta,
+					id: deltaId,
+				},
+			]);
+			counterDeltaTimeouts.current[deltaId] = window.setTimeout(() => {
+				setCounterChipDeltas((current) =>
+					current.filter((entry) => entry.id !== deltaId)
+				);
+				delete counterDeltaTimeouts.current[deltaId];
+			}, 950);
+		});
+	}, [counterValues, ruleset.counterDefinitions]);
 
 	useEffect(() => {
 		localStorage.setItem(storageKeys.page, currentPage.toString());
@@ -417,6 +674,12 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 				window.clearTimeout(quakeTimeout.current);
 			}
 			clearStormTimeouts();
+			Object.values(counterPulseTimeouts.current).forEach((timeoutId) => {
+				window.clearTimeout(timeoutId);
+			});
+			Object.values(counterDeltaTimeouts.current).forEach((timeoutId) => {
+				window.clearTimeout(timeoutId);
+			});
 		};
 	}, []);
 
@@ -456,6 +719,96 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 		};
 	}, [hasStorm]);
 
+	const resetProgressAndStartOver = () => {
+		const basic = ruleset.startingElements;
+		const resetElements = ruleset.showPalette
+			? []
+			: createStarterTableElements(ruleset);
+		const resetCounters = getRulesetCounterValues(ruleset);
+		Object.values(counterPulseTimeouts.current).forEach((timeoutId) => {
+			window.clearTimeout(timeoutId);
+		});
+		Object.values(counterDeltaTimeouts.current).forEach((timeoutId) => {
+			window.clearTimeout(timeoutId);
+		});
+		counterPulseTimeouts.current = {};
+		counterDeltaTimeouts.current = {};
+		previousCounterValuesRef.current = resetCounters;
+		setDiscovered(basic);
+		setElements(resetElements);
+		setCounterValues(resetCounters);
+		setPulsingCounterTokens({});
+		setCounterChipDeltas([]);
+		setCurrentPage(0);
+		setDragging(null);
+		setReactiveIDs([]);
+		setScriptedPopupQueue([]);
+		setDiscoveryPopup(null);
+		setInfoPopup(null);
+		setComputerPopup(null);
+		setShowOptions(false);
+		setConfirmWipe(false);
+		prevDiscoveredCount.current = basic.length;
+
+		localStorage.setItem(storageKeys.discovered, JSON.stringify(basic));
+		localStorage.setItem(storageKeys.elements, JSON.stringify(resetElements));
+		localStorage.setItem(storageKeys.counters, JSON.stringify(resetCounters));
+		localStorage.setItem(storageKeys.page, '0');
+		localStorage.removeItem(introStorageKey);
+		setShowRealmIntro(Boolean(ruleset.intro.trim()));
+
+		if (!isPlaytest) {
+			trpc.progress.save
+				.mutate({ discovered: basic, progressScope })
+				.catch(console.error);
+		}
+	};
+
+	const closeActiveScriptedPopup = () => {
+		setScriptedPopupQueue((current) => current.slice(1));
+	};
+
+	const navigateBackToRealmsList = (
+		event: ReactMouseEvent<HTMLButtonElement>
+	) => {
+		setScriptedPopupQueue([]);
+		setShowOptions(false);
+		localStorage.removeItem('override-mod-id');
+
+		if (isPlaytest) {
+			localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+			if (ruleset.sourceModId) {
+				setEditorTargetModId(ruleset.sourceModId);
+			}
+			openEntry(event.nativeEvent, 'mod-editor');
+			return;
+		}
+
+		openEntry(event.nativeEvent, 'mod-catalog');
+	};
+
+	const copyModData = async () => {
+		if (!ruleset.sourceModId) {
+			showToast('This realm has no mod data to copy.');
+			return;
+		}
+
+		try {
+			const mod = await trpc.mods.getPublished.query(ruleset.sourceModId);
+			if (!mod) {
+				showToast('Published mod data was not found.');
+				return;
+			}
+
+			await navigator.clipboard.writeText(JSON.stringify(mod, null, 2));
+			showToast('Mod data copied');
+			setShowOptions(false);
+		} catch (error) {
+			console.error(error);
+			showToast('Failed to copy mod data');
+		}
+	};
+
 	const bringToFront = (id: string) => {
 		setElements((prev) => {
 			const index = prev.findIndex((el) => el.id === id);
@@ -468,6 +821,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	};
 
 	const handlePointerDown = (e: React.PointerEvent, id: string) => {
+		if (areBoardInteractionsLocked) {
+			return;
+		}
+
 		e.preventDefault();
 		const el = elements.find((el) => el.id === id);
 		if (!el) return;
@@ -578,6 +935,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	};
 
 	const spawnFromPalette = (e: React.PointerEvent, name: string) => {
+		if (areBoardInteractionsLocked) {
+			return;
+		}
+
 		const id = createElementId();
 		const icon = getRandomTableIcon(name);
 		const hint = hasElementEffect(name, 'hint') ? (getRandomHint() ?? 'nothing') : undefined;
@@ -598,6 +959,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	};
 
 	const handlePointerMove = (e: React.PointerEvent) => {
+		if (areBoardInteractionsLocked) {
+			return;
+		}
+
 		if (dragging) {
 			const newX = e.clientX - dragOffset.current.x;
 			const newY = e.clientY - dragOffset.current.y;
@@ -635,10 +1000,18 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	};
 
 	const handlePointerUp = (e: React.PointerEvent) => {
+		if (areBoardInteractionsLocked) {
+			return;
+		}
+
 		if (!dragging) return;
 
 		// Check if released over palette area (bottom 256px)
-		if (e.clientX > 0 && e.clientY > window.innerHeight - 256) {
+		if (
+			ruleset.showPalette &&
+			e.clientX > 0 &&
+			e.clientY > window.innerHeight - 256
+		) {
 			setElements((prev) => prev.filter((el) => el.id !== dragging));
 			setDragging(null);
 			setReactiveIDs([]);
@@ -703,8 +1076,13 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 				setTimeout(() => setFlash(null), 500);
 
 				const removedElementIds = new Set([
-					dragging,
-					targetEl.id,
+					...getAutoRemovedReactionElementIds({
+						draggedTableElementId: dragging,
+						leftId: draggedEl.name,
+						rightId: targetEl.name,
+						ruleset,
+						targetTableElementId: targetEl.id,
+					}),
 					...result.removedTableElementIds,
 				]);
 				const filteredElements = elements.filter(
@@ -755,6 +1133,12 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 				result.messages.forEach((message) => {
 					showToast(message);
 				});
+				if (result.popupEvents.length > 0) {
+					setScriptedPopupQueue((current) => [
+						...current,
+						...result.popupEvents,
+					]);
+				}
 
 				// Update discovered list
 				if (nextDiscovered.length > discovered.length) {
@@ -851,12 +1235,20 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 	// Palette Gesture Handlers
 	const onPaletteDown = (e: React.PointerEvent, name?: string) => {
+		if (areBoardInteractionsLocked) {
+			return;
+		}
+
 		gestureStart.current = { x: e.clientX, y: e.clientY, name: name || '' };
 		isGesturingPalette.current = 'none';
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	};
 
 	const onPaletteMove = (e: React.PointerEvent) => {
+		if (areBoardInteractionsLocked) {
+			return;
+		}
+
 		if (gestureStart.current.x === 0 && gestureStart.current.y === 0) return;
 
 		const dx = e.clientX - gestureStart.current.x;
@@ -887,6 +1279,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	};
 
 	const onPaletteUp = (e: React.PointerEvent) => {
+		if (areBoardInteractionsLocked) {
+			return;
+		}
+
 		if (isGesturingPalette.current === 'swiping') {
 			const dx = e.clientX - gestureStart.current.x;
 			const threshold = 50;
@@ -904,6 +1300,10 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	};
 
 	const onPaletteWheel = (e: React.WheelEvent) => {
+		if (areBoardInteractionsLocked) {
+			return;
+		}
+
 		if (pages.length <= 1) return;
 		if (wheelTimeout.current !== null) return;
 
@@ -947,6 +1347,36 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 	const snowPaletteHills = useRef<CSSProperties[]>(createSnowPaletteHills());
 	const hasStar = elements.some(el => el.name === 'star');
 	const hasSnow = elements.some(el => el.name === 'snow');
+	const counterBar =
+		activeCounters.length > 0 ? (
+			<div className="flex flex-wrap items-center justify-center gap-2 px-4 py-2">
+				{activeCounters.map((counter) => (
+					<div
+						key={`counter-chip-${counter.elementId}`}
+						className={`game-counter-chip relative flex items-center gap-1.5 rounded-full border border-white/12 bg-slate-950/55 px-2.5 py-1 text-xs font-bold text-white shadow-[0_8px_24px_rgba(15,23,42,0.28)] backdrop-blur-md ${
+							pulsingCounterTokens[counter.name] !== undefined
+								? 'animate-counter-chip-pulse'
+								: ''
+						}`}
+					>
+						<div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full bg-white/10">
+							{renderElementPreviewIcon(counter.elementId)}
+						</div>
+						<span>{`${counter.name}(${counter.value})`}</span>
+						{(counterChipDeltasByName[counter.name] ?? []).map((delta) => (
+							<span
+								key={delta.id}
+								className={`pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 animate-counter-delta-float text-xs font-black ${
+									delta.delta > 0 ? 'text-emerald-200' : 'text-rose-200'
+								}`}
+							>
+								{delta.delta > 0 ? `+${delta.delta}` : `${delta.delta}`}
+							</span>
+						))}
+					</div>
+				))}
+			</div>
+		) : null;
 
 	return (
 		<div
@@ -1055,17 +1485,31 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 						</h1>
 					)}
 				</div>
+				{!ruleset.showPalette && counterBar && (
+					<div className="pointer-events-none absolute inset-x-0 bottom-4 z-30">
+						{counterBar}
+					</div>
+				)}
 
 				<button
-					onClick={() => setShowOptions(true)}
-					className="realm-button-muted absolute right-2 top-2 z-30 cursor-pointer rounded-full p-2 transition-colors shadow-lg backdrop-blur-sm"
+					onClick={() => {
+						if (hasBlockingScriptedPopup) {
+							return;
+						}
+						setShowOptions(true);
+					}}
+					className="realm-button-muted absolute right-2 top-2 z-30 cursor-pointer rounded-full p-2 transition-colors shadow-lg backdrop-blur-sm disabled:cursor-default disabled:opacity-50"
 					title="Options"
+					disabled={hasBlockingScriptedPopup}
 				>
 					<IoSettingsSharp size={24} />
 				</button>
 			</div>
 
+			{ruleset.showPalette && counterBar}
+
 			{/* Palette Area */}
+			{ruleset.showPalette && (
 			<div className="realm-panel relative z-10 flex h-60 flex-col overflow-hidden border-t border-palette bg-palette">
 				<div className="pt-3 px-4 pb-1 relative z-10">
 					{showMobileFilter ? (
@@ -1186,6 +1630,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 					</div>
 				)}
 			</div>
+			)}
 
 			{/* Elements Layer */}
 			<div className="pointer-events-none absolute inset-0 z-20">
@@ -1313,28 +1758,24 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 									</button>
 								)}
 
+								{canCopyModData && (
+									<button
+										onClick={() => {
+											void copyModData();
+										}}
+										className="w-full cursor-pointer rounded-xl bg-violet-500 py-3 font-bold text-white transition-all hover:scale-[1.02] hover:bg-violet-600 active:scale-95 shadow-lg"
+									>
+										Copy Mod Data
+									</button>
+								)}
+
 								<button
 									onClick={() => {
 										if (!confirmWipe) {
 											setConfirmWipe(true);
 											return;
 										}
-										const basic = ruleset.startingElements;
-										setDiscovered(basic);
-										setElements([]);
-										setCounterValues({});
-										setCurrentPage(0);
-										localStorage.setItem(storageKeys.discovered, JSON.stringify(basic));
-										localStorage.setItem(storageKeys.elements, JSON.stringify([]));
-										localStorage.setItem(storageKeys.counters, JSON.stringify({}));
-										localStorage.setItem(storageKeys.page, '0');
-										localStorage.removeItem(introStorageKey);
-										setShowRealmIntro(Boolean(ruleset.intro.trim()));
-										if (!isPlaytest) {
-											trpc.progress.save.mutate({ discovered: basic, progressScope }).catch(console.error);
-										}
-										setShowOptions(false);
-										setConfirmWipe(false);
+										resetProgressAndStartOver();
 									}}
 									onMouseLeave={() => setConfirmWipe(false)}
 									className={`w-full rounded-xl py-3 font-bold text-white transition-all hover:scale-[1.02] active:scale-95 shadow-lg ${confirmWipe
@@ -1383,30 +1824,8 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 							<div className="flex justify-center mb-8 relative">
 								<div className="absolute inset-0 bg-white/10 blur-2xl rounded-full scale-150 animate-pulse" />
-								<div
-									className={`relative flex h-32 w-32 items-center justify-center rounded-2xl border-4 ${ruleset.elementStyles[discoveryPopup] ?? 'bg-gray-300 border-gray-500'} shadow-2xl rotate-3`}
-								>
-									{(() => {
-										const rawIcon = ruleset.elementIcons[discoveryPopup];
-										const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
-										const colorClass = ruleset.elementStyles[discoveryPopup] ?? 'bg-gray-300 border-gray-500';
-										const weightMatch = colorClass.match(/-(\d{3})/);
-										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-										if (typeof Icon === 'string') {
-											if (Icon.startsWith('/') || Icon.startsWith('http')) {
-												return <img src={Icon} alt="" className="w-20 h-20 object-contain" />;
-											}
-											return <span className="text-7xl leading-none drop-shadow-2xl">{Icon}</span>;
-										} else if (Icon) {
-											const IconComp = Icon;
-											return (
-												<div className={weight < 500 ? 'text-black/50' : 'text-white/50'}>
-													<IconComp size={80} />
-												</div>
-											);
-										}
-										return null;
-									})()}
+								<div className="rotate-3">
+									{renderModalElementCard(discoveryPopup, 'hero')}
 								</div>
 							</div>
 
@@ -1447,37 +1866,13 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 
 						<div className="relative z-10 flex flex-col h-full overflow-hidden">
 							<div className="flex-shrink-0">
-								<div className="flex items-center justify-center gap-6 mb-8">
-									<div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-blue-900/30 border border-blue-400/30 shadow-[0_0_20px_rgba(59,130,246,0.2)]">
-										<span className="text-5xl drop-shadow-lg">💻</span>
-									</div>
-									<div className="h-px w-8 bg-blue-400/20" />
-									<div
-										className={`flex h-20 w-20 items-center justify-center rounded-2xl border-2 ${ruleset.elementStyles[computerPopup] ?? 'bg-gray-300 border-gray-500'} shadow-xl`}
-									>
-										{(() => {
-											const rawIcon = ruleset.elementIcons[computerPopup];
-											const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
-											const colorClass = ruleset.elementStyles[computerPopup] ?? 'bg-gray-300 border-gray-500';
-											const weightMatch = colorClass.match(/-(\d{3})/);
-											const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-											if (typeof Icon === 'string') {
-												if (Icon.startsWith('/') || Icon.startsWith('http')) {
-													return <img src={Icon} alt="" className="w-12 h-12 object-contain" />;
-												}
-												return <span className="text-4xl leading-none drop-shadow-lg">{Icon}</span>;
-											} else if (Icon) {
-												const IconComp = Icon;
-												return (
-													<div className={weight < 500 ? 'text-black/50' : 'text-white/50'}>
-														<IconComp size={40} />
-													</div>
-												);
-											}
-											return null;
-										})()}
-									</div>
+							<div className="flex items-center justify-center gap-6 mb-8">
+								<div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-blue-900/30 border border-blue-400/30 shadow-[0_0_20px_rgba(59,130,246,0.2)]">
+									<span className="text-5xl drop-shadow-lg">💻</span>
 								</div>
+								<div className="h-px w-8 bg-blue-400/20" />
+								{renderModalElementCard(computerPopup)}
+							</div>
 
 								<h3 className="text-center text-3xl font-black mb-1 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-cyan-200">
 									{getElementDisplayName(computerPopup)}
@@ -1541,6 +1936,134 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 				</div>
 			)}
 
+			{/* Scripted Popup Queue */}
+			{activeScriptedPopup && (
+				<div className="absolute inset-0 z-[2500] flex items-center justify-center bg-black/65 backdrop-blur-xl animate-fade-in">
+					<div
+						className={`relative mx-4 w-full max-w-md overflow-hidden rounded-[2rem] border p-8 text-center text-white shadow-2xl animate-scale-in ${
+							activeScriptedPopup.kind === 'win'
+								? 'border-amber-300/30 bg-[linear-gradient(180deg,rgba(120,53,15,0.94),rgba(6,78,59,0.94))]'
+								: activeScriptedPopup.kind === 'lose'
+									? 'border-rose-300/20 bg-[linear-gradient(180deg,rgba(69,10,10,0.95),rgba(30,41,59,0.96))]'
+									: 'border-white/15 bg-slate-900/96'
+						}`}
+					>
+						<div
+							className={`absolute inset-0 ${
+								activeScriptedPopup.kind === 'win'
+									? 'bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.28),transparent_55%)]'
+									: activeScriptedPopup.kind === 'lose'
+										? 'bg-[radial-gradient(circle_at_top,rgba(244,63,94,0.2),transparent_55%)]'
+										: 'bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.12),transparent_55%)]'
+							}`}
+						/>
+						{activeScriptedPopup.kind === 'win' && (
+							<>
+								<div className="absolute -top-10 left-8 h-24 w-24 rounded-full bg-yellow-300/20 blur-3xl" />
+								<div className="absolute right-10 bottom-0 h-28 w-28 rounded-full bg-emerald-300/15 blur-3xl" />
+							</>
+						)}
+						{activeScriptedPopup.kind === 'lose' && (
+							<>
+								<div className="absolute -top-8 left-8 h-24 w-24 rounded-full bg-rose-300/15 blur-3xl" />
+								<div className="absolute right-8 bottom-0 h-24 w-24 rounded-full bg-sky-300/10 blur-3xl" />
+							</>
+						)}
+
+						<div className="relative z-10">
+							<div
+								className={`mb-3 text-[11px] font-bold uppercase tracking-[0.28em] ${
+									activeScriptedPopup.kind === 'win'
+										? 'text-amber-100'
+										: activeScriptedPopup.kind === 'lose'
+											? 'text-rose-200'
+											: 'text-slate-300'
+								}`}
+							>
+								{activeScriptedPopup.kind === 'win'
+									? 'Realm Complete'
+									: activeScriptedPopup.kind === 'lose'
+										? 'Realm Failed'
+										: 'Realm Message'}
+							</div>
+
+							<div className="mb-6 flex justify-center">
+								{activeScriptedPopup.iconElementId ? (
+									renderModalElementCard(
+										activeScriptedPopup.iconElementId,
+										activeScriptedPopup.kind === 'popup' ? 'compact' : 'hero'
+									)
+								) : (
+									<div
+										className={`flex items-center justify-center rounded-full border text-5xl shadow-lg ${
+											activeScriptedPopup.kind === 'win'
+												? 'h-28 w-28 border-amber-200/30 bg-amber-100/10'
+												: activeScriptedPopup.kind === 'lose'
+													? 'h-28 w-28 border-rose-200/20 bg-rose-100/8'
+													: 'h-20 w-20 border-white/10 bg-white/5 text-4xl'
+										}`}
+									>
+										{activeScriptedPopup.kind === 'win'
+											? '🏆'
+											: activeScriptedPopup.kind === 'lose'
+												? '☁️'
+												: '✨'}
+									</div>
+								)}
+							</div>
+
+							<h3 className="mb-4 text-3xl font-black tracking-tight">
+								{activeScriptedPopup.iconElementId
+									? getElementDisplayName(activeScriptedPopup.iconElementId)
+									: activeScriptedPopup.kind === 'win'
+										? 'Victory'
+										: activeScriptedPopup.kind === 'lose'
+											? 'Defeat'
+											: 'A New Message'}
+							</h3>
+
+							<p
+								className={`mb-8 px-2 text-base leading-relaxed ${
+									activeScriptedPopup.kind === 'popup'
+										? 'text-slate-200'
+										: 'text-white/90'
+								}`}
+							>
+								{activeScriptedPopup.text}
+							</p>
+
+							{activeScriptedPopup.kind === 'popup' ? (
+								<button
+									onClick={closeActiveScriptedPopup}
+									className="w-full cursor-pointer rounded-2xl border border-white/10 bg-white/8 py-3.5 font-bold text-white transition-all hover:scale-[1.02] hover:bg-white/12 active:scale-95"
+								>
+									Continue
+								</button>
+							) : (
+								<div className="flex flex-col gap-3">
+									<button
+										onClick={resetProgressAndStartOver}
+										className={`w-full cursor-pointer rounded-2xl py-3.5 font-bold transition-all hover:scale-[1.02] active:scale-95 ${
+											activeScriptedPopup.kind === 'win'
+												? 'bg-amber-300 text-amber-950 shadow-[0_10px_30px_rgba(251,191,36,0.22)]'
+												: 'bg-rose-300 text-rose-950 shadow-[0_10px_30px_rgba(244,63,94,0.18)]'
+										}`}
+									>
+										Reset progress and start over
+									</button>
+									<button
+										onClick={navigateBackToRealmsList}
+										className="w-full cursor-pointer rounded-2xl border border-white/12 bg-white/6 py-3.5 font-bold text-white transition-all hover:scale-[1.02] hover:bg-white/10 active:scale-95"
+									>
+										Back to the Realms List
+									</button>
+								</div>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
+
 			{/* Info Popup */}
 			{infoPopup && (
 				<div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/40 backdrop-blur-md animate-fade-in">
@@ -1554,31 +2077,7 @@ const GameSession = ({ ruleset, initialUsername, initialDiscovered, progressScop
 							</h3>
 
 							<div className="flex justify-center mb-6">
-								<div
-									className={`flex h-20 w-20 items-center justify-center rounded-xl border-2 ${ruleset.elementStyles[infoPopup] ?? 'bg-gray-300 border-gray-500'} shadow-lg`}
-								>
-									{(() => {
-										const rawIcon = ruleset.elementIcons[infoPopup];
-										const Icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
-										const colorClass = ruleset.elementStyles[infoPopup] ?? 'bg-gray-300 border-gray-500';
-										const weightMatch = colorClass.match(/-(\d{3})/);
-										const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
-										if (typeof Icon === 'string') {
-											if (Icon.startsWith('/') || Icon.startsWith('http')) {
-												return <img src={Icon} alt="" className="w-12 h-12 object-contain" />;
-											}
-											return <span className="text-4xl leading-none drop-shadow-lg">{Icon}</span>;
-										} else if (Icon) {
-											const IconComp = Icon;
-											return (
-												<div className={weight < 500 ? 'text-black/50' : 'text-white/50'}>
-													<IconComp size={40} />
-												</div>
-											);
-										}
-										return null;
-									})()}
-								</div>
+								{renderModalElementCard(infoPopup)}
 							</div>
 
 							<p className="text-sm text-slate-300 leading-relaxed mb-6 px-4">
@@ -1610,6 +2109,7 @@ export const GameRoot = () => {
 		  }
 		| {
 				status: 'ready';
+				isModerator: boolean;
 				ruleset: ActiveRuleset;
 				username: string | null;
 				redditDiscovered: string[];
@@ -1623,6 +2123,7 @@ export const GameRoot = () => {
 		if (playtestRuleset) {
 			setState({
 				status: 'ready',
+				isModerator: false,
 				ruleset: playtestRuleset,
 				username: context.username ?? null,
 				redditDiscovered: [],
@@ -1652,6 +2153,7 @@ export const GameRoot = () => {
 
 				setState({
 					status: 'ready',
+					isModerator: response.isModerator ?? false,
 					ruleset: response.activeRuleset ?? BASE_RULESET,
 					username: response.username ?? null,
 					redditDiscovered: response.redditDiscovered ?? [],
@@ -1663,6 +2165,7 @@ export const GameRoot = () => {
 				console.error(error);
 				setState({
 					status: 'ready',
+					isModerator: false,
 					ruleset: BASE_RULESET,
 					username: context.username ?? null,
 					redditDiscovered: [],
@@ -1700,6 +2203,7 @@ export const GameRoot = () => {
 			key={state.ruleset.storageScope}
 			ruleset={state.ruleset}
 			initialUsername={state.username}
+			isModerator={state.isModerator}
 			initialDiscovered={state.redditDiscovered}
 			progressScope={state.progressScope}
 			isPlaytest={state.isPlaytest}

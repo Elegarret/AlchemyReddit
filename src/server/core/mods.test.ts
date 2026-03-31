@@ -19,6 +19,7 @@ const makeElement = (id: string, name: string): ModElement => ({
   frameColorToken: 'ocean',
   message: '',
   effect: 'none',
+  nonConsumable: false,
 });
 
 test('publishing creates a share post and unpublishing returns the mod to drafts', async ({
@@ -47,6 +48,8 @@ test('publishing creates a share post and unpublishing returns the mod to drafts
     summary: 'Build storms from a compact recipe tree.',
     intro: 'Welcome to the storm lab.',
     startingElementIds: ['air', 'water'],
+    counters: [],
+    showPalette: true,
     elements: [
       makeElement('air', 'Air'),
       makeElement('water', 'Water'),
@@ -80,6 +83,8 @@ test('publishing creates a share post and unpublishing returns the mod to drafts
     summary: 'Build storms from a compact recipe tree.',
     intro: 'Welcome to the storm lab.',
     startingElementIds: ['air', 'water'],
+    counters: [],
+    showPalette: true,
     elements: [
       makeElement('air', 'Air'),
       makeElement('water', 'Water'),

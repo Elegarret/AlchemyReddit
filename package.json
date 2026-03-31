@@ -13,6 +13,7 @@
 		"lint": "eslint 'src/**/*.{ts,tsx}'",
 		"login": "devvit login",
 		"prettier": "prettier-package-json --write ./package.json && prettier --write .",
+		"sync:emoji-data": "node tools/sync-emoji-data.mjs",
 		"test": "vitest run",
 		"type-check": "tsc --build"
 	},
@@ -38,10 +39,12 @@
 	"devDependencies": {
 		"@eslint/js": "9.39.2",
 		"@tailwindcss/vite": "4.1.18",
+		"@types/node": "^24.7.2",
 		"@types/react": "19.2.7",
 		"@types/react-dom": "19.2.3",
 		"@vitejs/plugin-react": "5.1.2",
 		"@vitest/coverage-v8": "4.0.16",
+		"emoji-picker-element-data": "^1.8.0",
 		"eslint": "9.39.2",
 		"eslint-plugin-react-hooks": "7.0.1",
 		"eslint-plugin-react-refresh": "0.4.26",

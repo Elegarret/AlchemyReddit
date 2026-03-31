@@ -5,6 +5,8 @@ export type EditorTab = 'mine' | 'editor';
 export type ElementPanelView = 'extended' | 'compact';
 
 export type ReactionWidgetProps = {
+  counterElementIds: string[];
+  counterNames: string[];
   index: number;
   reaction: SaveDraftInput['reactions'][number];
   elements: ModElement[];

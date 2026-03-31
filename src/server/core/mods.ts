@@ -55,7 +55,13 @@ const parseListItem = (value: string | undefined) => {
   return parsed.data;
 };
 
-const serializeListItem = (mod: ModDoc): ModListItem => ({
+const serializeListItem = (
+  mod: ModDoc,
+  versionState?: {
+    hasDraftVersion?: boolean;
+    hasPublishedVersion?: boolean;
+  }
+): ModListItem => ({
   id: mod.id,
   title: mod.title,
   summary: mod.summary,
@@ -65,6 +71,9 @@ const serializeListItem = (mod: ModDoc): ModListItem => ({
   publishedHash: mod.publishedHash,
   sharePostId: mod.sharePostId,
   status: mod.status,
+  hasDraftVersion: versionState?.hasDraftVersion ?? mod.status === 'draft',
+  hasPublishedVersion:
+    versionState?.hasPublishedVersion ?? mod.status === 'published',
   elementCount: mod.elements.length,
   reactionCount: mod.reactions.length,
 });
@@ -177,14 +186,25 @@ export const listModsForUser = async (userId: string) => {
           publishedAt: latest.publishedAt,
           publishedHash: latest.publishedHash,
           sharePostId: latest.sharePostId,
+        }, {
+          hasDraftVersion: true,
+          hasPublishedVersion: true,
         });
       }
 
       if (draft) {
-        return serializeListItem(draft);
+        return serializeListItem(draft, {
+          hasDraftVersion: true,
+          hasPublishedVersion: false,
+        });
       }
 
-      return latest ? serializeListItem(latest) : null;
+      return latest
+        ? serializeListItem(latest, {
+            hasDraftVersion: false,
+            hasPublishedVersion: latest.status === 'published',
+          })
+        : null;
     })
   );
 
@@ -254,6 +274,8 @@ export const saveDraftForUser = async (
     ownerUserId: userId,
     ownerUsername: username,
     startingElementIds: input.startingElementIds,
+    counters: input.counters,
+    showPalette: input.showPalette,
     elements: input.elements,
     reactions: input.reactions,
     status: 'draft',
@@ -281,6 +303,8 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
     summary: draft.summary,
     intro: draft.intro,
     startingElementIds: draft.startingElementIds,
+    counters: draft.counters,
+    showPalette: draft.showPalette,
     elements: draft.elements,
     reactions: draft.reactions,
   });
@@ -317,7 +341,7 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
   };
 };
 
-const isCurrentUserModerator = async (username: string | undefined) => {
+export const isCurrentUserModerator = async (username: string | undefined) => {
   if (!username || !context.subredditName) {
     return false;
   }

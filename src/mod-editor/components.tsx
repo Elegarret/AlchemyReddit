@@ -15,6 +15,7 @@ import {
   IoCodeSlash,
   IoColorPaletteSharp,
   IoEllipsisHorizontal,
+  IoHelpCircleOutline,
   IoReorderThreeSharp,
 } from 'react-icons/io5';
 import {
@@ -31,6 +32,7 @@ import {
 } from '../modding/reaction-script';
 import {
   MAX_ELEMENT_MESSAGE_LENGTH,
+  type ModCounterDefinition,
   type ModElement,
   type ModElementEffect,
 } from '../modding/types';
@@ -184,7 +186,6 @@ const EmojiDropdown = ({
             >
               <emoji-picker
                 ref={pickerRef}
-                class="dark"
                 dataSource="/emoji-data.json"
               />
             </div>
@@ -438,13 +439,26 @@ export const DualColorPicker = ({
 };
 
 export const ElementAdvancedButton = ({
+  authorsHelpPageUrl,
   element,
+  counterDefinition,
+  isStarting,
+  onOpenAuthorsHelp,
   onApply,
   containerClassName,
   buttonClassName,
 }: {
+  authorsHelpPageUrl: string | null;
   element: ModElement;
-  onApply: (patch: Pick<ModElement, 'message' | 'effect'>) => void;
+  counterDefinition: ModCounterDefinition | null;
+  isStarting: boolean;
+  onOpenAuthorsHelp: () => void;
+  onApply: (patch: Pick<ModElement, 'message' | 'effect'> & {
+    nonConsumable: boolean;
+    counterValues: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'> | null;
+    isCounter: boolean;
+    isStarting: boolean;
+  }) => void;
   containerClassName?: string;
   buttonClassName?: string;
 }) => {
@@ -453,6 +467,27 @@ export const ElementAdvancedButton = ({
   const [effectDraft, setEffectDraft] = useState<ModElementEffect>(
     element.effect
   );
+  const [isCounterDraft, setIsCounterDraft] = useState(
+    counterDefinition !== null
+  );
+  const [isStartingDraft, setIsStartingDraft] = useState(isStarting);
+  const [isNonConsumableDraft, setIsNonConsumableDraft] = useState(
+    element.nonConsumable
+  );
+  const [counterDraft, setCounterDraft] = useState<
+    Pick<ModCounterDefinition, 'initial' | 'max' | 'min'>
+  >(counterDefinition ?? { initial: 0, max: 100, min: 0 });
+
+  const normalizeCounterDraft = (
+    value: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'>
+  ) => {
+    const max = Math.max(value.min, value.max);
+    return {
+      initial: Math.min(Math.max(value.initial, value.min), max),
+      max,
+      min: value.min,
+    };
+  };
 
   return (
     <div className={containerClassName || 'relative'}>
@@ -462,6 +497,10 @@ export const ElementAdvancedButton = ({
         onClick={() => {
           setMessageDraft(element.message);
           setEffectDraft(element.effect);
+          setIsCounterDraft(counterDefinition !== null);
+          setIsStartingDraft(isStarting);
+          setIsNonConsumableDraft(element.nonConsumable);
+          setCounterDraft(counterDefinition ?? { initial: 0, max: 100, min: 0 });
           setIsOpen(true);
         }}
         className={
@@ -521,6 +560,139 @@ export const ElementAdvancedButton = ({
                 </div>
               </label>
 
+              <div className="mb-5 flex flex-wrap items-center gap-4 text-sm">
+                <label
+                  className="flex cursor-pointer items-center gap-2"
+                  title="Starts discovered and available to the player."
+                >
+                  <input
+                    type="checkbox"
+                    checked={!isCounterDraft && isStartingDraft}
+                    disabled={isCounterDraft}
+                    onChange={(event) => setIsStartingDraft(event.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span className="font-semibold">Starter</span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <label
+                    className="flex cursor-pointer items-center gap-2"
+                    title="Special value chip, not a normal gameplay element."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isCounterDraft}
+                      onChange={(event) => {
+                        const nextChecked = event.target.checked;
+                        setIsCounterDraft(nextChecked);
+                        if (nextChecked) {
+                          setIsStartingDraft(false);
+                          setCounterDraft((current) =>
+                            normalizeCounterDraft(current)
+                          );
+                        }
+                      }}
+                      className="h-4 w-4"
+                    />
+                    <span className="font-semibold">Counter</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={onOpenAuthorsHelp}
+                    title={
+                      authorsHelpPageUrl
+                        ? 'Open Authors Help Page'
+                        : 'Authors Help Page URL is not configured.'
+                    }
+                    className="realm-button-muted flex h-7 w-7 items-center justify-center rounded-full"
+                  >
+                    <IoHelpCircleOutline size={16} />
+                  </button>
+                </div>
+                <label
+                  className="flex cursor-pointer items-center gap-2"
+                  title="This element will not disappear when interacting with other elements. Use the delete command to remove it."
+                >
+                  <input
+                    type="checkbox"
+                    checked={isNonConsumableDraft}
+                    onChange={(event) =>
+                      setIsNonConsumableDraft(event.target.checked)
+                    }
+                    className="h-4 w-4"
+                  />
+                  <span className="font-semibold">non-consumable</span>
+                </label>
+              </div>
+
+              {isCounterDraft && (
+                <div className="mb-5 grid gap-3 sm:grid-cols-3">
+                  <label className="block">
+                    <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                      Min
+                    </div>
+                    <input
+                      type="number"
+                      value={counterDraft.min}
+                      onChange={(event) => {
+                        const nextMin = Number.parseInt(
+                          event.target.value,
+                          10
+                        );
+                        setCounterDraft((current) => ({
+                          ...current,
+                          min: Number.isNaN(nextMin) ? current.min : nextMin,
+                        }));
+                      }}
+                      className="realm-input w-full rounded-xl border px-3 py-2 text-sm outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                      Max
+                    </div>
+                    <input
+                      type="number"
+                      value={counterDraft.max}
+                      onChange={(event) => {
+                        const nextMax = Number.parseInt(
+                          event.target.value,
+                          10
+                        );
+                        setCounterDraft((current) => ({
+                          ...current,
+                          max: Number.isNaN(nextMax) ? current.max : nextMax,
+                        }));
+                      }}
+                      className="realm-input w-full rounded-xl border px-3 py-2 text-sm outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                      Initial
+                    </div>
+                    <input
+                      type="number"
+                      value={counterDraft.initial}
+                      onChange={(event) => {
+                        const nextInitial = Number.parseInt(
+                          event.target.value,
+                          10
+                        );
+                        setCounterDraft((current) => ({
+                          ...current,
+                          initial: Number.isNaN(nextInitial)
+                            ? current.initial
+                            : nextInitial,
+                        }));
+                      }}
+                      className="realm-input w-full rounded-xl border px-3 py-2 text-sm outline-none"
+                    />
+                  </label>
+                </div>
+              )}
+
               <label className="mb-5 block">
                 <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
                   Effect
@@ -547,21 +719,29 @@ export const ElementAdvancedButton = ({
                     </option>
                   ))}
                 </select>
-                <p className="realm-text-soft mt-2 text-sm leading-relaxed">
-                  {
-                    ELEMENT_EFFECT_OPTIONS.find(
-                      (option) => option.value === effectDraft
-                    )?.description
-                  }
-                </p>
+                {effectDraft !== 'none' && (
+                  <p className="realm-text-soft mt-2 text-sm leading-relaxed">
+                    {
+                      ELEMENT_EFFECT_OPTIONS.find(
+                        (option) => option.value === effectDraft
+                      )?.description
+                    }
+                  </p>
+                )}
               </label>
 
               <button
                 type="button"
                 onClick={() => {
                   onApply({
+                    counterValues: isCounterDraft
+                      ? normalizeCounterDraft(counterDraft)
+                      : null,
                     message: messageDraft.trim(),
                     effect: effectDraft,
+                    nonConsumable: isNonConsumableDraft,
+                    isCounter: isCounterDraft,
+                    isStarting: !isCounterDraft && isStartingDraft,
                   });
                   setIsOpen(false);
                 }}
@@ -584,6 +764,10 @@ export const CompactElementTile = ({
   onChangeEmoji,
   onChangeBgColor,
   onChangeFrameColor,
+  authorsHelpPageUrl,
+  counterDefinition,
+  isStarting,
+  onOpenAuthorsHelp,
   onApplyAdvanced,
   onRemove,
   inputRef,
@@ -594,7 +778,16 @@ export const CompactElementTile = ({
   onChangeEmoji: (emoji: string) => void;
   onChangeBgColor: (value: string) => void;
   onChangeFrameColor: (value: string) => void;
-  onApplyAdvanced: (patch: Pick<ModElement, 'message' | 'effect'>) => void;
+  authorsHelpPageUrl: string | null;
+  counterDefinition: ModCounterDefinition | null;
+  isStarting: boolean;
+  onOpenAuthorsHelp: () => void;
+  onApplyAdvanced: (patch: Pick<ModElement, 'message' | 'effect'> & {
+    nonConsumable: boolean;
+    counterValues: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'> | null;
+    isCounter: boolean;
+    isStarting: boolean;
+  }) => void;
   onRemove: () => void;
   inputRef?: (node: HTMLInputElement | null) => void;
 }) => {
@@ -624,7 +817,11 @@ export const CompactElementTile = ({
         </DualColorPicker>
 
         <ElementAdvancedButton
+          authorsHelpPageUrl={authorsHelpPageUrl}
           element={element}
+          counterDefinition={counterDefinition}
+          isStarting={isStarting}
+          onOpenAuthorsHelp={onOpenAuthorsHelp}
           onApply={onApplyAdvanced}
           containerClassName="absolute -top-2 left-1/2 z-30 -translate-x-1/2"
           buttonClassName="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
@@ -768,6 +965,8 @@ export const DroppableInput = ({
 };
 
 export const ReactionWidget = ({
+  counterElementIds,
+  counterNames,
   index,
   reaction,
   elements,
@@ -825,22 +1024,38 @@ export const ReactionWidget = ({
         .filter((name) => name.length > 0),
     [elements]
   );
+  const gameplayElementNames = useMemo(
+    () =>
+      elements
+        .filter((element) => !counterElementIds.includes(element.id))
+        .map((element) => element.name.trim())
+        .filter((name) => name.length > 0),
+    [counterElementIds, elements]
+  );
   const scriptIssues = useMemo(
     () =>
       hasScript && shouldShowScriptValidation
         ? (() => {
             const validation = validateReactionScript(scriptText, {
-              counterNames: [],
+              counterNames,
               elements: elements.map((element) => ({
                 id: element.id,
                 name: element.name,
               })),
+              nonGameplayElementIds: counterElementIds,
             });
 
             return validation.ok ? [] : validation.errors;
           })()
         : [],
-    [elements, hasScript, scriptText, shouldShowScriptValidation]
+    [
+      counterElementIds,
+      counterNames,
+      elements,
+      hasScript,
+      scriptText,
+      shouldShowScriptValidation,
+    ]
   );
 
   useEffect(() => {
@@ -914,7 +1129,7 @@ export const ReactionWidget = ({
       onDragEnd={() => {
         isDragHandleActiveRef.current = false;
       }}
-      className="realm-panel-soft relative flex flex-col gap-2 overflow-hidden rounded-xl p-2 pt-6"
+      className="realm-panel-soft relative flex flex-col gap-2 overflow-visible rounded-xl p-2 pt-4"
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes(REACTION_DRAG_TYPE)) {
           event.preventDefault();
@@ -1012,8 +1227,9 @@ export const ReactionWidget = ({
           <div className="flex flex-col gap-2">
             <ReactionScriptAutocompleteTextarea
               className="realm-input custom-scrollbar min-h-[7.5rem] w-full resize-y rounded-xl border px-3 py-2 font-mono text-sm outline-none"
-              counterNames={[]}
-              elementNames={scriptElementNames}
+              counterNames={counterNames}
+              elementNames={gameplayElementNames}
+              iconElementNames={scriptElementNames}
               mode="script"
               value={scriptText}
               onChange={(nextValue) => {
@@ -1021,7 +1237,7 @@ export const ReactionWidget = ({
                 onUpdateScript(index, nextValue);
               }}
               onEditingSettled={() => setShouldShowScriptValidation(true)}
-              placeholder={`add dust\nmessage("The cupboard is locked.")\nif (count(health) < 10) add bandage`}
+              placeholder={`add dust\npopup("The cupboard is locked.", key)\nif (count(health) < 10) win("You survived.")`}
             />
 
             {scriptIssues.length > 0 && (

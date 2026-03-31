@@ -1,5 +1,5 @@
 import { PLAYTEST_RULESET_STORAGE_KEY } from '../modding/runtime';
-import { type ActiveRuleset } from '../modding/types';
+import { type ActiveRuleset, type ModCounterDefinition } from '../modding/types';
 
 type PersistedRuleset = {
   kind?: ActiveRuleset['kind'];
@@ -18,7 +18,13 @@ type PersistedRuleset = {
   keyItems?: ActiveRuleset['keyItems'];
   keyItemData?: ActiveRuleset['keyItemData'];
   elementMessages?: ActiveRuleset['elementMessages'];
+  nonConsumableElementIds?: ActiveRuleset['nonConsumableElementIds'];
+  counterDefinitions?: Array<
+    Pick<ActiveRuleset['counterDefinitions'][number], 'elementId' | 'initial' | 'max' | 'min' | 'name'>
+  >;
   counterNames?: ActiveRuleset['counterNames'];
+  counters?: ModCounterDefinition[];
+  showPalette?: boolean;
   sourceModId?: string;
   publishedHash?: string;
   ownerUsername?: string;
@@ -56,6 +62,19 @@ export const readPlaytestRuleset = (): ActiveRuleset | null => {
     }
 
     const kind: ActiveRuleset['kind'] = parsed.kind === 'mod' ? 'mod' : 'base';
+    const counterDefinitions =
+      parsed.counterDefinitions ??
+      (parsed.counters ?? []).flatMap((counter) => {
+        const name = parsed.elementNames?.[counter.elementId];
+        return name
+          ? [
+              {
+                ...counter,
+                name,
+              },
+            ]
+          : [];
+      });
 
     return {
       kind,
@@ -73,7 +92,10 @@ export const readPlaytestRuleset = (): ActiveRuleset | null => {
       keyItems: parsed.keyItems ?? [],
       keyItemData: parsed.keyItemData ?? {},
       elementMessages: parsed.elementMessages ?? {},
-      counterNames: parsed.counterNames ?? [],
+      nonConsumableElementIds: parsed.nonConsumableElementIds ?? [],
+      counterDefinitions,
+      counterNames: parsed.counterNames ?? counterDefinitions.map((counter) => counter.name),
+      showPalette: parsed.showPalette ?? true,
       ...(parsed.elementNames ? { elementNames: parsed.elementNames } : {}),
       ...(parsed.sourceModId ? { sourceModId: parsed.sourceModId } : {}),
       ...(parsed.publishedHash ? { publishedHash: parsed.publishedHash } : {}),

@@ -41,6 +41,7 @@ export const createStarterElement = (
   frameColorToken,
   message: '',
   effect: 'none',
+  nonConsumable: false,
 });
 
 export const createEmptyDraft = (): SaveDraftInput => ({
@@ -48,6 +49,8 @@ export const createEmptyDraft = (): SaveDraftInput => ({
   summary: '',
   intro: '',
   startingElementIds: ['air', 'fire', 'earth', 'water'],
+  counters: [],
+  showPalette: true,
   elements: [
     createStarterElement('air', 'Air', 'ice', 'ocean'),
     createStarterElement('fire', 'Fire', 'sun', 'ember'),
@@ -153,14 +156,20 @@ export const applyReactionTextToDraft = (
     }
 
     const equalIndex = line.indexOf('=');
+    const colonIndex = line.indexOf(':');
     const plusIndex = line.indexOf('+');
-    if (equalIndex <= 0 || plusIndex <= 0 || plusIndex > equalIndex) {
+    const delimiterIndex =
+      colonIndex > 0 && (equalIndex === -1 || colonIndex < equalIndex)
+        ? colonIndex
+        : equalIndex;
+    if (delimiterIndex <= 0 || plusIndex <= 0 || plusIndex > delimiterIndex) {
       continue;
     }
 
     const leftName = line.slice(0, plusIndex).trim();
-    const rightName = line.slice(plusIndex + 1, equalIndex).trim();
-    const inlineResult = line.slice(equalIndex + 1).trim();
+    const rightName = line.slice(plusIndex + 1, delimiterIndex).trim();
+    const inlineResult =
+      delimiterIndex === equalIndex ? line.slice(equalIndex + 1).trim() : '';
     if (!leftName || !rightName) {
       continue;
     }

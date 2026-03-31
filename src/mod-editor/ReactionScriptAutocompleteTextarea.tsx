@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyReactionScriptAutocompleteSuggestion,
   getReactionScriptAutocomplete,
+  getReactionTextAutocomplete,
   type ReactionScriptAutocompleteSuggestion,
 } from '../modding/reaction-script-autocomplete';
 
@@ -12,6 +13,7 @@ type ScriptAutocompleteTextareaProps = {
   className: string;
   counterNames: string[];
   elementNames: string[];
+  iconElementNames?: string[];
   mode: ScriptAutocompleteMode;
   onBlur?: (() => void) | undefined;
   onChange: (value: string) => void;
@@ -48,19 +50,19 @@ const shouldTriggerAutocompleteFromKey = (event: {
   );
 };
 
-const isIndentLine = (linePrefix: string) =>
-  linePrefix.startsWith('    ') || linePrefix.startsWith('\t');
-
-const getIndentLength = (linePrefix: string) =>
-  linePrefix.startsWith('    ') ? 4 : linePrefix.startsWith('\t') ? 1 : 0;
-
 const getLineStart = (value: string, cursor: number) =>
   value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
+
+const getLineEnd = (value: string, cursor: number) => {
+  const lineEnd = value.indexOf('\n', cursor);
+  return lineEnd === -1 ? value.length : lineEnd;
+};
 
 const shouldOpenAutocompleteAtCursor = (params: {
   counterNames: string[];
   cursor: number;
   elementNames: string[];
+  iconElementNames?: string[];
   mode: ScriptAutocompleteMode;
   value: string;
 }) => getSuggestionsForMode(params).length > 0;
@@ -81,49 +83,49 @@ const insertIndentAtSelection = (params: {
   };
 };
 
+const insertIndentedNewlineAtSelection = (params: {
+  selectionEnd: number;
+  selectionStart: number;
+  value: string;
+}) => {
+  const { selectionEnd, selectionStart, value } = params;
+  const nextValue =
+    value.slice(0, selectionStart) + '\n    ' + value.slice(selectionEnd);
+  const cursor = selectionStart + '\n    '.length;
+
+  return {
+    cursor,
+    value: nextValue,
+  };
+};
+
 const getSuggestionsForMode = (params: {
   counterNames: string[];
   cursor: number;
   elementNames: string[];
+  iconElementNames?: string[];
   mode: ScriptAutocompleteMode;
   value: string;
 }) => {
-  const { counterNames, cursor, elementNames, mode, value } = params;
+  const { counterNames, cursor, elementNames, iconElementNames, mode, value } =
+    params;
   if (mode === 'script') {
     return getReactionScriptAutocomplete({
       counterNames,
       cursor,
       elementNames,
+      ...(iconElementNames ? { iconElementNames } : {}),
       value,
     }).suggestions;
   }
 
-  const lineStart = getLineStart(value, cursor);
-  const linePrefix = value.slice(lineStart, cursor);
-  if (!isIndentLine(linePrefix)) {
-    return [];
-  }
-
-  const indentLength = getIndentLength(linePrefix);
-  const lineCursor = cursor - lineStart - indentLength;
-  if (lineCursor < 0) {
-    return [];
-  }
-
-  const lineEndIndex = value.indexOf('\n', cursor);
-  const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
-  const lineValue = value.slice(lineStart + indentLength, lineEnd);
-
-  return getReactionScriptAutocomplete({
+  return getReactionTextAutocomplete({
     counterNames,
-    cursor: Math.min(lineCursor, lineValue.length),
+    cursor,
     elementNames,
-    value: lineValue,
-  }).suggestions.map((suggestion) => ({
-    ...suggestion,
-    replaceEnd: suggestion.replaceEnd + lineStart + indentLength,
-    replaceStart: suggestion.replaceStart + lineStart + indentLength,
-  }));
+    ...(iconElementNames ? { iconElementNames } : {}),
+    value,
+  }).suggestions;
 };
 
 const getCaretPopupPosition = (
@@ -194,6 +196,7 @@ export const ReactionScriptAutocompleteTextarea = ({
   className,
   counterNames,
   elementNames,
+  iconElementNames,
   mode,
   onBlur,
   onChange,
@@ -225,12 +228,14 @@ export const ReactionScriptAutocompleteTextarea = ({
       counterNames,
       cursor: Math.min(selectionStart, value.length),
       elementNames,
+      ...(iconElementNames ? { iconElementNames } : {}),
       mode,
       value,
     });
   }, [
     counterNames,
     elementNames,
+    iconElementNames,
     isAutocompleteEnabled,
     isFocused,
     mode,
@@ -308,6 +313,7 @@ export const ReactionScriptAutocompleteTextarea = ({
       counterNames,
       cursor: applied.cursor,
       elementNames,
+      ...(iconElementNames ? { iconElementNames } : {}),
       mode,
       value: applied.value,
     });
@@ -327,6 +333,34 @@ export const ReactionScriptAutocompleteTextarea = ({
       ignoreNextSelectRef.current = true;
       target.focus();
       target.setSelectionRange(applied.cursor, applied.cursor);
+    });
+  };
+
+  const applyTextareaMutation = (nextValue: string, nextCursor: number) => {
+    onChange(nextValue);
+    hasPendingEditRef.current = true;
+    setSelectionStart(nextCursor);
+    setSelectedSuggestionIndex(0);
+    setIsAutocompleteEnabled(
+      shouldOpenAutocompleteAtCursor({
+        counterNames,
+        cursor: nextCursor,
+        elementNames,
+        ...(iconElementNames ? { iconElementNames } : {}),
+        mode,
+        value: nextValue,
+      })
+    );
+
+    requestAnimationFrame(() => {
+      const target = textareaRef.current;
+      if (!target) {
+        return;
+      }
+
+      ignoreNextSelectRef.current = true;
+      target.focus();
+      target.setSelectionRange(nextCursor, nextCursor);
     });
   };
 
@@ -375,6 +409,7 @@ export const ReactionScriptAutocompleteTextarea = ({
                 counterNames,
                 cursor: nextSelectionStart,
                 elementNames,
+                ...(iconElementNames ? { iconElementNames } : {}),
                 mode,
                 value: event.currentTarget.value,
               })
@@ -383,7 +418,8 @@ export const ReactionScriptAutocompleteTextarea = ({
         onKeyDown={(event) => {
           if (
             event.key === 'Tab' &&
-            event.currentTarget.selectionStart === event.currentTarget.selectionEnd &&
+            event.currentTarget.selectionStart ===
+              event.currentTarget.selectionEnd &&
             event.currentTarget.selectionStart ===
               getLineStart(
                 event.currentTarget.value,
@@ -396,32 +432,47 @@ export const ReactionScriptAutocompleteTextarea = ({
               selectionStart: event.currentTarget.selectionStart,
               value: event.currentTarget.value,
             });
-
-            onChange(applied.value);
-            hasPendingEditRef.current = true;
-            setSelectionStart(applied.cursor);
-            setSelectedSuggestionIndex(0);
-            setIsAutocompleteEnabled(
-              shouldOpenAutocompleteAtCursor({
-                counterNames,
-                cursor: applied.cursor,
-                elementNames,
-                mode,
-                value: applied.value,
-              })
-            );
-
-            requestAnimationFrame(() => {
-              const target = textareaRef.current;
-              if (!target) {
-                return;
-              }
-
-              ignoreNextSelectRef.current = true;
-              target.focus();
-              target.setSelectionRange(applied.cursor, applied.cursor);
-            });
+            applyTextareaMutation(applied.value, applied.cursor);
             return;
+          }
+
+          if (
+            mode === 'reaction-text' &&
+            event.key === 'Enter' &&
+            event.currentTarget.selectionStart ===
+              event.currentTarget.selectionEnd &&
+            suggestions.length === 0
+          ) {
+            const lineEnd = getLineEnd(
+              event.currentTarget.value,
+              event.currentTarget.selectionStart
+            );
+            const lineStart = getLineStart(
+              event.currentTarget.value,
+              event.currentTarget.selectionStart
+            );
+            const currentLine = event.currentTarget.value.slice(
+              lineStart,
+              lineEnd
+            );
+            const atLineEnd =
+              event.currentTarget.selectionStart === lineEnd &&
+              event.currentTarget.selectionEnd === lineEnd;
+            const isIndentedLine =
+              currentLine.startsWith('    ') || currentLine.startsWith('\t');
+            const isScriptBlockHeader =
+              !/^\s/.test(currentLine) && currentLine.trimEnd().endsWith(':');
+
+            if (atLineEnd && (isIndentedLine || isScriptBlockHeader)) {
+              event.preventDefault();
+              const applied = insertIndentedNewlineAtSelection({
+                selectionEnd: event.currentTarget.selectionEnd,
+                selectionStart: event.currentTarget.selectionStart,
+                value: event.currentTarget.value,
+              });
+              applyTextareaMutation(applied.value, applied.cursor);
+              return;
+            }
           }
 
           if (suggestions.length > 0) {
@@ -463,6 +514,9 @@ export const ReactionScriptAutocompleteTextarea = ({
             shouldTriggerAutocompleteFromKey(event);
         }}
         rows={rows}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
         placeholder={placeholder}
         className={className}
       />
@@ -496,7 +550,9 @@ export const ReactionScriptAutocompleteTextarea = ({
                       : 'text-[color:var(--catalog-ink)] hover:bg-white/6'
                   }`}
                 >
-                  <span className="text-inherit">{suggestion.text}</span>
+                  <span className="text-inherit">
+                    {suggestion.previewText ?? suggestion.text}
+                  </span>
                   <span
                     className={`text-[10px] ${
                       suggestionIndex === selectedSuggestionIndex

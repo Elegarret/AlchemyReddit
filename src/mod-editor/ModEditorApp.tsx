@@ -13,11 +13,13 @@ import {
 import {
   PLAYTEST_RULESET_STORAGE_KEY,
   buildRulesetFromDraft,
+  createModFingerprint,
   validateModDraft,
 } from '../modding/runtime';
 import {
   MAX_REALM_INTRO_LENGTH,
   MAX_REALM_SUMMARY_LENGTH,
+  type ModCounterDefinition,
   type ModElement,
   type ModListItem,
   type SaveDraftInput,
@@ -56,6 +58,11 @@ import {
   getSharePostUrl,
 } from './draft';
 
+type BlockedScriptReaction = {
+  messages: string[];
+  reactionName: string;
+};
+
 export const ModEditorApp = () => {
   const [tab, setTab] = useState<EditorTab>('editor');
   const [draft, setDraft] = useState<SaveDraftInput>(createEmptyDraft);
@@ -64,6 +71,11 @@ export const ModEditorApp = () => {
   const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
   const [elementSearch, setElementSearch] = useState('');
   const [reactionSearch, setReactionSearch] = useState('');
+  const [authorsHelpPageUrl, setAuthorsHelpPageUrl] = useState<string | null>(
+    null
+  );
+  const [isAdvancedOptionsOpen, setIsAdvancedOptionsOpen] = useState(false);
+  const [newCounterText, setNewCounterText] = useState('');
   const [newStartingText, setNewStartingText] = useState('');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [pendingRemoveModId, setPendingRemoveModId] = useState<string | null>(
@@ -74,6 +86,7 @@ export const ModEditorApp = () => {
   const [isValidationBlinking, setIsValidationBlinking] = useState(false);
   const validationBlinkTimeoutRef = useRef<number | null>(null);
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
+  const [isReactionTextExpanded, setIsReactionTextExpanded] = useState(true);
   const [reactionText, setReactionText] = useState('');
   const [pendingElementFocusId, setPendingElementFocusId] = useState<
     string | null
@@ -89,6 +102,7 @@ export const ModEditorApp = () => {
   const toggleReactionView = () => {
     if (reactionView === 'visual') {
       setReactionText(formatReactionText(draft));
+      setIsReactionTextExpanded(true);
       setReactionView('text');
     } else {
       syncDraftFromText(reactionText);
@@ -97,21 +111,98 @@ export const ModEditorApp = () => {
   };
 
   const validation = useMemo(() => validateModDraft(draft), [draft]);
+  const blockedScriptReactions = useMemo<BlockedScriptReaction[]>(() => {
+    const grouped = new Map<string, BlockedScriptReaction>();
+
+    validation.scriptErrors.forEach((scriptError) => {
+      const match = scriptError.match(/^"(.+?)" script line \d+: (.+)$/);
+      const reactionName = match?.[1] ?? 'Unknown reaction';
+      const message = match?.[2] ?? scriptError;
+      const existing = grouped.get(reactionName);
+
+      if (existing) {
+        if (!existing.messages.includes(message)) {
+          existing.messages.push(message);
+        }
+        return;
+      }
+
+      grouped.set(reactionName, {
+        reactionName,
+        messages: [message],
+      });
+    });
+
+    return Array.from(grouped.values());
+  }, [validation.scriptErrors]);
+  const counterElementIds = useMemo(
+    () => draft.counters.map((counter) => counter.elementId),
+    [draft.counters]
+  );
+  const counterElements = useMemo(
+    () =>
+      draft.counters.flatMap((counter) => {
+        const element = draft.elements.find(
+          (candidate) => candidate.id === counter.elementId
+        );
+        return element ? [{ counter, element }] : [];
+      }),
+    [draft.counters, draft.elements]
+  );
+  const counterNames = useMemo(
+    () =>
+      counterElements
+        .map(({ element }) => element.name.trim())
+        .filter((name) => name.length > 0),
+    [counterElements]
+  );
+  const gameplayElementNames = useMemo(
+    () =>
+      draft.elements
+        .filter((element) => !counterElementIds.includes(element.id))
+        .map((element) => element.name.trim())
+        .filter((name) => name.length > 0),
+    [counterElementIds, draft.elements]
+  );
   const loadedMod = loadedDraftId
     ? myMods.find((mod) => mod.id === loadedDraftId) ?? null
     : null;
-  const isLoadedModPublished = loadedMod?.status === 'published';
+  const hasLoadedPublishedVersion = Boolean(
+    loadedMod?.hasPublishedVersion ?? (loadedMod?.status === 'published')
+  );
+  const currentDraftFingerprint = useMemo(
+    () =>
+      createModFingerprint({
+        title: draft.title,
+        summary: draft.summary,
+        intro: draft.intro,
+        startingElementIds: draft.startingElementIds,
+        counters: draft.counters,
+        showPalette: draft.showPalette,
+        elements: draft.elements,
+        reactions: draft.reactions,
+      }),
+    [draft]
+  );
+  const hasPublishedDraftChanges = Boolean(
+    hasLoadedPublishedVersion &&
+      loadedMod?.publishedHash !== currentDraftFingerprint
+  );
+  const primaryPublishAction =
+    !hasLoadedPublishedVersion || hasPublishedDraftChanges
+      ? 'publish'
+      : 'unpublish';
   const loadedSharePostUrl = loadedMod ? getSharePostUrl(loadedMod) : null;
   const publishBlockedReason =
-    !isLoadedModPublished && !validation.isValid
+    primaryPublishAction === 'publish' && !validation.isValid
       ? validation.errors[0] ??
         validation.scriptErrors[0] ??
         'Fix validation errors first'
       : null;
-  const shareBlockedReason = !isLoadedModPublished
+  const shareBlockedReason = !hasLoadedPublishedVersion
     ? 'Publish this realm first.'
     : null;
-  const realmPageBlockedReason = !isLoadedModPublished
+  const realmPageBlockedReason = !hasLoadedPublishedVersion
     ? 'Publish this realm first.'
     : !loadedSharePostUrl
       ? 'Share this realm first to create its page.'
@@ -163,10 +254,29 @@ export const ModEditorApp = () => {
     });
   }, []);
 
+  useEffect(() => {
+    trpc.mods.getEditorSettings
+      .query()
+      .then((settings) => setAuthorsHelpPageUrl(settings.authorsHelpPageUrl))
+      .catch((error) => {
+        console.error(error);
+        setAuthorsHelpPageUrl(null);
+      });
+  }, []);
+
   const updateDraft = (
     updater: (current: SaveDraftInput) => SaveDraftInput
   ) => {
     setDraft((current) => updater(current));
+  };
+
+  const openAuthorsHelpPage = () => {
+    if (!authorsHelpPageUrl) {
+      showToast('Authors Help Page URL is not configured.');
+      return;
+    }
+
+    navigateTo(authorsHelpPageUrl);
   };
 
   useEffect(() => {
@@ -270,26 +380,128 @@ export const ModEditorApp = () => {
     });
   };
 
-  const updateElementAdvanced = (
-    elementId: string,
-    patch: Pick<ModElement, 'message' | 'effect'>
+  const normalizeCounterDefinition = (
+    counter: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'>
   ) => {
+    const max = Math.max(counter.min, counter.max);
+    return {
+      initial: Math.min(Math.max(counter.initial, counter.min), max),
+      max,
+      min: counter.min,
+    };
+  };
+
+  const addCounterElement = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    updateDraft((current) => {
+      const resolved = ensureElementInDraft(current, trimmed);
+      if (
+        resolved.draft.counters.some(
+          (counter) => counter.elementId === resolved.elementId
+        )
+      ) {
+        return {
+          ...resolved.draft,
+          startingElementIds: resolved.draft.startingElementIds.filter(
+            (id) => id !== resolved.elementId
+          ),
+        };
+      }
+
+      return {
+        ...resolved.draft,
+        counters: [
+          ...resolved.draft.counters,
+          {
+            elementId: resolved.elementId,
+            initial: 0,
+            max: 100,
+            min: 0,
+          },
+        ],
+        startingElementIds: resolved.draft.startingElementIds.filter(
+          (id) => id !== resolved.elementId
+        ),
+      };
+    });
+  };
+
+  const removeCounterElement = (elementId: string) => {
     updateDraft((current) => ({
       ...current,
-      elements: current.elements.map((element) =>
-        element.id === elementId
-          ? {
-              ...element,
-              ...patch,
-            }
-          : element
-      ),
+      counters: current.counters.filter((counter) => counter.elementId !== elementId),
     }));
+  };
+
+  const updateElementAdvanced = (
+    elementId: string,
+    patch: Pick<ModElement, 'message' | 'effect'> & {
+      nonConsumable: boolean;
+      counterValues: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'> | null;
+      isCounter: boolean;
+      isStarting: boolean;
+    }
+  ) => {
+    updateDraft((current) => {
+      const normalizedCounter =
+        patch.counterValues === null
+          ? null
+          : normalizeCounterDefinition(patch.counterValues);
+      const nextCounters = patch.isCounter
+        ? current.counters.some((counter) => counter.elementId === elementId)
+          ? current.counters.map((counter) =>
+              counter.elementId === elementId && normalizedCounter
+                ? {
+                    elementId,
+                    ...normalizedCounter,
+                  }
+                : counter
+            )
+          : normalizedCounter
+            ? [
+                ...current.counters,
+                {
+                  elementId,
+                  ...normalizedCounter,
+                },
+              ]
+            : current.counters
+        : current.counters.filter((counter) => counter.elementId !== elementId);
+
+      return {
+        ...current,
+        counters: nextCounters,
+        elements: current.elements.map((element) =>
+          element.id === elementId
+            ? {
+                ...element,
+                effect: patch.effect,
+                message: patch.message,
+                nonConsumable: patch.nonConsumable,
+              }
+            : element
+        ),
+        startingElementIds: patch.isCounter
+          ? current.startingElementIds.filter((id) => id !== elementId)
+          : patch.isStarting
+            ? current.startingElementIds.includes(elementId)
+              ? current.startingElementIds
+              : [...current.startingElementIds, elementId]
+            : current.startingElementIds.filter((id) => id !== elementId),
+      };
+    });
   };
 
   const removeElement = (elementId: string) => {
     updateDraft((current) => ({
       ...current,
+      counters: current.counters.filter(
+        (counter) => counter.elementId !== elementId
+      ),
       elements: current.elements.filter((element) => element.id !== elementId),
       startingElementIds: current.startingElementIds.filter(
         (id) => id !== elementId
@@ -321,6 +533,13 @@ export const ModEditorApp = () => {
     if (!trimmed) return;
     updateDraft((current) => {
       const resolved = ensureElementInDraft(current, trimmed);
+      if (
+        resolved.draft.counters.some(
+          (counter) => counter.elementId === resolved.elementId
+        )
+      ) {
+        return resolved.draft;
+      }
       return {
         ...resolved.draft,
         startingElementIds: [
@@ -539,7 +758,7 @@ export const ModEditorApp = () => {
   };
 
   const shareDraft = async () => {
-    if (!loadedDraftId || !isLoadedModPublished) {
+    if (!loadedDraftId || !hasLoadedPublishedVersion) {
       showToast('Publish the realm first');
       return;
     }
@@ -632,6 +851,8 @@ export const ModEditorApp = () => {
         summary: clampRealmSummary(loaded.summary),
         intro: loaded.intro,
         startingElementIds: loaded.startingElementIds,
+        counters: loaded.counters,
+        showPalette: loaded.showPalette,
         elements: loaded.elements,
         reactions: loaded.reactions,
       });
@@ -694,6 +915,11 @@ export const ModEditorApp = () => {
   const filteredElements = draft.elements.filter((element) =>
     element.name.toLowerCase().includes(elementSearch.toLowerCase())
   );
+  const filteredCounterElements = counterElements.filter(({ element }) =>
+    element.name.toLowerCase().includes(elementSearch.toLowerCase())
+  );
+  const isReactionPanelExpanded =
+    reactionView === 'text' && isReactionTextExpanded;
 
   const filteredReactions = draft.reactions
     .map((reaction, index) => ({
@@ -822,11 +1048,23 @@ export const ModEditorApp = () => {
                       {mod.summary || 'No description provided.'}
                     </p>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-[10px] font-bold tracking-[0.18em] uppercase ${mod.status === 'published' ? 'bg-emerald-400/20 text-emerald-200' : 'bg-amber-300/20 text-amber-100'}`}
-                  >
-                    {mod.status}
-                  </span>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {mod.hasDraftVersion && (
+                      <span className="rounded-full bg-amber-300/20 px-3 py-1 text-[10px] font-bold tracking-[0.18em] text-amber-100 uppercase">
+                        Draft
+                      </span>
+                    )}
+                    {mod.hasPublishedVersion && (
+                      <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-[10px] font-bold tracking-[0.18em] text-emerald-200 uppercase">
+                        Published
+                      </span>
+                    )}
+                    {!mod.hasDraftVersion && !mod.hasPublishedVersion && (
+                      <span className="rounded-full bg-slate-400/20 px-3 py-1 text-[10px] font-bold tracking-[0.18em] text-slate-100 uppercase">
+                        {mod.status}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="realm-text-soft mb-5 space-y-1 text-sm">
                   <div>By {mod.ownerUsername}</div>
@@ -936,9 +1174,11 @@ export const ModEditorApp = () => {
                     aria-disabled={isBusy || !!publishBlockedReason}
                     title={
                       publishBlockedReason ??
-                      (isLoadedModPublished
+                      (primaryPublishAction === 'unpublish'
                         ? 'Move this realm back to drafts.'
-                        : 'Publish this realm.')
+                        : hasLoadedPublishedVersion
+                          ? 'Publish this updated draft to the live realm.'
+                          : 'Publish this realm.')
                     }
                     onClick={() => {
                       if (isBusy) {
@@ -951,7 +1191,9 @@ export const ModEditorApp = () => {
                       }
 
                       void (
-                        isLoadedModPublished ? unpublishDraft() : publishDraft()
+                        primaryPublishAction === 'unpublish'
+                          ? unpublishDraft()
+                          : publishDraft()
                       );
                     }}
                     className={`${editorActionButtonClass} ${
@@ -961,7 +1203,11 @@ export const ModEditorApp = () => {
                     }`}
                   >
                     <IoRocketSharp className="mr-1 inline-block" />
-                    {isLoadedModPublished ? 'Unpublish' : 'Publish'}
+                    {primaryPublishAction === 'unpublish'
+                      ? 'Unpublish'
+                      : hasLoadedPublishedVersion
+                        ? 'Publish Update'
+                        : 'Publish'}
                   </button>
                   <button
                     type="button"
@@ -1016,66 +1262,174 @@ export const ModEditorApp = () => {
                         : 'cursor-pointer'
                     }`}
                   >
-                    Go To Realm Page
+                    Realm Page
                   </button>
                 </div>
               </div>
 
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-                <div>
-                  <div className="mb-2">
-                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                      Starting Elements ({draft.startingElementIds.length})
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
+                  <div>
+                    <div className="mb-2">
+                      <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                        Starting Elements ({draft.startingElementIds.length})
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {draft.startingElementIds.map((id, index) => {
+                        const el = draft.elements.find((e) => e.id === id);
+                        return el ? (
+                          <div
+                            key={`starting-${id}-${index}`}
+                            className="editor-starter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
+                          >
+                            <span className="text-base leading-none">
+                              {el.emoji}
+                            </span>
+                            <span>{el.name}</span>
+                            <button
+                              onClick={() => removeStartingElement(index)}
+                              className="editor-starter-remove ml-0.5"
+                            >
+                              <IoCloseSharp size={16} />
+                            </button>
+                          </div>
+                        ) : null;
+                      })}
+                      <div className="ml-1 flex items-center">
+                        <DroppableInput
+                          value={newStartingText}
+                          onChange={setNewStartingText}
+                          onDropValue={(value) => {
+                            addStartingElement(value);
+                            setNewStartingText('');
+                          }}
+                          onClear={
+                            newStartingText
+                              ? () => setNewStartingText('')
+                              : undefined
+                          }
+                          placeholder="Add starter"
+                          className="realm-input w-28 rounded-l-lg border"
+                          onEnter={() => {
+                            addStartingElement(newStartingText);
+                            setNewStartingText('');
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            addStartingElement(newStartingText);
+                            setNewStartingText('');
+                          }}
+                          className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
+                        >
+                          <IoAddSharp size={20} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {draft.startingElementIds.map((id, index) => {
-                      const el = draft.elements.find((e) => e.id === id);
-                      return el ? (
-                        <div
-                          key={`starting-${id}-${index}`}
-                          className="editor-starter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
-                        >
-                          <span>{el.name}</span>
-                          <button
-                            onClick={() => removeStartingElement(index)}
-                            className="editor-starter-remove ml-0.5"
-                          >
-                            <IoCloseSharp size={16} />
-                          </button>
+
+                  <div className="realm-panel-soft rounded-2xl p-4">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setIsAdvancedOptionsOpen((current) => !current)
+                      }
+                      className="flex w-full items-center gap-3 text-left"
+                    >
+                      <span className="realm-text-ink text-lg">
+                        {isAdvancedOptionsOpen ? '−' : '+'}
+                      </span>
+                      <div>
+                        <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                          Advanced Options
                         </div>
-                      ) : null;
-                    })}
-                    <div className="ml-1 flex items-center">
-                      <DroppableInput
-                        value={newStartingText}
-                        onChange={setNewStartingText}
-                        onDropValue={(value) => {
-                          addStartingElement(value);
-                          setNewStartingText('');
-                        }}
-                        onClear={
-                          newStartingText
-                            ? () => setNewStartingText('')
-                            : undefined
-                        }
-                        placeholder="Add starter"
-                         className="realm-input w-28 rounded-l-lg border"
-                        onEnter={() => {
-                          addStartingElement(newStartingText);
-                          setNewStartingText('');
-                        }}
-                      />
-                      <button
-                        onClick={() => {
-                          addStartingElement(newStartingText);
-                          setNewStartingText('');
-                        }}
-                        className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
-                      >
-                        <IoAddSharp size={20} />
-                      </button>
-                    </div>
+                      </div>
+                    </button>
+
+                    {isAdvancedOptionsOpen && (
+                      <div className="mt-4 space-y-4">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={draft.showPalette}
+                            onChange={(event) =>
+                              updateDraft((current) => ({
+                                ...current,
+                                showPalette: event.target.checked,
+                              }))
+                            }
+                            className="h-4 w-4"
+                          />
+                          <span>
+                            show palette
+                            <span className="realm-text-soft">
+                              {' '}
+                              (turn this off for quest realms)
+                            </span>
+                          </span>
+                        </label>
+
+                        <div>
+                          <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                            Counters ({draft.counters.length})
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {counterElements.map(({ counter, element }) => (
+                              <div
+                                key={`counter-${counter.elementId}`}
+                                className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
+                              >
+                                <span className="text-base leading-none">
+                                  {element.emoji}
+                                </span>
+                                <span>
+                                  {element.name}({counter.initial})
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    removeCounterElement(counter.elementId)
+                                  }
+                                  className="editor-counter-remove ml-0.5"
+                                >
+                                  <IoCloseSharp size={16} />
+                                </button>
+                              </div>
+                            ))}
+                            <div className="ml-1 flex items-center">
+                              <DroppableInput
+                                value={newCounterText}
+                                onChange={setNewCounterText}
+                                onDropValue={(value) => {
+                                  addCounterElement(value);
+                                  setNewCounterText('');
+                                }}
+                                onClear={
+                                  newCounterText
+                                    ? () => setNewCounterText('')
+                                    : undefined
+                                }
+                                placeholder="Add counter"
+                                className="realm-input w-28 rounded-l-lg border"
+                                onEnter={() => {
+                                  addCounterElement(newCounterText);
+                                  setNewCounterText('');
+                                }}
+                              />
+                              <button
+                                onClick={() => {
+                                  addCounterElement(newCounterText);
+                                  setNewCounterText('');
+                                }}
+                                className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
+                              >
+                                <IoAddSharp size={20} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1116,6 +1470,27 @@ export const ModEditorApp = () => {
                       ))}
                     </div>
                   )}
+                  {!validation.isValid && blockedScriptReactions.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-3 text-sm text-rose-100">
+                      <div className="catalog-title-font text-[11px] font-bold tracking-[0.16em] uppercase text-rose-100">
+                        Bad Scripts
+                      </div>
+                      <div className="mt-2 text-sm text-rose-100/90">
+                        Scripted reactions are blocking publish. Fix these reactions:
+                      </div>
+                      <ul className="mt-2 space-y-1.5">
+                        {blockedScriptReactions.slice(0, 4).map((entry) => (
+                          <li key={entry.reactionName}>
+                            <span className="font-bold">{entry.reactionName}</span>
+                            {`: ${entry.messages[0]}`}
+                            {entry.messages.length > 1
+                              ? ` (+${entry.messages.length - 1} more)`
+                              : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {validation.errors.length === 0 &&
                     validation.warnings.length > 0 && (
                       <div className="space-y-2">
@@ -1133,7 +1508,13 @@ export const ModEditorApp = () => {
               </div>
             </div>
 
-            <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+            <div
+              className={`grid items-start gap-4 ${
+                isReactionPanelExpanded
+                  ? ''
+                  : 'sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]'
+              }`}
+            >
               <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
                 <div className="mb-4 flex flex-nowrap items-start gap-3">
                   <div className="min-w-[112px] shrink-0">
@@ -1175,13 +1556,26 @@ export const ModEditorApp = () => {
                         </button>
                       </>
                     )}
+                    {reactionView === 'text' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setIsReactionTextExpanded((current) => !current)
+                        }
+                        className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
+                      >
+                        {isReactionTextExpanded ? '<Compact' : 'Expand>'}
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 {reactionView === 'visual' ? (
-                  <div className="custom-scrollbar h-[500px] space-y-3 overflow-y-auto pr-2 pb-6">
+                  <div className="custom-scrollbar h-[500px] space-y-3 overflow-x-visible overflow-y-auto px-2 pt-2 pb-6">
                     {filteredReactions.map(({ reaction, index }) => (
                       <ReactionWidget
+                        counterElementIds={counterElementIds}
+                        counterNames={counterNames}
                         key={`${reaction.leftId}-${reaction.rightId}-${index}`}
                         index={index}
                         reaction={reaction}
@@ -1214,8 +1608,9 @@ export const ModEditorApp = () => {
                   <div className="h-[500px] pb-6">
                     <ReactionScriptAutocompleteTextarea
                       className="realm-input custom-scrollbar h-full w-full resize-none rounded-xl border p-4 font-mono text-sm font-bold outline-none"
-                      counterNames={[]}
-                      elementNames={draft.elements
+                      counterNames={counterNames}
+                      elementNames={gameplayElementNames}
+                      iconElementNames={draft.elements
                         .map((element) => element.name.trim())
                         .filter((name) => name.length > 0)}
                       mode="reaction-text"
@@ -1231,7 +1626,8 @@ export const ModEditorApp = () => {
                 )}
               </div>
 
-              <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
+              {!isReactionPanelExpanded && (
+                <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
                 <div className="mb-4 flex flex-nowrap items-start gap-3">
                   <div className="min-w-[112px] shrink-0">
                     <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
@@ -1276,6 +1672,23 @@ export const ModEditorApp = () => {
 
                 {elementPanelView === 'extended' ? (
                   <div className="custom-scrollbar h-[500px] space-y-3 overflow-y-auto pr-2 pb-6">
+                    {filteredCounterElements.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {filteredCounterElements.map(({ counter, element }) => (
+                          <div
+                            key={`elements-counter-${counter.elementId}`}
+                            className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-2 pl-2 text-sm font-bold"
+                          >
+                            <span className="text-base leading-none">
+                              {element.emoji}
+                            </span>
+                            <span>
+                              {element.name}({counter.initial})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {filteredElements.map((element) => (
                       <div
                         key={element.id}
@@ -1325,7 +1738,17 @@ export const ModEditorApp = () => {
                               }
                             />
                             <ElementAdvancedButton
+                              authorsHelpPageUrl={authorsHelpPageUrl}
                               element={element}
+                              counterDefinition={
+                                draft.counters.find(
+                                  (counter) => counter.elementId === element.id
+                                ) ?? null
+                              }
+                              isStarting={draft.startingElementIds.includes(
+                                element.id
+                              )}
+                              onOpenAuthorsHelp={openAuthorsHelpPage}
                               onApply={(patch) =>
                                 updateElementAdvanced(element.id, patch)
                               }
@@ -1337,11 +1760,38 @@ export const ModEditorApp = () => {
                   </div>
                 ) : (
                   <div className="custom-scrollbar h-[500px] overflow-x-visible overflow-y-auto pr-1 pb-6">
+                    {filteredCounterElements.length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {filteredCounterElements.map(({ counter, element }) => (
+                          <div
+                            key={`compact-counter-${counter.elementId}`}
+                            className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-2 pl-2 text-sm font-bold"
+                          >
+                            <span className="text-base leading-none">
+                              {element.emoji}
+                            </span>
+                            <span>
+                              {element.name}({counter.initial})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="grid grid-cols-4 gap-3">
                       {filteredElements.map((element) => (
                         <CompactElementTile
+                          authorsHelpPageUrl={authorsHelpPageUrl}
+                          counterDefinition={
+                            draft.counters.find(
+                              (counter) => counter.elementId === element.id
+                            ) ?? null
+                          }
                           key={element.id}
                           element={element}
+                          isStarting={draft.startingElementIds.includes(
+                            element.id
+                          )}
+                          onOpenAuthorsHelp={openAuthorsHelpPage}
                           onRename={(name) => renameElement(element.id, name)}
                           onBlurName={() => finalizeElementName(element.id)}
                           onChangeEmoji={(emoji) =>
@@ -1379,7 +1829,8 @@ export const ModEditorApp = () => {
                     </div>
                   </div>
                 )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         )}
