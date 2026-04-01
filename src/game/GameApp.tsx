@@ -2066,15 +2066,16 @@ const GameSession = ({
 								)}
 							</div>
 
-							<h3 className="mb-4 text-3xl font-black tracking-tight">
-								{activeScriptedPopup.iconElementId
-									? getElementDisplayName(activeScriptedPopup.iconElementId)
-									: activeScriptedPopup.kind === 'win'
-										? 'Victory'
-										: activeScriptedPopup.kind === 'lose'
-											? 'Defeat'
-											: 'A New Message'}
-							</h3>
+							{(activeScriptedPopup.iconElementId ||
+								activeScriptedPopup.kind !== 'popup') && (
+								<h3 className="mb-4 text-3xl font-black tracking-tight">
+									{activeScriptedPopup.iconElementId
+										? getElementDisplayName(activeScriptedPopup.iconElementId)
+										: activeScriptedPopup.kind === 'win'
+											? 'Victory'
+											: 'Defeat'}
+								</h3>
+							)}
 
 							<p
 								className={`mb-8 px-2 text-base leading-relaxed ${

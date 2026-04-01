@@ -1229,7 +1229,7 @@ export const ReactionWidget = ({
                     ? 'Open Scripting Help Page'
                     : 'Scripting Help Page URL is not configured.'
                 }
-                className="realm-button-muted catalog-title-font rounded-full px-3 py-1 text-[10px] font-bold tracking-[0.14em] uppercase"
+                className="catalog-title-font realm-text-soft cursor-pointer bg-transparent px-0 py-0 text-[9px] font-bold tracking-[0.14em] uppercase underline-offset-2 transition-colors hover:underline"
               >
                 Scripting Help
               </button>

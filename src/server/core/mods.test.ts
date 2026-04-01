@@ -1,12 +1,15 @@
 import { expect, vi } from 'vitest';
 import { reddit } from '@devvit/web/server';
+import { Context, runWithContext } from '@devvit/server';
+import { Header } from '@devvit/shared-types/Header.js';
 import { test } from '../test';
-import type { ModElement, SharePostData } from '../../modding/types';
+import type { ModElement } from '../../modding/types';
 import {
   getPublishedMod,
   listCatalogMods,
   listModsForUser,
   publishDraftForUser,
+  resolveRulesetFromPostData,
   saveDraftForUser,
   unpublishModForUser,
 } from './mods';
@@ -68,15 +71,6 @@ test('republishing reuses the existing share post and updates its custom post da
     writable: true,
   });
   vi.spyOn(sharePost, 'delete').mockResolvedValue(undefined);
-  const editSpy = vi
-    .spyOn(sharePost, 'edit')
-    .mockRejectedValue(new Error('sharePost.edit should not be used'));
-  const setPostDataSpy = vi.spyOn(sharePost, 'setPostData').mockResolvedValue(
-    undefined
-  );
-  const setTextFallbackSpy = vi
-    .spyOn(sharePost, 'setTextFallback')
-    .mockResolvedValue(undefined);
   vi.spyOn(reddit, 'getPostById').mockImplementation(async (postId) => {
     if (postId === sharePostId) {
       return sharePost;
@@ -84,6 +78,9 @@ test('republishing reuses the existing share post and updates its custom post da
 
     throw new Error(`Unexpected post lookup: ${postId}`);
   });
+  const editSpy = vi.spyOn(sharePost, 'edit');
+  const setPostDataSpy = vi.spyOn(sharePost, 'setPostData');
+  const setTextFallbackSpy = vi.spyOn(sharePost, 'setTextFallback');
   const submitCustomPostSpy = vi
     .spyOn(reddit, 'submitCustomPost')
     .mockResolvedValue(sharePost);
@@ -120,15 +117,8 @@ test('republishing reuses the existing share post and updates its custom post da
   expect(republished.mod.sharePostId).toBe(sharePostId);
   expect(republished.sharePost.id).toBe(sharePostId);
   expect(editSpy).not.toHaveBeenCalled();
-  expect(setPostDataSpy).toHaveBeenLastCalledWith({
-    modId: saved.id,
-    title: 'Storm Lab',
-    slug: 'storm-lab',
-    publishedHash: republished.mod.publishedHash,
-  } satisfies SharePostData);
-  expect(setTextFallbackSpy).toHaveBeenLastCalledWith({
-    text: 'Build storms from an expanded recipe tree.',
-  });
+  expect(setPostDataSpy).not.toHaveBeenCalled();
+  expect(setTextFallbackSpy).not.toHaveBeenCalled();
   expect(submitCustomPostSpy).toHaveBeenCalledTimes(1);
 
   const catalogAfterDraftSave = await listCatalogMods();
@@ -147,48 +137,29 @@ test('republishing reuses the existing share post and updates its custom post da
   expect(catalogAfterUnpublish.map((mod) => mod.id)).not.toContain(saved.id);
 });
 
-test('republishing creates a replacement share post when updating the old one fails', async ({
+test('shared post resolves the latest published realm data by mod id after republish', async ({
   userId,
   username,
   mocks,
+  headers,
 }) => {
-  const originalSharePostId = 't3_sharepost';
-  const replacementSharePostId = 't3_sharepost_new';
+  const bareSharePostId = 'sharepost';
+  const sharePostId = 't3_sharepost';
 
   mocks.reddit.linksAndComments.addPost({
-    id: originalSharePostId,
+    id: sharePostId,
     title: "Storm Lab (testuser's realm)",
   });
-  mocks.reddit.linksAndComments.addPost({
-    id: replacementSharePostId,
-    title: "Storm Lab (testuser's realm)",
+  const sharePost = await reddit.getPostById(sharePostId);
+  Object.defineProperty(sharePost, 'id', {
+    configurable: true,
+    value: bareSharePostId,
+    writable: true,
   });
 
-  const originalSharePost = await reddit.getPostById(originalSharePostId);
-  const replacementSharePost = await reddit.getPostById(replacementSharePostId);
-
-  vi.spyOn(originalSharePost, 'delete').mockResolvedValue(undefined);
-  vi.spyOn(replacementSharePost, 'delete').mockResolvedValue(undefined);
-  vi.spyOn(originalSharePost, 'setPostData').mockRejectedValue(
-    new Error('cannot edit old share post')
-  );
-  vi.spyOn(originalSharePost, 'setTextFallback').mockResolvedValue(undefined);
   const submitCustomPostSpy = vi
     .spyOn(reddit, 'submitCustomPost')
-    .mockResolvedValueOnce(originalSharePost)
-    .mockResolvedValueOnce(replacementSharePost);
-
-  vi.spyOn(reddit, 'getPostById').mockImplementation(async (postId) => {
-    if (postId === originalSharePostId) {
-      return originalSharePost;
-    }
-
-    if (postId === replacementSharePostId) {
-      return replacementSharePost;
-    }
-
-    throw new Error(`Unexpected post lookup: ${postId}`);
-  });
+    .mockResolvedValue(sharePost);
 
   const saved = await saveStormLabDraft(
     userId,
@@ -197,7 +168,7 @@ test('republishing creates a replacement share post when updating the old one fa
   );
 
   const firstPublish = await publishDraftForUser(userId, saved.id);
-  expect(firstPublish.mod.sharePostId).toBe(originalSharePostId);
+  expect(firstPublish.mod.sharePostId).toBe(sharePostId);
 
   await saveStormLabDraft(
     userId,
@@ -207,11 +178,30 @@ test('republishing creates a replacement share post when updating the old one fa
   );
 
   const republished = await publishDraftForUser(userId, saved.id);
-  expect(republished.mod.sharePostId).toBe(replacementSharePostId);
-  expect(republished.sharePost.id).toBe(replacementSharePostId);
-  expect(submitCustomPostSpy).toHaveBeenCalledTimes(2);
+  expect(republished.mod.sharePostId).toBe(sharePostId);
+  expect(submitCustomPostSpy).toHaveBeenCalledTimes(1);
 
-  const mineAfterRepublish = await listModsForUser(userId);
-  const modAfterRepublish = mineAfterRepublish.find((mod) => mod.id === saved.id);
-  expect(modAfterRepublish?.sharePostId).toBe(replacementSharePostId);
+  const postData = {
+    modId: saved.id,
+    title: 'Storm Lab',
+    slug: 'storm-lab',
+    ...(firstPublish.mod.publishedHash
+      ? { publishedHash: firstPublish.mod.publishedHash }
+      : {}),
+  };
+
+  const resolved = await runWithContext(
+    Context({
+      ...headers,
+      [Header.PostData]: JSON.stringify({
+        developerData: postData,
+      }),
+    }),
+    async () => await resolveRulesetFromPostData()
+  );
+  expect(resolved.modId).toBe(saved.id);
+  expect(resolved.ruleset?.summary).toBe(
+    'Build storms from an expanded recipe tree.'
+  );
+  expect(resolved.ruleset?.publishedHash).toBe(republished.mod.publishedHash);
 });

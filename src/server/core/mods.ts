@@ -111,20 +111,6 @@ const buildSharePostTitle = (mod: Pick<ModDoc, 'title' | 'ownerUsername'>) =>
 const buildSharePostBody = (mod: Pick<ModDoc, 'summary' | 'title'>) =>
   mod.summary || mod.title;
 
-const buildSharePostPayload = (mod: ModDoc) => {
-  const postData: SharePostData = {
-    modId: mod.id,
-    title: mod.title,
-    slug: createSlug(mod.title),
-    publishedHash: mod.publishedHash,
-  };
-
-  return {
-    bodyText: buildSharePostBody(mod),
-    postData: sharePostDataSchema.parse(postData),
-  };
-};
-
 const ensureModOwnership = (mod: ModDoc, userId: string) => {
   if (mod.ownerUserId !== userId) {
     throw new Error('You do not own this mod.');
@@ -484,33 +470,28 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
     throw new Error('You must be logged in to share a mod.');
   }
 
-  const { bodyText, postData } = buildSharePostPayload(latest);
-
   if (latest.sharePostId) {
     const normalizedSharePostId = normalizeRedditPostId(latest.sharePostId);
-
-    try {
-      const sharePost = await reddit.getPostById(
-        normalizedSharePostId as `t3_${string}`
-      );
-      await sharePost.setPostData(postData);
-      await sharePost.setTextFallback({
-        text: bodyText,
-      });
-      await persistPublishedSharePostId(userId, latest, normalizedSharePostId);
-      return {
-        id: normalizedSharePostId,
-        url: getPostUrl(normalizedSharePostId, context.subredditName),
-      };
-    } catch (error) {
-      console.warn('Failed to update existing share post', error);
-    }
+    await persistPublishedSharePostId(userId, latest, normalizedSharePostId);
+    return {
+      id: normalizedSharePostId,
+      url: getPostUrl(normalizedSharePostId, context.subredditName),
+    };
   }
+
+  const postData: SharePostData = {
+    modId: latest.id,
+    title: latest.title,
+    slug: createSlug(latest.title),
+    publishedHash: latest.publishedHash,
+  };
+  const parsedPostData = sharePostDataSchema.parse(postData);
+  const bodyText = buildSharePostBody(latest);
 
   const post = await reddit.submitCustomPost({
     title: buildSharePostTitle(latest),
     entry: 'mod-splash',
-    postData,
+    postData: parsedPostData,
     runAs: 'USER',
     userGeneratedContent: {
       text: bodyText,
