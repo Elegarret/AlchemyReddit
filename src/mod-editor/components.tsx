@@ -1235,11 +1235,13 @@ export const ReactionWidget = ({
               </button>
             </div>
             <ReactionScriptAutocompleteTextarea
+              beautifyOnBlur={true}
               className="realm-input custom-scrollbar min-h-[7.5rem] w-full resize-y rounded-xl border px-3 py-2 font-mono text-sm outline-none"
               counterNames={counterNames}
               elementNames={gameplayElementNames}
               iconElementNames={scriptElementNames}
               mode="script"
+              textareaClassName="resize-y"
               value={scriptText}
               onChange={(nextValue) => {
                 setShouldShowScriptValidation(false);

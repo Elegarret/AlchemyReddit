@@ -8,8 +8,10 @@ import {
   type ReactionScriptAutocompleteMode,
   type ReactionScriptAutocompleteSuggestion,
 } from '../modding/reaction-script-autocomplete';
+import { formatReactionScript } from '../modding/reaction-script';
 
 type ScriptAutocompleteTextareaProps = {
+  beautifyOnBlur?: boolean;
   className: string;
   counterNames: string[];
   elementNames: string[];
@@ -21,6 +23,7 @@ type ScriptAutocompleteTextareaProps = {
   onElementCommitted?: ((name: string) => void) | undefined;
   placeholder: string;
   rows?: number;
+  textareaClassName?: string;
   value: string;
 };
 
@@ -29,9 +32,39 @@ type CaretPopupPosition = {
   top: number;
 };
 
+type HighlightToken = {
+  text: string;
+  tone: 'base' | 'element' | 'keyword' | 'symbol';
+};
+
 const POPUP_WIDTH = 240;
 const POPUP_MARGIN = 12;
 const POPUP_OFFSET = 8;
+
+const SYSTEM_WORDS = new Set([
+  'add',
+  'and',
+  'count',
+  'discovered',
+  'if',
+  'message',
+  'not_discovered',
+  'not_on_table',
+  'on_table',
+  'popup',
+  'remove',
+  'remove_all',
+  'set',
+  'stop',
+  'undiscovered',
+  'win',
+  'lose',
+]);
+
+const TOKEN_PATTERN =
+  /(\r\n|\n|\s+|"(?:\\.|[^"\\])*"|==|!=|<=|>=|\+=|-=|[=(),:+\-<>])/g;
+
+const WORD_PATTERN = /([A-Za-z_][A-Za-z0-9_]*)/g;
 
 const shouldTriggerAutocompleteFromKey = (event: {
   altKey: boolean;
@@ -193,7 +226,70 @@ const getCaretPopupPosition = (
   };
 };
 
+const tokenizeSegment = (segment: string): HighlightToken[] => {
+  const tokens: HighlightToken[] = [];
+  let lastIndex = 0;
+
+  for (const match of segment.matchAll(WORD_PATTERN)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      tokens.push({
+        text: segment.slice(lastIndex, index),
+        tone: 'base',
+      });
+    }
+
+    const word = match[0];
+    tokens.push({
+      text: word,
+      tone: SYSTEM_WORDS.has(word) ? 'keyword' : 'element',
+    });
+    lastIndex = index + word.length;
+  }
+
+  if (lastIndex < segment.length) {
+    tokens.push({
+      text: segment.slice(lastIndex),
+      tone: 'base',
+    });
+  }
+
+  return tokens;
+};
+
+const highlightReactionEditorValue = (value: string): HighlightToken[] => {
+  const tokens: HighlightToken[] = [];
+  let lastIndex = 0;
+
+  for (const match of value.matchAll(TOKEN_PATTERN)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      tokens.push(...tokenizeSegment(value.slice(lastIndex, index)));
+    }
+
+    const token = match[0];
+    tokens.push({
+      text: token,
+      tone:
+        token.trim().length > 0 &&
+        token !== '\n' &&
+        token !== '\r\n' &&
+        !token.startsWith('"')
+          ? 'symbol'
+          : 'base',
+    });
+    lastIndex = index + token.length;
+  }
+
+  if (lastIndex < value.length) {
+    tokens.push(...tokenizeSegment(value.slice(lastIndex)));
+  }
+
+  return tokens;
+};
+
 export const ReactionScriptAutocompleteTextarea = ({
+  beautifyOnBlur = false,
   className,
   counterNames,
   elementNames,
@@ -205,9 +301,11 @@ export const ReactionScriptAutocompleteTextarea = ({
   onElementCommitted,
   placeholder,
   rows = 5,
+  textareaClassName,
   value,
 }: ScriptAutocompleteTextareaProps) => {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const highlightRef = useRef<HTMLPreElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const shouldEnableAutocompleteOnChangeRef = useRef(false);
@@ -219,6 +317,10 @@ export const ReactionScriptAutocompleteTextarea = ({
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [popupPosition, setPopupPosition] = useState<CaretPopupPosition | null>(
     null
+  );
+  const highlightedTokens = useMemo(
+    () => highlightReactionEditorValue(value),
+    [value]
   );
 
   const suggestions = useMemo(() => {
@@ -252,6 +354,30 @@ export const ReactionScriptAutocompleteTextarea = ({
 
     hasPendingEditRef.current = false;
     onEditingSettled?.();
+  };
+
+  const syncHighlightScroll = (target: HTMLTextAreaElement) => {
+    if (!highlightRef.current) {
+      return;
+    }
+
+    highlightRef.current.scrollTop = target.scrollTop;
+    highlightRef.current.scrollLeft = target.scrollLeft;
+  };
+
+  const maybeBeautifyValue = () => {
+    if (!beautifyOnBlur || mode !== 'script') {
+      return value;
+    }
+
+    const formatted = formatReactionScript(value);
+    if (!formatted || formatted === value) {
+      return value;
+    }
+
+    onChange(formatted);
+    hasPendingEditRef.current = true;
+    return formatted;
   };
 
   useEffect(() => {
@@ -368,104 +494,215 @@ export const ReactionScriptAutocompleteTextarea = ({
 
   return (
     <>
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value);
-          hasPendingEditRef.current = true;
-          setSelectionStart(event.target.selectionStart);
-          setSelectedSuggestionIndex(0);
-          setIsAutocompleteEnabled(
-            shouldEnableAutocompleteOnChangeRef.current
-          );
-          shouldEnableAutocompleteOnChangeRef.current = false;
-        }}
-        onFocus={(event) => {
-          setIsFocused(true);
-          setSelectionStart(event.currentTarget.selectionStart);
-          setIsAutocompleteEnabled(false);
-        }}
-        onBlur={() => {
-          setIsFocused(false);
-          setIsAutocompleteEnabled(false);
-          settleEditing();
-          onBlur?.();
-        }}
-        onMouseDown={() => {
-          setIsAutocompleteEnabled(false);
-        }}
-        onSelect={(event) => {
-          const nextSelectionStart = event.currentTarget.selectionStart;
-          if (ignoreNextSelectRef.current) {
-            ignoreNextSelectRef.current = false;
-          } else {
+      <div className={`grid ${className}`}>
+        <pre
+          ref={highlightRef}
+          aria-hidden={true}
+          className="editor-code-highlight custom-scrollbar col-start-1 row-start-1 m-0 overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+          style={{
+            font: 'inherit',
+            lineHeight: 'inherit',
+            tabSize: 'inherit',
+          }}
+        >
+          {highlightedTokens.length === 0 ? (
+            <span className="editor-code-token-base">{'\u200b'}</span>
+          ) : (
+            highlightedTokens.map((token, index) => (
+              <span
+                key={`${token.tone}-${index}-${token.text}`}
+                className={
+                  token.tone === 'keyword'
+                    ? 'editor-code-token-keyword'
+                    : token.tone === 'element'
+                      ? 'editor-code-token-element'
+                      : token.tone === 'symbol'
+                        ? 'editor-code-token-symbol'
+                        : 'editor-code-token-base'
+                }
+              >
+                {token.text}
+              </span>
+            ))
+          )}
+        </pre>
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(event) => {
+            onChange(event.target.value);
+            hasPendingEditRef.current = true;
+            setSelectionStart(event.target.selectionStart);
+            setSelectedSuggestionIndex(0);
+            setIsAutocompleteEnabled(
+              shouldEnableAutocompleteOnChangeRef.current
+            );
+            shouldEnableAutocompleteOnChangeRef.current = false;
+          }}
+          onFocus={(event) => {
+            setIsFocused(true);
+            setSelectionStart(event.currentTarget.selectionStart);
+            setIsAutocompleteEnabled(false);
+          }}
+          onBlur={() => {
+            maybeBeautifyValue();
+            setIsFocused(false);
+            setIsAutocompleteEnabled(false);
             settleEditing();
-          }
-          setSelectionStart(nextSelectionStart);
-          setSelectedSuggestionIndex(0);
-          setIsAutocompleteEnabled(
-            event.currentTarget.selectionStart ===
-              event.currentTarget.selectionEnd &&
-              shouldOpenAutocompleteAtCursor({
-                counterNames,
-                cursor: nextSelectionStart,
-                elementNames,
-                ...(iconElementNames ? { iconElementNames } : {}),
-                mode,
+            onBlur?.();
+          }}
+          onMouseDown={() => {
+            setIsAutocompleteEnabled(false);
+          }}
+          onScroll={(event) => {
+            syncHighlightScroll(event.currentTarget);
+          }}
+          onSelect={(event) => {
+            const nextSelectionStart = event.currentTarget.selectionStart;
+            if (ignoreNextSelectRef.current) {
+              ignoreNextSelectRef.current = false;
+            } else {
+              settleEditing();
+            }
+            setSelectionStart(nextSelectionStart);
+            setSelectedSuggestionIndex(0);
+            setIsAutocompleteEnabled(
+              event.currentTarget.selectionStart ===
+                event.currentTarget.selectionEnd &&
+                shouldOpenAutocompleteAtCursor({
+                  counterNames,
+                  cursor: nextSelectionStart,
+                  elementNames,
+                  ...(iconElementNames ? { iconElementNames } : {}),
+                  mode,
+                  value: event.currentTarget.value,
+                })
+            );
+          }}
+          onKeyDown={(event) => {
+            if (
+              mode === 'script' &&
+              event.shiftKey &&
+              (event.ctrlKey || event.metaKey) &&
+              event.key.toLowerCase() === 'f'
+            ) {
+              event.preventDefault();
+              const formatted = formatReactionScript(event.currentTarget.value);
+              if (formatted && formatted !== event.currentTarget.value) {
+                applyTextareaMutation(
+                  formatted,
+                  Math.min(formatted.length, event.currentTarget.selectionStart)
+                );
+              }
+              return;
+            }
+
+            if (
+              event.key === 'Tab' &&
+              event.currentTarget.selectionStart ===
+                event.currentTarget.selectionEnd &&
+              event.currentTarget.selectionStart ===
+                getLineStart(
+                  event.currentTarget.value,
+                  event.currentTarget.selectionStart
+                )
+            ) {
+              event.preventDefault();
+              const applied = insertIndentAtSelection({
+                selectionEnd: event.currentTarget.selectionEnd,
+                selectionStart: event.currentTarget.selectionStart,
                 value: event.currentTarget.value,
-              })
-          );
-        }}
-        onKeyDown={(event) => {
-          if (
-            event.key === 'Tab' &&
-            event.currentTarget.selectionStart ===
-              event.currentTarget.selectionEnd &&
-            event.currentTarget.selectionStart ===
-              getLineStart(
+              });
+              applyTextareaMutation(applied.value, applied.cursor);
+              return;
+            }
+
+            if (
+              mode === 'reaction-text' &&
+              event.key === 'Enter' &&
+              event.currentTarget.selectionStart ===
+                event.currentTarget.selectionEnd &&
+              suggestions.length === 0
+            ) {
+              const lineEnd = getLineEnd(
                 event.currentTarget.value,
                 event.currentTarget.selectionStart
-              )
-          ) {
-            event.preventDefault();
-            const applied = insertIndentAtSelection({
-              selectionEnd: event.currentTarget.selectionEnd,
-              selectionStart: event.currentTarget.selectionStart,
-              value: event.currentTarget.value,
-            });
-            applyTextareaMutation(applied.value, applied.cursor);
-            return;
-          }
+              );
+              const lineStart = getLineStart(
+                event.currentTarget.value,
+                event.currentTarget.selectionStart
+              );
+              const currentLine = event.currentTarget.value.slice(
+                lineStart,
+                lineEnd
+              );
+              const atLineEnd =
+                event.currentTarget.selectionStart === lineEnd &&
+                event.currentTarget.selectionEnd === lineEnd;
+              const isIndentedLine =
+                currentLine.startsWith('    ') || currentLine.startsWith('\t');
+              const isScriptBlockHeader =
+                !/^\s/.test(currentLine) && currentLine.trimEnd().endsWith(':');
 
-          if (
-            mode === 'reaction-text' &&
-            event.key === 'Enter' &&
-            event.currentTarget.selectionStart ===
-              event.currentTarget.selectionEnd &&
-            suggestions.length === 0
-          ) {
-            const lineEnd = getLineEnd(
-              event.currentTarget.value,
-              event.currentTarget.selectionStart
-            );
-            const lineStart = getLineStart(
-              event.currentTarget.value,
-              event.currentTarget.selectionStart
-            );
-            const currentLine = event.currentTarget.value.slice(
-              lineStart,
-              lineEnd
-            );
-            const atLineEnd =
-              event.currentTarget.selectionStart === lineEnd &&
-              event.currentTarget.selectionEnd === lineEnd;
-            const isIndentedLine =
-              currentLine.startsWith('    ') || currentLine.startsWith('\t');
-            const isScriptBlockHeader =
-              !/^\s/.test(currentLine) && currentLine.trimEnd().endsWith(':');
+              if (atLineEnd && (isIndentedLine || isScriptBlockHeader)) {
+                const committedElementName =
+                  getCommittedReactionScriptAutocompleteElement({
+                    cursor: event.currentTarget.selectionStart,
+                    mode,
+                    triggerKey: event.key,
+                    value: event.currentTarget.value,
+                  });
+                if (committedElementName) {
+                  onElementCommitted?.(committedElementName);
+                }
 
-            if (atLineEnd && (isIndentedLine || isScriptBlockHeader)) {
+                event.preventDefault();
+                const applied = insertIndentedNewlineAtSelection({
+                  selectionEnd: event.currentTarget.selectionEnd,
+                  selectionStart: event.currentTarget.selectionStart,
+                  value: event.currentTarget.value,
+                });
+                applyTextareaMutation(applied.value, applied.cursor);
+                return;
+              }
+            }
+
+            if (suggestions.length > 0) {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setSelectedSuggestionIndex((current) =>
+                  current + 1 >= suggestions.length ? 0 : current + 1
+                );
+                return;
+              }
+
+              if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setSelectedSuggestionIndex((current) =>
+                  current === 0 ? suggestions.length - 1 : current - 1
+                );
+                return;
+              }
+
+              if (event.key === 'Enter' || event.key === 'Tab') {
+                const suggestion = suggestions[selectedSuggestionIndex];
+                if (!suggestion) {
+                  return;
+                }
+
+                event.preventDefault();
+                acceptSuggestion(suggestion);
+                return;
+              }
+            }
+
+            if (event.key === 'Escape') {
+              setIsAutocompleteEnabled(false);
+              settleEditing();
+              return;
+            }
+
+            if (event.key === ',' || event.key === '+' || event.key === 'Enter') {
               const committedElementName =
                 getCommittedReactionScriptAutocompleteElement({
                   cursor: event.currentTarget.selectionStart,
@@ -476,76 +713,26 @@ export const ReactionScriptAutocompleteTextarea = ({
               if (committedElementName) {
                 onElementCommitted?.(committedElementName);
               }
-
-              event.preventDefault();
-              const applied = insertIndentedNewlineAtSelection({
-                selectionEnd: event.currentTarget.selectionEnd,
-                selectionStart: event.currentTarget.selectionStart,
-                value: event.currentTarget.value,
-              });
-              applyTextareaMutation(applied.value, applied.cursor);
-              return;
-            }
-          }
-
-          if (suggestions.length > 0) {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              setSelectedSuggestionIndex((current) =>
-                current + 1 >= suggestions.length ? 0 : current + 1
-              );
-              return;
             }
 
-            if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              setSelectedSuggestionIndex((current) =>
-                current === 0 ? suggestions.length - 1 : current - 1
-              );
-              return;
-            }
-
-            if (event.key === 'Enter' || event.key === 'Tab') {
-              const suggestion = suggestions[selectedSuggestionIndex];
-              if (!suggestion) {
-                return;
-              }
-
-              event.preventDefault();
-              acceptSuggestion(suggestion);
-              return;
-            }
-          }
-
-          if (event.key === 'Escape') {
-            setIsAutocompleteEnabled(false);
-            settleEditing();
-            return;
-          }
-
-          if (event.key === ',' || event.key === '+' || event.key === 'Enter') {
-            const committedElementName =
-              getCommittedReactionScriptAutocompleteElement({
-                cursor: event.currentTarget.selectionStart,
-                mode,
-                triggerKey: event.key,
-                value: event.currentTarget.value,
-              });
-            if (committedElementName) {
-              onElementCommitted?.(committedElementName);
-            }
-          }
-
-          shouldEnableAutocompleteOnChangeRef.current =
-            shouldTriggerAutocompleteFromKey(event);
-        }}
-        rows={rows}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        placeholder={placeholder}
-        className={className}
-      />
+            shouldEnableAutocompleteOnChangeRef.current =
+              shouldTriggerAutocompleteFromKey(event);
+          }}
+          rows={rows}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          placeholder={placeholder}
+          className={`custom-scrollbar col-start-1 row-start-1 w-full overflow-auto border-0 bg-transparent text-transparent caret-[color:var(--catalog-ink)] outline-none selection:bg-sky-500/25 placeholder:text-[color:var(--catalog-input-placeholder)] ${
+            textareaClassName ?? 'resize-none'
+          }`}
+          style={{
+            font: 'inherit',
+            lineHeight: 'inherit',
+            tabSize: 'inherit',
+          }}
+        />
+      </div>
 
       {suggestions.length > 0 &&
         isFocused &&

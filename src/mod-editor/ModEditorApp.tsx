@@ -1694,6 +1694,7 @@ export const ModEditorApp = () => {
                         .map((element) => element.name.trim())
                         .filter((name) => name.length > 0)}
                       mode="reaction-text"
+                      textareaClassName="resize-none"
                       onBlur={() => syncDraftFromText(reactionText)}
                       onChange={setReactionText}
                       onElementCommitted={addMissingReactionElement}
