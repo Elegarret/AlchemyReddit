@@ -60,6 +60,11 @@
         "type": "string",
         "label": "Authors Help Page URL",
         "defaultValue": ""
+      },
+      "scriptingHelpPage": {
+        "type": "string",
+        "label": "Scripting Help Page URL",
+        "defaultValue": ""
       }
     }
   },

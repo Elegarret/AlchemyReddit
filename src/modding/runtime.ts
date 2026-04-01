@@ -22,6 +22,28 @@ export const MAX_MOD_REACTIONS = 512;
 export const MAX_REACTION_OUTPUTS = 4;
 export const PLAYTEST_RULESET_STORAGE_KEY = 'alchemy-playtest-ruleset';
 export const DEFAULT_MOD_TITLE = 'Unknown Realm';
+const RESERVED_ELEMENT_NAME_CHARACTER_PATTERN = /[+,=:()"\r\n\t]/;
+const RESERVED_ELEMENT_NAME_CHARACTER_PATTERN_GLOBAL = /[+,=:()"\r\n\t]/g;
+const RESERVED_ELEMENT_NAME_PREFIX_KEYWORDS = [
+	'add',
+	'remove',
+	'remove_all',
+	'set',
+	'message',
+	'popup',
+	'win',
+	'lose',
+	'stop',
+	'if',
+	'on_table',
+	'not_on_table',
+	'discovered',
+	'not_discovered',
+	'count',
+	'and',
+	'emit',
+	'undiscovered',
+] as const;
 
 const clamp = (value: number, min: number, max: number) =>
 	Math.min(Math.max(value, min), max);
@@ -31,6 +53,50 @@ const normalizeName = (value: string) =>
 
 export const normalizeReactionKey = (leftId: string, rightId: string) =>
 	[leftId, rightId].sort((a, b) => a.localeCompare(b)).join('+');
+
+export const sanitizeElementName = (name: string) =>
+	name.replace(RESERVED_ELEMENT_NAME_CHARACTER_PATTERN_GLOBAL, '');
+
+export const hasReservedElementNameCharacters = (name: string) =>
+	RESERVED_ELEMENT_NAME_CHARACTER_PATTERN.test(name);
+
+const getReservedElementNamePrefix = (name: string) => {
+	const trimmed = name.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	const firstWord = trimmed.split(/\s+/, 1)[0]?.toLowerCase() ?? '';
+	return RESERVED_ELEMENT_NAME_PREFIX_KEYWORDS.includes(
+		firstWord as (typeof RESERVED_ELEMENT_NAME_PREFIX_KEYWORDS)[number]
+	)
+		? firstWord
+		: null;
+};
+
+export const normalizeAuthoredElementName = (name: string) => {
+	let normalized = sanitizeElementName(name).trim().replace(/\s+/g, ' ');
+	let reservedPrefix = getReservedElementNamePrefix(normalized);
+	while (reservedPrefix) {
+		normalized = normalized.slice(reservedPrefix.length).trimStart();
+		reservedPrefix = getReservedElementNamePrefix(normalized);
+	}
+
+	return normalized;
+};
+
+export const getElementNameValidationError = (name: string) => {
+	if (hasReservedElementNameCharacters(name)) {
+		return `Element ${name} contains reserved syntax characters in its name.`;
+	}
+
+	const reservedPrefix = getReservedElementNamePrefix(name);
+	if (reservedPrefix) {
+		return `Element ${name} starts with reserved scripting keyword "${reservedPrefix}".`;
+	}
+
+	return null;
+};
 
 export const createElementIdFromName = (name: string) => {
 	const normalized = name
@@ -210,6 +276,48 @@ export type ResolvedReactionResult = {
 	usedScript: boolean;
 };
 
+const filterSingleCopyNonConsumableOutputs = (params: {
+	currentTableElements: ReactionScriptTableElement[];
+	emittedElementIds: string[];
+	removedTableElementIds: string[];
+	ruleset: ActiveRuleset;
+}) => {
+	const {
+		currentTableElements,
+		emittedElementIds,
+		removedTableElementIds,
+		ruleset,
+	} = params;
+	const nonConsumableElementIds = new Set(ruleset.nonConsumableElementIds);
+	if (nonConsumableElementIds.size === 0 || emittedElementIds.length === 0) {
+		return emittedElementIds;
+	}
+
+	const removedTableElementIdSet = new Set(removedTableElementIds);
+	const survivingNonConsumableIds = new Set(
+		currentTableElements
+			.filter(
+				(tableElement) =>
+					nonConsumableElementIds.has(tableElement.elementId) &&
+					!removedTableElementIdSet.has(tableElement.id)
+			)
+			.map((tableElement) => tableElement.elementId)
+	);
+
+	return emittedElementIds.filter((elementId) => {
+		if (!nonConsumableElementIds.has(elementId)) {
+			return true;
+		}
+
+		if (survivingNonConsumableIds.has(elementId)) {
+			return false;
+		}
+
+		survivingNonConsumableIds.add(elementId);
+		return true;
+	});
+};
+
 export const resolveReactionForRuleset = (params: {
 	counterValues: Record<string, number>;
 	currentTableElements: ReactionScriptTableElement[];
@@ -252,6 +360,12 @@ export const resolveReactionForRuleset = (params: {
 			ok: true,
 			result: {
 				...execution.result,
+				emittedElementIds: filterSingleCopyNonConsumableOutputs({
+					currentTableElements,
+					emittedElementIds: execution.result.emittedElementIds,
+					removedTableElementIds: execution.result.removedTableElementIds,
+					ruleset,
+				}),
 				usedScript: true,
 			},
 		};
@@ -266,7 +380,12 @@ export const resolveReactionForRuleset = (params: {
 		ok: true,
 		result: {
 			counterValues,
-			emittedElementIds: outputs,
+			emittedElementIds: filterSingleCopyNonConsumableOutputs({
+				currentTableElements,
+				emittedElementIds: outputs,
+				removedTableElementIds: [],
+				ruleset,
+			}),
 			messages: [],
 			popupEvents: [],
 			removedTableElementIds: [],
@@ -439,6 +558,11 @@ export const validateModDraft = (draft: {
 		}
 		elementIds.add(element.id);
 		elementNamesById.set(element.id, element.name);
+
+		const elementNameValidationError = getElementNameValidationError(element.name);
+		if (elementNameValidationError) {
+			errors.push(elementNameValidationError);
+		}
 
 		const normalizedName = element.name.trim().toLowerCase();
 		if (elementNames.has(normalizedName)) {

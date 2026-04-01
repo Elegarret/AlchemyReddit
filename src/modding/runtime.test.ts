@@ -87,6 +87,52 @@ describe('validateModDraft', () => {
     expect(result.errors.join(' ')).not.toContain('element-1');
   });
 
+  it('rejects element names with reserved syntax characters', () => {
+    const result = validateModDraft({
+      title: 'Broken Syntax Realm',
+      summary: 'This realm tries to use parser delimiters inside names.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [],
+      showPalette: true,
+      elements: [makeElement('air', 'Air'), makeElement('fire', 'Fi=re')],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: ['air'],
+        },
+      ],
+    });
+
+    expect(result.errors).toContain(
+      'Element Fi=re contains reserved syntax characters in its name.'
+    );
+  });
+
+  it('rejects element names that start with reserved scripting keywords', () => {
+    const result = validateModDraft({
+      title: 'Keyword Realm',
+      summary: 'This realm tries to use script keywords inside element names.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [],
+      showPalette: true,
+      elements: [makeElement('air', 'Air'), makeElement('fire', 'add stone')],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: ['air'],
+        },
+      ],
+    });
+
+    expect(result.errors).toContain(
+      'Element add stone starts with reserved scripting keyword "add".'
+    );
+  });
+
   it('includes intro, messages, and effects in the built ruleset', () => {
     const result = buildRulesetFromDraft({
       title: 'Signal Realm',
@@ -223,6 +269,50 @@ describe('validateModDraft', () => {
     ).toEqual(['table-2']);
   });
 
+  it('suppresses plain non-consumable outputs that already survive on the table', () => {
+    const ruleset = buildRulesetFromDraft({
+      title: 'Single Copy Realm',
+      summary: 'Non-consumables should not duplicate on the table.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [],
+      showPalette: true,
+      elements: [
+        {
+          ...makeElement('air', 'Air'),
+          nonConsumable: true,
+        },
+        makeElement('fire', 'Fire'),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: ['air'],
+        },
+      ],
+    });
+
+    const resolved = resolveReactionForRuleset({
+      counterValues: {},
+      currentTableElements: [
+        { elementId: 'air', id: 'table-1' },
+        { elementId: 'fire', id: 'table-2' },
+      ],
+      discoveredElementIds: ['air', 'fire'],
+      leftId: 'air',
+      rightId: 'fire',
+      ruleset,
+    });
+
+    expect(resolved?.ok).toBe(true);
+    if (!resolved || !resolved.ok) {
+      return;
+    }
+
+    expect(resolved.result.emittedElementIds).toEqual([]);
+  });
+
   it('still allows scripts to explicitly remove authored non-consumable elements', () => {
     const execution = resolveReactionForRuleset({
       counterValues: {},
@@ -267,6 +357,96 @@ describe('validateModDraft', () => {
     expect(execution.result.removedTableElementIds).toEqual(['table-1']);
   });
 
+  it('dedupes repeated scripted non-consumable outputs when none are present yet', () => {
+    const execution = resolveReactionForRuleset({
+      counterValues: {},
+      currentTableElements: [
+        { elementId: 'air', id: 'table-1' },
+        { elementId: 'fire', id: 'table-2' },
+      ],
+      discoveredElementIds: ['air', 'fire'],
+      leftId: 'air',
+      rightId: 'fire',
+      ruleset: buildRulesetFromDraft({
+        title: 'Repeated Reward Realm',
+        summary: 'Duplicate scripted non-consumables should collapse to one.',
+        intro: '',
+        startingElementIds: ['air', 'fire'],
+        counters: [],
+        showPalette: true,
+        elements: [
+          makeElement('air', 'Air'),
+          makeElement('fire', 'Fire'),
+          {
+            ...makeElement('light', 'Light'),
+            nonConsumable: true,
+          },
+        ],
+        reactions: [
+          {
+            leftId: 'air',
+            rightId: 'fire',
+            outputIds: [],
+            script: 'add Light, Light',
+          },
+        ],
+      }),
+    });
+
+    expect(execution?.ok).toBe(true);
+    if (!execution || !execution.ok) {
+      return;
+    }
+
+    expect(execution.result.emittedElementIds).toEqual(['light']);
+  });
+
+  it('allows one scripted replacement copy after explicitly removing an existing non-consumable', () => {
+    const execution = resolveReactionForRuleset({
+      counterValues: {},
+      currentTableElements: [
+        { elementId: 'air', id: 'table-1' },
+        { elementId: 'fire', id: 'table-2' },
+        { elementId: 'light', id: 'table-3' },
+      ],
+      discoveredElementIds: ['air', 'fire', 'light'],
+      leftId: 'air',
+      rightId: 'fire',
+      ruleset: buildRulesetFromDraft({
+        title: 'Replacement Realm',
+        summary: 'Scripts can replace a non-consumable after removing it.',
+        intro: '',
+        startingElementIds: ['air', 'fire'],
+        counters: [],
+        showPalette: true,
+        elements: [
+          makeElement('air', 'Air'),
+          makeElement('fire', 'Fire'),
+          {
+            ...makeElement('light', 'Light'),
+            nonConsumable: true,
+          },
+        ],
+        reactions: [
+          {
+            leftId: 'air',
+            rightId: 'fire',
+            outputIds: [],
+            script: 'remove Light\nadd Light, Light',
+          },
+        ],
+      }),
+    });
+
+    expect(execution?.ok).toBe(true);
+    if (!execution || !execution.ok) {
+      return;
+    }
+
+    expect(execution.result.removedTableElementIds).toEqual(['table-3']);
+    expect(execution.result.emittedElementIds).toEqual(['light']);
+  });
+
   it('returns scripted popup events through the runtime helper', () => {
     const ruleset = buildRulesetFromDraft({
       title: 'Quest Realm',
@@ -285,7 +465,7 @@ describe('validateModDraft', () => {
           leftId: 'air',
           rightId: 'fire',
           outputIds: ['steam'],
-          script: 'popup("A hidden path opens.", Steam)\nwin("You restored the realm.", Steam)',
+          script: 'popup "A hidden path opens.", Steam\nwin "You restored the realm.", Steam',
         },
       ],
     });
@@ -395,7 +575,7 @@ describe('validateModDraft', () => {
       'Reaction Health + Fire cannot output counter Health as a normal element.'
     );
     expect(result.scriptErrors).toContain(
-      '"Health + Fire" script line 1: Counter "Health" cannot act as a normal element here. Use count(...) or set(...) instead.'
+      '"Health + Fire" script line 1: Counter "Health" cannot act as a normal element here. Use count(...) or set counterName += 1 instead.'
     );
   });
 
@@ -424,7 +604,7 @@ describe('validateModDraft', () => {
           leftId: 'air',
           rightId: 'fire',
           outputIds: ['air'],
-          script: 'popup("Watch your health.", Health)',
+          script: 'popup "Watch your health.", Health',
         },
       ],
     });

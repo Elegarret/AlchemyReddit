@@ -4,16 +4,59 @@ import { requestExpandedMode } from '@devvit/web/client';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ELEMENT_COLORS } from './data/elements';
+import {
+	getInlineViewCacheKey,
+	isUnknownRecord,
+	readInlineViewCache,
+	writeInlineViewCache,
+} from './inline-view-cache';
 import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
 
 const STORAGE_KEY = 'alchemy-discovered';
+type SplashProgress = {
+	discovered: number;
+	total: number;
+};
+
+const isSplashProgress = (value: unknown): value is SplashProgress => {
+	if (!isUnknownRecord(value)) {
+		return false;
+	}
+
+	return (
+		typeof Reflect.get(value, 'discovered') === 'number' &&
+		typeof Reflect.get(value, 'total') === 'number'
+	);
+};
+
+const getSplashProgressCacheKey = () => getInlineViewCacheKey('splash-progress');
+
+const readCachedSplashProgress = () =>
+	readInlineViewCache(getSplashProgressCacheKey(), (value) =>
+		isSplashProgress(value) ? value : null
+	);
 
 export const Splash = () => {
-	const [progress, setProgress] = useState<{ discovered: number; total: number } | null>(null);
+	const [progress, setProgress] = useState<SplashProgress | null>(() =>
+		readCachedSplashProgress()
+	);
 
 	useEffect(() => {
 		const totalItems = Object.keys(ELEMENT_COLORS).length;
+		let isDisposed = false;
+		let isRemoteLoadInFlight = false;
+
+		const updateProgress = (next: SplashProgress) => {
+			if (isDisposed) {
+				return;
+			}
+
+			writeInlineViewCache(getSplashProgressCacheKey(), next);
+			setProgress((current) =>
+				current?.discovered === next.discovered && current.total === next.total ? current : next
+			);
+		};
 
 		// 1. Immediately show local storage data
 		try {
@@ -21,7 +64,7 @@ export const Splash = () => {
 			if (saved) {
 				const discoveredItems = JSON.parse(saved) as string[];
 				if (discoveredItems.length > 0) {
-					setProgress({ discovered: discoveredItems.length, total: totalItems });
+					updateProgress({ discovered: discoveredItems.length, total: totalItems });
 				}
 			}
 		} catch (e) {
@@ -30,23 +73,45 @@ export const Splash = () => {
 
 		// 2. Then update with Reddit progress if greater
 		const loadRemoteProgress = async () => {
+			if (isRemoteLoadInFlight) {
+				return;
+			}
+
+			isRemoteLoadInFlight = true;
+
 			try {
 				const response = await trpc.init.get.query();
-				if (response.redditDiscovered && response.redditDiscovered.length > 0) {
-					setProgress((prev) => {
-						const localCount = prev?.discovered ?? 0;
-						if (response.redditDiscovered!.length > localCount) {
-							return { discovered: response.redditDiscovered!.length, total: totalItems };
-						}
-						return prev;
-					});
+				if (isDisposed || !response.redditDiscovered || response.redditDiscovered.length === 0) {
+					return;
 				}
+
+				setProgress((prev) => {
+					const localCount = prev?.discovered ?? 0;
+					if (response.redditDiscovered.length > localCount) {
+						const next = { discovered: response.redditDiscovered.length, total: totalItems };
+						writeInlineViewCache(getSplashProgressCacheKey(), next);
+						return next;
+					}
+					return prev;
+				});
 			} catch (e) {
 				console.error('Failed to load remote progress', e);
+			} finally {
+				isRemoteLoadInFlight = false;
 			}
 		};
 
-		loadRemoteProgress();
+		const handleFocus = () => {
+			void loadRemoteProgress();
+		};
+
+		void loadRemoteProgress();
+		window.addEventListener('focus', handleFocus);
+
+		return () => {
+			isDisposed = true;
+			window.removeEventListener('focus', handleFocus);
+		};
 	}, []);
 
 	return (
@@ -99,10 +164,10 @@ export const Splash = () => {
 					onClick={(e) => {
 						localStorage.removeItem('override-mod-id');
 						localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
-						requestExpandedMode(e.nativeEvent, 'mod-editor');
+						requestExpandedMode(e.nativeEvent, 'mod-catalog');
 					}}
 				>
-					Create a Mod
+					Alchemy Hub
 				</button>
 			</div>
 

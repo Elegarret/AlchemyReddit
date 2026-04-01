@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyReactionScriptAutocompleteSuggestion,
+  getCommittedReactionScriptAutocompleteElement,
   getReactionScriptAutocomplete,
   getReactionTextAutocomplete,
 } from './reaction-script-autocomplete';
@@ -88,7 +89,7 @@ describe('getReactionScriptAutocomplete', () => {
     ]);
   });
 
-  it('suggests counters inside count(...) and set(...)', () => {
+  it('suggests counters inside count(...) and set', () => {
     const countValue = 'if (count(he';
     const countResult = getReactionScriptAutocomplete({
       counterNames,
@@ -96,7 +97,7 @@ describe('getReactionScriptAutocomplete', () => {
       elementNames,
       value: countValue,
     });
-    const setValue = 'set(mo';
+    const setValue = 'set mo';
     const setResult = getReactionScriptAutocomplete({
       counterNames,
       cursor: setValue.length,
@@ -113,14 +114,14 @@ describe('getReactionScriptAutocomplete', () => {
   });
 
   it('suggests set operators after an exact counter name and stops on commas', () => {
-    const operatorValue = 'set(money';
+    const operatorValue = 'set money';
     const operatorResult = getReactionScriptAutocomplete({
       counterNames,
       cursor: operatorValue.length,
       elementNames,
       value: operatorValue,
     });
-    const commaValue = 'set(money, ';
+    const commaValue = 'set money, ';
     const commaResult = getReactionScriptAutocomplete({
       counterNames,
       cursor: commaValue.length,
@@ -148,7 +149,7 @@ describe('getReactionScriptAutocomplete', () => {
       iconElementNames: [...elementNames, 'Health'],
       value: addValue,
     });
-    const popupValue = 'popup("Found a clue.", He';
+    const popupValue = 'popup "Found a clue.", He';
     const popupResult = getReactionScriptAutocomplete({
       counterNames,
       cursor: popupValue.length,
@@ -164,7 +165,7 @@ describe('getReactionScriptAutocomplete', () => {
   });
 
   it('suggests element names as optional popup icons', () => {
-    const value = 'popup("Found a clue.", Ke';
+    const value = 'popup "Found a clue.", Ke';
     const result = getReactionScriptAutocomplete({
       counterNames,
       cursor: value.length,
@@ -197,7 +198,7 @@ describe('getReactionScriptAutocomplete', () => {
     expect(keywordResult.suggestions).toEqual([]);
   });
 
-  it('inserts canonical templates with the cursor inside brackets or quotes', () => {
+  it('inserts canonical templates with the cursor inside quotes', () => {
     const messageResult = getReactionScriptAutocomplete({
       counterNames,
       cursor: 3,
@@ -227,8 +228,8 @@ describe('getReactionScriptAutocomplete', () => {
         value: 'mes',
       })
     ).toEqual({
-      cursor: 'message("'.length,
-      value: 'message("")',
+      cursor: 'message "'.length,
+      value: 'message ""',
     });
 
     expect(
@@ -239,6 +240,34 @@ describe('getReactionScriptAutocomplete', () => {
     ).toEqual({
       cursor: 'if ('.length,
       value: 'if () ',
+    });
+  });
+
+  it('replaces the full token when accepting a script name suggestion mid-word', () => {
+    const value = 'add sand';
+    const result = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: 'add sa'.length,
+      elementNames: [...elementNames, 'sand'],
+      value,
+    });
+    const suggestion = result.suggestions.find(
+      (entry) => entry.label === 'sand'
+    );
+
+    expect(suggestion).toBeDefined();
+    if (!suggestion) {
+      return;
+    }
+
+    expect(
+      applyReactionScriptAutocompleteSuggestion({
+        suggestion,
+        value,
+      })
+    ).toEqual({
+      cursor: 'add sand'.length,
+      value: 'add sand',
     });
   });
 });
@@ -266,6 +295,34 @@ describe('getReactionTextAutocomplete', () => {
     expect(rightResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
       'Bandage',
     ]);
+  });
+
+  it('replaces the full token when accepting a reaction-text name suggestion mid-word', () => {
+    const value = 'sand';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: 'sa'.length,
+      elementNames: [...elementNames, 'sand'],
+      value,
+    });
+    const suggestion = result.suggestions.find(
+      (entry) => entry.label === 'sand'
+    );
+
+    expect(suggestion).toBeDefined();
+    if (!suggestion) {
+      return;
+    }
+
+    expect(
+      applyReactionScriptAutocompleteSuggestion({
+        suggestion,
+        value,
+      })
+    ).toEqual({
+      cursor: 'sand'.length,
+      value: 'sand',
+    });
   });
 
   it('suggests inline outputs and the script block option after =', () => {
@@ -351,5 +408,135 @@ describe('getReactionTextAutocomplete', () => {
     });
 
     expect(result.suggestions).toEqual([]);
+  });
+});
+
+describe('getCommittedReactionScriptAutocompleteElement', () => {
+  it('detects completed element names in the full reaction editor', () => {
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'Mystery'.length,
+        mode: 'reaction-text',
+        triggerKey: '+',
+        value: 'Mystery',
+      })
+    ).toBe('Mystery');
+
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'Dust + Strange Output'.length,
+        mode: 'reaction-text',
+        triggerKey: 'Enter',
+        value: 'Dust + Strange Output',
+      })
+    ).toBe('Strange Output');
+
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'Dust + Key = Hidden Treasure'.length,
+        mode: 'reaction-text',
+        triggerKey: ',',
+        value: 'Dust + Key = Hidden Treasure',
+      })
+    ).toBe('Hidden Treasure');
+  });
+
+  it('detects completed element names in script actions and conditions only', () => {
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'add Secret Door'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'add Secret Door',
+      })
+    ).toBe('Secret Door');
+
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'if (discovered(Ancient Key'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'if (discovered(Ancient Key',
+      })
+    ).toBe('Ancient Key');
+
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'set health'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'set health',
+      })
+    ).toBeNull();
+  });
+
+  it('strips structural punctuation from complete popup-style icon arguments', () => {
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'popup "I need a key.", chest'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'popup "I need a key.", chest',
+      })
+    ).toBe('chest');
+
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'win "The vault opens.", chest'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'win "The vault opens.", chest',
+      })
+    ).toBe('chest');
+
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'lose "The vault stays shut.", chest'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'lose "The vault stays shut.", chest',
+      })
+    ).toBe('chest');
+  });
+
+  it('supports complete indented script lines in reaction-text mode', () => {
+    const value = 'Dust + Key =\n    popup "I need a key.", chest';
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: value.length,
+        mode: 'reaction-text',
+        triggerKey: 'Enter',
+        value,
+      })
+    ).toBe('chest');
+  });
+
+  it('does not auto-add counters, values, or popup calls without an icon argument', () => {
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'set health += 1'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'set health += 1',
+      })
+    ).toBeNull();
+
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'if (count(health) < 2) stop'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'if (count(health) < 2) stop',
+      })
+    ).toBeNull();
+
+    expect(
+      getCommittedReactionScriptAutocompleteElement({
+        cursor: 'popup "I need a key."'.length,
+        mode: 'script',
+        triggerKey: 'Enter',
+        value: 'popup "I need a key."',
+      })
+    ).toBeNull();
   });
 });

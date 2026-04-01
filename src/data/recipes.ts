@@ -51,6 +51,8 @@ export const RECIPES: Record<string, string[]> = {
 	'air+egg': ['bird'],
 	'mud+egg': ['lizard'],
 	'sand+egg': ['turtle'],
+	'lizard+shield': ['turtle'],
+	'lizard+shells': ['turtle'],
 	'earth+egg': ['dinosaur'],
 	'snake+worm': ['lizard'],
 	'water+snake': ['fish'],

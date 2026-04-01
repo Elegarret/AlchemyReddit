@@ -2,22 +2,23 @@ import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyReactionScriptAutocompleteSuggestion,
+  getCommittedReactionScriptAutocompleteElement,
   getReactionScriptAutocomplete,
   getReactionTextAutocomplete,
+  type ReactionScriptAutocompleteMode,
   type ReactionScriptAutocompleteSuggestion,
 } from '../modding/reaction-script-autocomplete';
-
-type ScriptAutocompleteMode = 'script' | 'reaction-text';
 
 type ScriptAutocompleteTextareaProps = {
   className: string;
   counterNames: string[];
   elementNames: string[];
   iconElementNames?: string[];
-  mode: ScriptAutocompleteMode;
+  mode: ReactionScriptAutocompleteMode;
   onBlur?: (() => void) | undefined;
   onChange: (value: string) => void;
   onEditingSettled?: (() => void) | undefined;
+  onElementCommitted?: ((name: string) => void) | undefined;
   placeholder: string;
   rows?: number;
   value: string;
@@ -63,7 +64,7 @@ const shouldOpenAutocompleteAtCursor = (params: {
   cursor: number;
   elementNames: string[];
   iconElementNames?: string[];
-  mode: ScriptAutocompleteMode;
+  mode: ReactionScriptAutocompleteMode;
   value: string;
 }) => getSuggestionsForMode(params).length > 0;
 
@@ -104,7 +105,7 @@ const getSuggestionsForMode = (params: {
   cursor: number;
   elementNames: string[];
   iconElementNames?: string[];
-  mode: ScriptAutocompleteMode;
+  mode: ReactionScriptAutocompleteMode;
   value: string;
 }) => {
   const { counterNames, cursor, elementNames, iconElementNames, mode, value } =
@@ -201,6 +202,7 @@ export const ReactionScriptAutocompleteTextarea = ({
   onBlur,
   onChange,
   onEditingSettled,
+  onElementCommitted,
   placeholder,
   rows = 5,
   value,
@@ -464,6 +466,17 @@ export const ReactionScriptAutocompleteTextarea = ({
               !/^\s/.test(currentLine) && currentLine.trimEnd().endsWith(':');
 
             if (atLineEnd && (isIndentedLine || isScriptBlockHeader)) {
+              const committedElementName =
+                getCommittedReactionScriptAutocompleteElement({
+                  cursor: event.currentTarget.selectionStart,
+                  mode,
+                  triggerKey: event.key,
+                  value: event.currentTarget.value,
+                });
+              if (committedElementName) {
+                onElementCommitted?.(committedElementName);
+              }
+
               event.preventDefault();
               const applied = insertIndentedNewlineAtSelection({
                 selectionEnd: event.currentTarget.selectionEnd,
@@ -510,6 +523,19 @@ export const ReactionScriptAutocompleteTextarea = ({
             return;
           }
 
+          if (event.key === ',' || event.key === '+' || event.key === 'Enter') {
+            const committedElementName =
+              getCommittedReactionScriptAutocompleteElement({
+                cursor: event.currentTarget.selectionStart,
+                mode,
+                triggerKey: event.key,
+                value: event.currentTarget.value,
+              });
+            if (committedElementName) {
+              onElementCommitted?.(committedElementName);
+            }
+          }
+
           shouldEnableAutocompleteOnChangeRef.current =
             shouldTriggerAutocompleteFromKey(event);
         }}
@@ -535,7 +561,7 @@ export const ReactionScriptAutocompleteTextarea = ({
             }}
           >
             <div className="custom-scrollbar max-h-48 overflow-y-auto">
-              {suggestions.slice(0, 8).map((suggestion, suggestionIndex) => (
+              {suggestions.map((suggestion, suggestionIndex) => (
                 <button
                   key={`${suggestion.label}-${suggestion.replaceStart}-${suggestionIndex}`}
                   ref={(node) => {

@@ -5,6 +5,7 @@ import {
 import {
   DEFAULT_MOD_TITLE,
   createElementIdFromName,
+  normalizeAuthoredElementName,
 } from '../modding/runtime';
 import { formatReactionScript } from '../modding/reaction-script';
 import {
@@ -112,11 +113,11 @@ export const ensureElementInDraft = (
   draft: SaveDraftInput,
   rawName: string
 ) => {
-  const trimmed = rawName.trim();
+  const trimmed = normalizeAuthoredElementName(rawName);
   if (!trimmed) {
     return {
       draft,
-      elementId: draft.elements[0]?.id ?? '',
+      elementId: null,
     };
   }
 
@@ -175,9 +176,15 @@ export const applyReactionTextToDraft = (
     }
 
     const leftResolved = ensureElementInDraft(nextDraft, leftName);
+    if (!leftResolved.elementId) {
+      continue;
+    }
     nextDraft = leftResolved.draft;
 
     const rightResolved = ensureElementInDraft(nextDraft, rightName);
+    if (!rightResolved.elementId) {
+      continue;
+    }
     nextDraft = rightResolved.draft;
 
     if (inlineResult) {
@@ -188,6 +195,9 @@ export const applyReactionTextToDraft = (
         .filter(Boolean)
         .forEach((outputName) => {
           const resolved = ensureElementInDraft(nextDraft, outputName);
+          if (!resolved.elementId) {
+            return;
+          }
           nextDraft = resolved.draft;
           outputIds.push(resolved.elementId);
         });

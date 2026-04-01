@@ -7,6 +7,7 @@ export type ReactionScriptAutocompleteSuggestion = {
   label: string;
   previewText?: string;
   replaceEnd: number;
+  replaceToTokenEnd?: boolean;
   replaceStart: number;
   text: string;
 };
@@ -14,6 +15,8 @@ export type ReactionScriptAutocompleteSuggestion = {
 export type ReactionScriptAutocompleteResult = {
   suggestions: ReactionScriptAutocompleteSuggestion[];
 };
+
+export type ReactionScriptAutocompleteMode = 'script' | 'reaction-text';
 
 type SuggestionTemplate = {
   cursorOffset: number;
@@ -38,6 +41,10 @@ type LineIfContext =
 type OpenCallContext = {
   argumentText: string;
   replaceStart: number;
+};
+
+type ClosedCallContext = {
+  argumentText: string;
 };
 
 const TOP_LEVEL_ACTION_TEMPLATES: SuggestionTemplate[] = [
@@ -65,34 +72,34 @@ const TOP_LEVEL_ACTION_TEMPLATES: SuggestionTemplate[] = [
     text: 'remove_all ',
   },
   {
-    cursorOffset: 'set('.length,
-    description: 'set(counter +=/-=/= value)',
+    cursorOffset: 'set '.length,
+    description: 'set counter +=/-=/= value',
     label: 'set',
-    text: 'set()',
+    text: 'set ',
   },
   {
-    cursorOffset: 'message("'.length,
+    cursorOffset: 'message "'.length,
     description: 'show text message',
     label: 'message',
-    text: 'message("")',
+    text: 'message ""',
   },
   {
-    cursorOffset: 'popup("'.length,
+    cursorOffset: 'popup "'.length,
     description: 'show blocking popup',
     label: 'popup',
-    text: 'popup("")',
+    text: 'popup ""',
   },
   {
-    cursorOffset: 'win("'.length,
+    cursorOffset: 'win "'.length,
     description: 'show blocking win screen',
     label: 'win',
-    text: 'win("")',
+    text: 'win ""',
   },
   {
-    cursorOffset: 'lose("'.length,
+    cursorOffset: 'lose "'.length,
     description: 'show blocking lose screen',
     label: 'lose',
-    text: 'lose("")',
+    text: 'lose ""',
   },
   {
     cursorOffset: 'stop'.length,
@@ -188,6 +195,8 @@ const sortNames = (values: string[]) =>
     left.localeCompare(right, undefined, { sensitivity: 'base' })
   );
 
+const AUTOCOMPLETE_TOKEN_END_CHARACTER_PATTERN = /[,+:=()"\n\r]/;
+
 const filterNames = (values: string[], partial: string) => {
   const normalizedPartial = normalizeName(partial);
   const sorted = sortNames(values.filter(Boolean));
@@ -251,9 +260,78 @@ const buildNameSuggestions = (
     cursorOffset: value.length,
     label: value,
     replaceEnd,
+    replaceToTokenEnd: true,
     replaceStart,
     text: value,
   }));
+};
+
+const getCommittedElementName = (value: string) => {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const getClosedCallContext = (value: string, names: string[]) => {
+  for (const name of names) {
+    const matcher = value.match(
+      new RegExp(`^\\s*${escapeRegExp(name)}\\s*\\((.*)\\)\\s*$`, 's')
+    );
+    if (matcher) {
+      return {
+        argumentText: matcher[1] ?? '',
+      } satisfies ClosedCallContext;
+    }
+  }
+
+  return null;
+};
+
+const getCommittedElementPredicateName = (value: string) => {
+  const openCall = getOpenCallContext(value, [
+    'on_table',
+    'not_on_table',
+    'discovered',
+    'not_discovered',
+  ]);
+  if (openCall) {
+    return getCommittedElementName(openCall.argumentText);
+  }
+
+  const closedCall = getClosedCallContext(value, [
+    'on_table',
+    'not_on_table',
+    'discovered',
+    'not_discovered',
+  ]);
+  return closedCall ? getCommittedElementName(closedCall.argumentText) : null;
+};
+
+const getCommittedPopupIconElementName = (value: string) => {
+  const closedCallMatch = value.match(
+    /^\s*(?:popup|win|lose)\s*\(\s*"(?:\\.|[^"\\])*"\s*,\s*(.+?)\s*\)\s*$/s
+  );
+  if (closedCallMatch) {
+    return getCommittedElementName(closedCallMatch[1] ?? '');
+  }
+
+  const bareMatch = value.match(
+    /^\s*(?:popup|win|lose)\s+"(?:\\.|[^"\\])*"\s*,\s*(.+?)\s*$/s
+  );
+  if (bareMatch) {
+    return getCommittedElementName(bareMatch[1] ?? '');
+  }
+
+  const openCallMatch = value.match(
+    /^\s*(?:popup|win|lose)\s*\(\s*"(?:\\.|[^"\\])*"\s*,\s*(.+)$/s
+  );
+  if (openCallMatch) {
+    return getCommittedElementName(openCallMatch[1] ?? '');
+  }
+
+  const openBareMatch = value.match(
+    /^\s*(?:popup|win|lose)\s+"(?:\\.|[^"\\])*"\s*,\s*(.+)$/s
+  );
+  return openBareMatch ? getCommittedElementName(openBareMatch[1] ?? '') : null;
 };
 
 const matchesWordTokenAt = (value: string, index: number, token: string) => {
@@ -453,9 +531,14 @@ const getActionSuggestions = (params: {
     iconElementNames,
     prefix,
   } = params;
-  const setCall = getOpenCallContext(prefix, ['set']);
-  if (setCall) {
-    const rawArgument = setCall.argumentText;
+  const setKeywordMatch = prefix.match(/^(\s*set(?:\s+|\(\s*))(.*)$/s);
+  if (setKeywordMatch) {
+    const keywordPrefix = setKeywordMatch[1] ?? '';
+    const rawArgument = setKeywordMatch[2] ?? '';
+    if (keywordPrefix.includes('(') && rawArgument.includes(')')) {
+      return [];
+    }
+
     if (rawArgument.includes(',')) {
       return [];
     }
@@ -472,8 +555,8 @@ const getActionSuggestions = (params: {
         const leadingWhitespace = exactCounterMatch[1]?.length ?? 0;
         const counterNameLength = exactCounterName.length;
         const replaceStart =
-          absoluteStart + setCall.replaceStart + leadingWhitespace + counterNameLength;
-        const replaceEnd = absoluteStart + setCall.replaceStart + rawArgument.length;
+          absoluteStart + keywordPrefix.length + leadingWhitespace + counterNameLength;
+        const replaceEnd = absoluteStart + keywordPrefix.length + rawArgument.length;
 
         return SET_OPERATOR_TEMPLATES.map((template) => ({
           cursorOffset: template.cursorOffset,
@@ -500,13 +583,13 @@ const getActionSuggestions = (params: {
     return buildNameSuggestions(
       counterNames,
       trimmedArgument,
-      absoluteStart + setCall.replaceStart + (rawArgument.length - trimmedArgument.length),
+      absoluteStart + keywordPrefix.length + (rawArgument.length - trimmedArgument.length),
       absoluteStart + prefix.length
     );
   }
 
   const popupStyleMatch = prefix.match(
-    /^(\s*(?:popup|win|lose)\s*\(\s*"(?:\\.|[^"\\])*"\s*,\s*)(.*)$/s
+    /^(\s*(?:popup|win|lose)(?:\s*\(\s*|\s+)"(?:\\.|[^"\\])*"\s*,\s*)(.*)$/s
   );
   if (popupStyleMatch) {
     const keywordPrefix = popupStyleMatch[1] ?? '';
@@ -567,6 +650,102 @@ const getActionSuggestions = (params: {
   );
 };
 
+const getCommittedScriptElementName = (params: {
+  cursor: number;
+  triggerKey: string;
+  value: string;
+}) => {
+  const { cursor, triggerKey, value } = params;
+  if (triggerKey !== ',' && triggerKey !== 'Enter') {
+    return null;
+  }
+
+  const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
+  const linePrefix = value.slice(lineStart, cursor);
+  const ifContext = getLineIfContext(linePrefix);
+  if (ifContext?.kind === 'conditions') {
+    return getCommittedElementPredicateName(ifContext.prefix);
+  }
+
+  const actionPrefix = ifContext?.kind === 'action' ? ifContext.prefix : linePrefix;
+  const addKeywordMatch = actionPrefix.match(/^(\s*add\s+)(.*)$/s);
+  if (addKeywordMatch) {
+    const rawList = addKeywordMatch[2] ?? '';
+    const segmentStart = rawList.lastIndexOf(',') + 1;
+    return getCommittedElementName(rawList.slice(segmentStart));
+  }
+
+  const elementKeywordMatch = actionPrefix.match(
+    /^\s*(?:remove|remove_all)\s+(.+)$/s
+  );
+  if (elementKeywordMatch) {
+    return getCommittedElementName(elementKeywordMatch[1] ?? '');
+  }
+
+  const popupIconElementName = getCommittedPopupIconElementName(actionPrefix);
+  if (popupIconElementName) {
+    return popupIconElementName;
+  }
+
+  return null;
+};
+
+const getCommittedReactionTextElementName = (params: {
+  cursor: number;
+  triggerKey: string;
+  value: string;
+}) => {
+  const { cursor, triggerKey, value } = params;
+  const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
+  const linePrefix = value.slice(lineStart, cursor);
+
+  if (linePrefix.startsWith('    ') || linePrefix.startsWith('\t')) {
+    const indentLength = linePrefix.startsWith('    ') ? 4 : 1;
+    const lineCursor = cursor - lineStart - indentLength;
+    if (lineCursor < 0) {
+      return null;
+    }
+
+    return getCommittedScriptElementName({
+      cursor: lineCursor,
+      triggerKey,
+      value: value.slice(lineStart + indentLength, cursor),
+    });
+  }
+
+  if (triggerKey === '+') {
+    return getCommittedElementName(linePrefix);
+  }
+
+  if (triggerKey !== ',' && triggerKey !== 'Enter') {
+    return null;
+  }
+
+  const plusIndex = linePrefix.indexOf('+');
+  const equalsIndex = linePrefix.indexOf('=');
+  const colonIndex = linePrefix.indexOf(':');
+  const hasScriptBlockColon =
+    colonIndex !== -1 && (equalsIndex === -1 || colonIndex < equalsIndex);
+
+  if (
+    plusIndex === -1 ||
+    (equalsIndex !== -1 && plusIndex > equalsIndex) ||
+    (hasScriptBlockColon && plusIndex > colonIndex)
+  ) {
+    return null;
+  }
+
+  if (equalsIndex === -1) {
+    return triggerKey === 'Enter'
+      ? getCommittedElementName(linePrefix.slice(plusIndex + 1))
+      : null;
+  }
+
+  const outputsPrefix = linePrefix.slice(equalsIndex + 1);
+  const outputSegmentStart = outputsPrefix.lastIndexOf(',') + 1;
+  return getCommittedElementName(outputsPrefix.slice(outputSegmentStart));
+};
+
 export const getReactionScriptAutocomplete = (params: {
   counterNames: string[];
   cursor: number;
@@ -620,6 +799,16 @@ export const getReactionScriptAutocomplete = (params: {
     }),
   };
 };
+
+export const getCommittedReactionScriptAutocompleteElement = (params: {
+  cursor: number;
+  mode: ReactionScriptAutocompleteMode;
+  triggerKey: string;
+  value: string;
+}) =>
+  params.mode === 'script'
+    ? getCommittedScriptElementName(params)
+    : getCommittedReactionTextElementName(params);
 
 export const getReactionTextAutocomplete = (params: {
   counterNames: string[];
@@ -749,10 +938,22 @@ export const applyReactionScriptAutocompleteSuggestion = (params: {
   value: string;
 }) => {
   const { suggestion, value } = params;
+  let effectiveReplaceEnd = suggestion.replaceEnd;
+  if (suggestion.replaceToTokenEnd) {
+    while (
+      effectiveReplaceEnd < value.length &&
+      !AUTOCOMPLETE_TOKEN_END_CHARACTER_PATTERN.test(
+        value[effectiveReplaceEnd] ?? ''
+      )
+    ) {
+      effectiveReplaceEnd += 1;
+    }
+  }
+
   const nextValue =
     value.slice(0, suggestion.replaceStart) +
     (suggestion.insertText ?? suggestion.text) +
-    value.slice(suggestion.replaceEnd);
+    value.slice(effectiveReplaceEnd);
   const cursor = suggestion.replaceStart + suggestion.cursorOffset;
 
   return {

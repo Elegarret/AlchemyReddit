@@ -10,6 +10,7 @@ export type ReactionWidgetProps = {
   index: number;
   reaction: SaveDraftInput['reactions'][number];
   elements: ModElement[];
+  scriptingHelpPageUrl: string | null;
   onCommit: (
     index: number,
     leftName: string,
@@ -17,7 +18,9 @@ export type ReactionWidgetProps = {
     outputNames: string[]
   ) => void;
   onAddMissingElement: (name: string) => void;
+  onAutoAddElement: (name: string) => void;
   onMoveReaction: (fromIndex: number, toIndex: number) => void;
+  onOpenScriptingHelp: () => void;
   onUpdateScript: (index: number, script: string) => void;
   onDelete: (index: number) => void;
   onNewReaction?: () => void;

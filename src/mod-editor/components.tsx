@@ -439,20 +439,20 @@ export const DualColorPicker = ({
 };
 
 export const ElementAdvancedButton = ({
-  authorsHelpPageUrl,
+  scriptingHelpPageUrl,
   element,
   counterDefinition,
   isStarting,
-  onOpenAuthorsHelp,
+  onOpenScriptingHelp,
   onApply,
   containerClassName,
   buttonClassName,
 }: {
-  authorsHelpPageUrl: string | null;
+  scriptingHelpPageUrl: string | null;
   element: ModElement;
   counterDefinition: ModCounterDefinition | null;
   isStarting: boolean;
-  onOpenAuthorsHelp: () => void;
+  onOpenScriptingHelp: () => void;
   onApply: (patch: Pick<ModElement, 'message' | 'effect'> & {
     nonConsumable: boolean;
     counterValues: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'> | null;
@@ -599,11 +599,11 @@ export const ElementAdvancedButton = ({
                   </label>
                   <button
                     type="button"
-                    onClick={onOpenAuthorsHelp}
+                    onClick={onOpenScriptingHelp}
                     title={
-                      authorsHelpPageUrl
-                        ? 'Open Authors Help Page'
-                        : 'Authors Help Page URL is not configured.'
+                      scriptingHelpPageUrl
+                        ? 'Open Scripting Help Page'
+                        : 'Scripting Help Page URL is not configured.'
                     }
                     className="realm-button-muted flex h-7 w-7 items-center justify-center rounded-full"
                   >
@@ -764,10 +764,10 @@ export const CompactElementTile = ({
   onChangeEmoji,
   onChangeBgColor,
   onChangeFrameColor,
-  authorsHelpPageUrl,
+  scriptingHelpPageUrl,
   counterDefinition,
   isStarting,
-  onOpenAuthorsHelp,
+  onOpenScriptingHelp,
   onApplyAdvanced,
   onRemove,
   inputRef,
@@ -778,10 +778,10 @@ export const CompactElementTile = ({
   onChangeEmoji: (emoji: string) => void;
   onChangeBgColor: (value: string) => void;
   onChangeFrameColor: (value: string) => void;
-  authorsHelpPageUrl: string | null;
+  scriptingHelpPageUrl: string | null;
   counterDefinition: ModCounterDefinition | null;
   isStarting: boolean;
-  onOpenAuthorsHelp: () => void;
+  onOpenScriptingHelp: () => void;
   onApplyAdvanced: (patch: Pick<ModElement, 'message' | 'effect'> & {
     nonConsumable: boolean;
     counterValues: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'> | null;
@@ -817,11 +817,11 @@ export const CompactElementTile = ({
         </DualColorPicker>
 
         <ElementAdvancedButton
-          authorsHelpPageUrl={authorsHelpPageUrl}
+          scriptingHelpPageUrl={scriptingHelpPageUrl}
           element={element}
           counterDefinition={counterDefinition}
           isStarting={isStarting}
-          onOpenAuthorsHelp={onOpenAuthorsHelp}
+          onOpenScriptingHelp={onOpenScriptingHelp}
           onApply={onApplyAdvanced}
           containerClassName="absolute -top-2 left-1/2 z-30 -translate-x-1/2"
           buttonClassName="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
@@ -970,9 +970,12 @@ export const ReactionWidget = ({
   index,
   reaction,
   elements,
+  scriptingHelpPageUrl,
   onAddMissingElement,
+  onAutoAddElement,
   onCommit,
   onMoveReaction,
+  onOpenScriptingHelp,
   onUpdateScript,
   onDelete,
 }: ReactionWidgetProps) => {
@@ -1215,16 +1218,22 @@ export const ReactionWidget = ({
       </div>
 
       <div className="flex flex-col gap-2 pl-1">
-        <div className="flex items-center gap-2">
-          {isScriptOpen && (
-            <div className="realm-text-soft text-xs">
-              Script overrides visual outputs when non-empty.
-            </div>
-          )}
-        </div>
-
         {isScriptOpen ? (
           <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={onOpenScriptingHelp}
+                title={
+                  scriptingHelpPageUrl
+                    ? 'Open Scripting Help Page'
+                    : 'Scripting Help Page URL is not configured.'
+                }
+                className="realm-button-muted catalog-title-font rounded-full px-3 py-1 text-[10px] font-bold tracking-[0.14em] uppercase"
+              >
+                Scripting Help
+              </button>
+            </div>
             <ReactionScriptAutocompleteTextarea
               className="realm-input custom-scrollbar min-h-[7.5rem] w-full resize-y rounded-xl border px-3 py-2 font-mono text-sm outline-none"
               counterNames={counterNames}
@@ -1237,7 +1246,8 @@ export const ReactionWidget = ({
                 onUpdateScript(index, nextValue);
               }}
               onEditingSettled={() => setShouldShowScriptValidation(true)}
-              placeholder={`add dust\npopup("The cupboard is locked.", key)\nif (count(health) < 10) win("You survived.")`}
+              onElementCommitted={onAutoAddElement}
+              placeholder={`add dust\npopup "The cupboard is locked.", key\nif (count(health) < 10) win "You survived."`}
             />
 
             {scriptIssues.length > 0 && (

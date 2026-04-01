@@ -5,50 +5,248 @@ import './index.css';
 import { navigateTo } from '@devvit/web/client';
 import { StrictMode, useEffect, useState, type MouseEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { IoAddSharp, IoAlbumsSharp, IoEyeSharp, IoThumbsUpSharp } from 'react-icons/io5';
+import {
+  IoAddSharp,
+  IoAlbumsSharp,
+  IoCreateOutline,
+  IoEyeSharp,
+  IoThumbsUpSharp,
+} from 'react-icons/io5';
+import {
+  getInlineViewCacheKey,
+  isUnknownRecord,
+  readInlineViewCache,
+  writeInlineViewCache,
+} from './inline-view-cache';
 import { trpc } from './trpc';
-import type { ActiveRuleset, ModListItem } from './modding/types';
-import { openEntry, setLastPlayedRealm } from './webview-navigation';
+import { openEntry, setEditorTargetModId, setLastPlayedRealm } from './webview-navigation';
+
+type ModSplashRulesetPreview = {
+  ownerUsername: string | null;
+  publishedAt: string | null;
+  sourceModId: string | null;
+  summary: string;
+  title: string;
+};
+
+type ModSplashListingPreview = {
+  ownerUsername: string | null;
+  playerCount: number;
+  upvotes: number;
+};
+
+type ModSplashState = {
+  status: 'loading' | 'unavailable' | 'ready';
+  message: string;
+  ruleset: ModSplashRulesetPreview | null;
+  modListing: ModSplashListingPreview | null;
+  username: string | null;
+  isModerator: boolean;
+};
+
+const DEFAULT_MOD_SPLASH_STATE: ModSplashState = {
+  status: 'loading',
+  message: '',
+  ruleset: null,
+  modListing: null,
+  username: null,
+  isModerator: false,
+};
+
+const isStringOrNull = (value: unknown): value is string | null =>
+  typeof value === 'string' || value === null;
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const isModSplashRulesetPreview = (
+  value: unknown
+): value is ModSplashRulesetPreview => {
+  if (!isUnknownRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof Reflect.get(value, 'title') === 'string' &&
+    typeof Reflect.get(value, 'summary') === 'string' &&
+    isStringOrNull(Reflect.get(value, 'sourceModId')) &&
+    isStringOrNull(Reflect.get(value, 'ownerUsername')) &&
+    isStringOrNull(Reflect.get(value, 'publishedAt'))
+  );
+};
+
+const isModSplashListingPreview = (
+  value: unknown
+): value is ModSplashListingPreview => {
+  if (!isUnknownRecord(value)) {
+    return false;
+  }
+
+  return (
+    isStringOrNull(Reflect.get(value, 'ownerUsername')) &&
+    isNumber(Reflect.get(value, 'upvotes')) &&
+    isNumber(Reflect.get(value, 'playerCount'))
+  );
+};
+
+const isModSplashState = (value: unknown): value is ModSplashState => {
+  if (!isUnknownRecord(value)) {
+    return false;
+  }
+
+  const status = Reflect.get(value, 'status');
+  if (
+    status !== 'loading' &&
+    status !== 'unavailable' &&
+    status !== 'ready'
+  ) {
+    return false;
+  }
+
+  const ruleset = Reflect.get(value, 'ruleset');
+  const modListing = Reflect.get(value, 'modListing');
+
+  return (
+    typeof Reflect.get(value, 'message') === 'string' &&
+    isStringOrNull(Reflect.get(value, 'username')) &&
+    typeof Reflect.get(value, 'isModerator') === 'boolean' &&
+    (ruleset === null || isModSplashRulesetPreview(ruleset)) &&
+    (modListing === null || isModSplashListingPreview(modListing))
+  );
+};
+
+const getModSplashCacheKey = () => getInlineViewCacheKey('mod-splash');
+
+const readCachedModSplashState = () =>
+  readInlineViewCache(getModSplashCacheKey(), (value) =>
+    isModSplashState(value) ? value : null
+  );
+
+const toRulesetPreview = (
+  ruleset: Awaited<ReturnType<typeof trpc.init.get.query>>['activeRuleset']
+): ModSplashRulesetPreview | null => {
+  if (!ruleset) {
+    return null;
+  }
+
+  return {
+    ownerUsername: ruleset.ownerUsername ?? null,
+    publishedAt: ruleset.publishedAt ?? null,
+    sourceModId: ruleset.sourceModId ?? null,
+    summary: ruleset.summary,
+    title: ruleset.title,
+  };
+};
+
+const toModListingPreview = (
+  modListing: Awaited<ReturnType<typeof trpc.init.get.query>>['activeModListing']
+): ModSplashListingPreview | null => {
+  if (!modListing) {
+    return null;
+  }
+
+  return {
+    ownerUsername: modListing.ownerUsername,
+    playerCount: modListing.playerCount ?? 0,
+    upvotes: modListing.upvotes ?? 0,
+  };
+};
+
+const resolveModSplashState = (
+  response: Awaited<ReturnType<typeof trpc.init.get.query>>
+): ModSplashState => {
+  const ruleset = toRulesetPreview(response.activeRuleset);
+
+  if (response.rulesetUnavailableReason || !ruleset) {
+    return {
+      status: 'unavailable',
+      message:
+        response.rulesetUnavailableReason ?? 'Failed to load the Realm.',
+      ruleset: null,
+      modListing: null,
+      username: response.username ?? null,
+      isModerator: response.isModerator ?? false,
+    };
+  }
+
+  return {
+    status: 'ready',
+    message: '',
+    ruleset,
+    modListing: toModListingPreview(response.activeModListing),
+    username: response.username ?? null,
+    isModerator: response.isModerator ?? false,
+  };
+};
 
 export const ModSplash = () => {
-  const [status, setStatus] = useState<'loading' | 'unavailable' | 'ready'>(
-    'loading'
+  const [state, setState] = useState<ModSplashState>(
+    () => readCachedModSplashState() ?? DEFAULT_MOD_SPLASH_STATE
   );
-  const [message, setMessage] = useState('');
-  const [ruleset, setRuleset] = useState<ActiveRuleset | null>(null);
-  const [modListing, setModListing] = useState<ModListItem | null>(null);
 
   useEffect(() => {
-    trpc.init.get
-      .query()
-      .then((response) => {
-        if (response.rulesetUnavailableReason) {
-          setStatus('unavailable');
-          setMessage(response.rulesetUnavailableReason);
+    let isDisposed = false;
+    let isLoadInFlight = false;
+
+    const loadState = async () => {
+      if (isLoadInFlight) {
+        return;
+      }
+
+      isLoadInFlight = true;
+
+      try {
+        const response = await trpc.init.get.query();
+        if (isDisposed) {
           return;
         }
 
-        setRuleset(response.activeRuleset || null);
-        setModListing(response.activeModListing || null);
-        setStatus('ready');
-      })
-      .catch((error) => {
+        const nextState = resolveModSplashState(response);
+        writeInlineViewCache(getModSplashCacheKey(), nextState);
+        setState(nextState);
+      } catch (error) {
         console.error(error);
-        setStatus('unavailable');
-        setMessage('Failed to load the Realm.');
-      });
+        if (isDisposed) {
+          return;
+        }
+
+        setState((current) =>
+          current.status === 'ready'
+            ? current
+            : {
+                ...current,
+                status: 'unavailable',
+                message: 'Failed to load the Realm.',
+              }
+        );
+      } finally {
+        isLoadInFlight = false;
+      }
+    };
+
+    const handleFocus = () => {
+      void loadState();
+    };
+
+    void loadState();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      isDisposed = true;
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const openGame = (event: MouseEvent<HTMLButtonElement>) => {
-    if (!ruleset) {
+    if (!state.ruleset) {
       return;
     }
 
-    if (ruleset.sourceModId) {
-      localStorage.setItem('override-mod-id', ruleset.sourceModId);
+    if (state.ruleset.sourceModId) {
+      localStorage.setItem('override-mod-id', state.ruleset.sourceModId);
       setLastPlayedRealm({
-        modId: ruleset.sourceModId,
-        title: ruleset.title,
+        modId: state.ruleset.sourceModId,
+        title: state.ruleset.title,
       });
     } else {
       localStorage.removeItem('override-mod-id');
@@ -59,6 +257,13 @@ export const ModSplash = () => {
 
   const openEditor = (event: MouseEvent<HTMLButtonElement>) => {
     localStorage.removeItem('override-mod-id');
+    const canEditCurrentRealm =
+      !!state.ruleset?.sourceModId &&
+      (state.isModerator ||
+        (!!state.username && state.username === state.ruleset.ownerUsername));
+    setEditorTargetModId(
+      canEditCurrentRealm ? state.ruleset?.sourceModId ?? null : null
+    );
     openEntry(event.nativeEvent, 'mod-editor');
   };
 
@@ -66,7 +271,7 @@ export const ModSplash = () => {
     openEntry(event.nativeEvent, 'mod-catalog');
   };
 
-  if (status === 'loading') {
+  if (state.status === 'loading') {
     return (
       <div className="realm-page flex h-screen items-center justify-center overflow-hidden px-4 py-4">
         <div className="realm-panel animate-pulse rounded-3xl px-6 py-8 text-center backdrop-blur-xl">
@@ -78,7 +283,7 @@ export const ModSplash = () => {
     );
   }
 
-  if (status === 'unavailable' || !ruleset) {
+  if (state.status === 'unavailable' || !state.ruleset) {
     return (
       <div className="realm-page flex h-screen items-center justify-center overflow-hidden px-4 py-4">
         <div className="realm-panel max-w-md rounded-3xl p-8 text-center shadow-2xl backdrop-blur-xl">
@@ -89,22 +294,26 @@ export const ModSplash = () => {
             This custom realm cannot be loaded.
           </h1>
           <p className="realm-text-soft mt-4 text-sm leading-relaxed">
-            {message}
+            {state.message}
           </p>
         </div>
       </div>
     );
   }
 
-  const createdDate = ruleset.publishedAt
-    ? new Date(ruleset.publishedAt).toLocaleDateString(undefined, {
+  const createdDate = state.ruleset.publishedAt
+    ? new Date(state.ruleset.publishedAt).toLocaleDateString(undefined, {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
       })
     : 'Unknown date';
   const authorUsername =
-    modListing?.ownerUsername ?? ruleset.ownerUsername ?? 'unknown';
+    state.modListing?.ownerUsername ?? state.ruleset.ownerUsername ?? 'unknown';
+  const canEditCurrentRealm =
+    !!state.ruleset.sourceModId &&
+    (state.isModerator ||
+      (!!state.username && state.username === state.ruleset.ownerUsername));
 
   return (
     <div className="realm-page relative flex h-screen flex-col items-center justify-center gap-4 overflow-hidden px-4 py-4">
@@ -117,12 +326,12 @@ export const ModSplash = () => {
           User&apos;s Realm
         </div>
         <h1 className="catalog-title-font realm-text-ink mb-1 px-4 text-4xl leading-tight font-black tracking-tight drop-shadow-xl sm:text-5xl">
-          {ruleset.title}
+          {state.ruleset.title}
         </h1>
 
-        {ruleset.summary && (
+        {state.ruleset.summary && (
           <p className="catalog-body-font realm-text-soft mb-4 max-w-sm px-4 text-base leading-relaxed font-medium drop-shadow-md sm:text-lg">
-            {ruleset.summary}
+            {state.ruleset.summary}
           </p>
         )}
 
@@ -130,11 +339,11 @@ export const ModSplash = () => {
           <div className="flex items-center gap-4 text-sm font-bold">
             <div className="realm-text-ink flex items-center gap-1">
               <IoThumbsUpSharp className="text-[14px]" />
-              <span>{modListing?.upvotes || 0}</span>
+              <span>{state.modListing?.upvotes || 0}</span>
             </div>
             <div className="realm-text-soft flex items-center gap-1">
               <IoEyeSharp className="text-[14px]" />
-              <span>{modListing?.playerCount || 0}</span>
+              <span>{state.modListing?.playerCount || 0}</span>
             </div>
           </div>
           <span className="catalog-body-font realm-text-soft text-sm font-medium">
@@ -168,8 +377,8 @@ export const ModSplash = () => {
             onClick={openEditor}
             className="realm-button-primary catalog-title-font flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-black transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
-            <IoAddSharp />
-            Create My Realm
+            {canEditCurrentRealm ? <IoCreateOutline /> : <IoAddSharp />}
+            {canEditCurrentRealm ? 'Edit Realm' : 'Create My Realm'}
           </button>
           <button
             type="button"

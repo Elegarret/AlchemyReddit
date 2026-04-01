@@ -34,7 +34,7 @@ export type ReactionScriptAction =
       kind: 'remove';
     }
   | {
-      elementRef: string;
+      elementRef?: string;
       kind: 'remove_all';
     }
   | {
@@ -411,18 +411,21 @@ const parseSetAction = (
   rawAction: string,
   line: number
 ): ReactionScriptAction | ReactionScriptIssue | null => {
-  const rawArgument = parseWrappedArgument(rawAction, 'set');
-  if (rawArgument === null) {
+  const wrappedArgument = parseWrappedArgument(rawAction, 'set');
+  const bareArgumentMatch = rawAction.match(/^set(?:\s+(.+))?$/s);
+  if (wrappedArgument === null && !bareArgumentMatch) {
     return null;
   }
 
-  const match = rawArgument.trim().match(
+  const rawArgument = (wrappedArgument ?? bareArgumentMatch?.[1] ?? '').trim();
+
+  const match = rawArgument.match(
     /^([A-Za-z][A-Za-z0-9_-]*)\s*(\+=|-=|=)\s*(-?\d+)$/
   );
   if (!match) {
     return {
       line,
-      message: 'set(...) must contain counterName = number, += number, or -= number.',
+      message: 'set must contain counterName = number, += number, or -= number.',
     };
   }
 
@@ -432,7 +435,7 @@ const parseSetAction = (
   if (!operator || value === null) {
     return {
       line,
-      message: 'set(...) is invalid.',
+      message: 'set is invalid.',
     };
   }
 
@@ -454,7 +457,7 @@ const parseMessageAction = (
     if (text === null) {
       return {
         line,
-        message: 'message(...) must wrap a double-quoted string.',
+        message: 'message must wrap a double-quoted string.',
       };
     }
 
@@ -472,7 +475,7 @@ const parseMessageAction = (
   if (legacyText === null) {
     return {
       line,
-      message: 'message(...) must wrap a double-quoted string.',
+      message: 'message must wrap a double-quoted string.',
     };
   }
 
@@ -488,23 +491,26 @@ const parsePopupStyleAction = (
   kind: ReactionScriptPopupKind
 ): ReactionScriptAction | ReactionScriptIssue | null => {
   const wrappedArgument = parseWrappedArgument(rawAction, kind);
-  if (wrappedArgument === null) {
-    if (new RegExp(`^${kind}\\b`).test(rawAction)) {
-      return {
-        line,
-        message: `${kind}(...) must contain a double-quoted string and an optional element name.`,
-      };
-    }
-
+  const bareArgumentMatch = rawAction.match(
+    new RegExp(`^${kind}(?:\\s+(.+))?$`, 's')
+  );
+  if (wrappedArgument === null && !bareArgumentMatch) {
     return null;
   }
 
-  const trimmedArgument = wrappedArgument.trim();
+  const trimmedArgument = (wrappedArgument ?? bareArgumentMatch?.[1] ?? '').trim();
+  if (!trimmedArgument) {
+    return {
+      line,
+      message: `${kind} must contain a double-quoted string and an optional element name.`,
+    };
+  }
+
   const textMatch = trimmedArgument.match(/^("(?:\\.|[^"\\])*")(?:\s*,\s*(.+))?$/s);
   if (!textMatch) {
     return {
       line,
-      message: `${kind}(...) must contain a double-quoted string and an optional element name.`,
+      message: `${kind} must contain a double-quoted string and an optional element name.`,
     };
   }
 
@@ -512,7 +518,7 @@ const parsePopupStyleAction = (
   if (text === null) {
     return {
       line,
-      message: `${kind}(...) must contain a double-quoted string and an optional element name.`,
+      message: `${kind} must contain a double-quoted string and an optional element name.`,
     };
   }
 
@@ -520,7 +526,7 @@ const parsePopupStyleAction = (
   if (rawIconElementRef.includes(',')) {
     return {
       line,
-      message: `${kind}(...) accepts at most one optional element name.`,
+      message: `${kind} accepts at most one optional element name.`,
     };
   }
 
@@ -565,6 +571,12 @@ const parseElementAction = (
   }
 
   if (rawAction === keyword) {
+    if (keyword === 'remove_all') {
+      return {
+        kind: 'remove_all',
+      };
+    }
+
     return {
       line,
       message: `${keyword} is missing an element name.`,
@@ -634,7 +646,7 @@ const parseAction = (
   ) {
     return {
       line,
-      message: 'Use set(counterName = number), set(counterName += number), or set(counterName -= number).',
+      message: 'Use set counterName = number, set counterName += number, or set counterName -= number.',
     };
   }
 
@@ -846,7 +858,7 @@ const validateGameplayElementRef = (
       elementId: result.elementId,
       error: {
         line,
-        message: `Counter "${elementRef}" cannot act as a normal element here. Use count(...) or set(...) instead.`,
+        message: `Counter "${elementRef}" cannot act as a normal element here. Use count(...) or set counterName += 1 instead.`,
       },
     };
   }
@@ -929,19 +941,19 @@ const formatAction = (action: ReactionScriptAction) => {
     case 'add':
       return `add ${action.elementRefs.join(', ')}`;
     case 'set':
-      return `set(${action.counterName} ${action.operator} ${action.value})`;
+      return `set ${action.counterName} ${action.operator} ${action.value}`;
     case 'remove':
       return `remove ${action.elementRef}`;
     case 'remove_all':
-      return `remove_all ${action.elementRef}`;
+      return action.elementRef ? `remove_all ${action.elementRef}` : 'remove_all';
     case 'message':
-      return `message(${formatQuotedText(action.text)})`;
+      return `message ${formatQuotedText(action.text)}`;
     case 'popup':
     case 'win':
     case 'lose':
-      return `${action.kind}(${formatQuotedText(action.text)}${
+      return `${action.kind} ${formatQuotedText(action.text)}${
         action.iconElementRef ? `, ${action.iconElementRef}` : ''
-      })`;
+      }`;
     case 'stop':
       return 'stop';
   }
@@ -1098,28 +1110,41 @@ export const validateReactionScript = (
       continue;
     }
 
-    if (
-      statement.action.kind === 'add' ||
-      statement.action.kind === 'remove' ||
-      statement.action.kind === 'remove_all'
-    ) {
-      if (statement.action.kind === 'add') {
-        statement.action.elementRefs.forEach((elementRef) => {
-          const result = validateGameplayElementRef(
-            elementRef,
-            statement.line,
-            resolveElementId,
-            nonGameplayElements
-          );
-          if (result.error) {
-            errors.push(result.error);
-            return;
-          }
+    if (statement.action.kind === 'add') {
+      statement.action.elementRefs.forEach((elementRef) => {
+        const result = validateGameplayElementRef(
+          elementRef,
+          statement.line,
+          resolveElementId,
+          nonGameplayElements
+        );
+        if (result.error) {
+          errors.push(result.error);
+          return;
+        }
 
-          if (result.elementId !== null) {
-            emittedElementIds.add(result.elementId);
-          }
-        });
+        if (result.elementId !== null) {
+          emittedElementIds.add(result.elementId);
+        }
+      });
+      continue;
+    }
+
+    if (statement.action.kind === 'remove') {
+      const result = validateGameplayElementRef(
+        statement.action.elementRef,
+        statement.line,
+        resolveElementId,
+        nonGameplayElements
+      );
+      if (result.error) {
+        errors.push(result.error);
+      }
+      continue;
+    }
+
+    if (statement.action.kind === 'remove_all') {
+      if (!statement.action.elementRef) {
         continue;
       }
 
@@ -1246,6 +1271,14 @@ export const executeReactionScript = (
     }
 
     if (statement.action.kind === 'remove_all') {
+      if (!statement.action.elementRef) {
+        tableElements.forEach((tableElement) => {
+          removedTableElementIds.push(tableElement.id);
+        });
+        tableElements.splice(0, tableElements.length);
+        continue;
+      }
+
       const elementId = resolveElementId(statement.action.elementRef);
       if (!elementId) {
         continue;

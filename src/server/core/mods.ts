@@ -28,6 +28,8 @@ const getDraftKey = (userId: string, modId: string) =>
   `mod:${modId}:draft:${userId}`;
 const getOwnerKey = (userId: string) => `mods:owner:${userId}`;
 const getPlayerKey = (modId: string) => `mod:${modId}:players`;
+const normalizeRedditPostId = (postId: string) =>
+  postId.startsWith('t3_') ? postId : `t3_${postId}`;
 
 const parseMod = (value: string | undefined) => {
   if (!value) {
@@ -106,10 +108,48 @@ const stripPublishedFields = (mod: ModDoc): ModDoc => {
 const buildSharePostTitle = (mod: Pick<ModDoc, 'title' | 'ownerUsername'>) =>
   `${mod.title} (${mod.ownerUsername}'s realm)`;
 
+const buildSharePostBody = (mod: Pick<ModDoc, 'summary' | 'title'>) =>
+  mod.summary || mod.title;
+
+const buildSharePostPayload = (mod: ModDoc) => {
+  const postData: SharePostData = {
+    modId: mod.id,
+    title: mod.title,
+    slug: createSlug(mod.title),
+    publishedHash: mod.publishedHash,
+  };
+
+  return {
+    bodyText: buildSharePostBody(mod),
+    postData: sharePostDataSchema.parse(postData),
+  };
+};
+
 const ensureModOwnership = (mod: ModDoc, userId: string) => {
   if (mod.ownerUserId !== userId) {
     throw new Error('You do not own this mod.');
   }
+};
+
+const persistPublishedSharePostId = async (
+  userId: string,
+  mod: ModDoc,
+  sharePostId: string
+) => {
+  const normalizedSharePostId = normalizeRedditPostId(sharePostId);
+  if (mod.sharePostId === normalizedSharePostId) {
+    return normalizedSharePostId;
+  }
+
+  mod.sharePostId = normalizedSharePostId;
+  await redis.set(getLatestKey(mod.id), JSON.stringify(mod));
+  await redis.set(
+    getDraftKey(userId, mod.id),
+    JSON.stringify({ ...mod, status: 'draft' })
+  );
+  await saveMeta(mod);
+
+  return normalizedSharePostId;
 };
 
 const getModUpvotes = async (item: Pick<ModListItem, 'sharePostId'>) => {
@@ -119,7 +159,7 @@ const getModUpvotes = async (item: Pick<ModListItem, 'sharePostId'>) => {
 
   try {
     const redditPost = await reddit.getPostById(
-      item.sharePostId as `t3_${string}`
+      normalizeRedditPostId(item.sharePostId) as `t3_${string}`
     );
     return redditPost.score;
   } catch (e) {
@@ -295,6 +335,7 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
   if (!draft) {
     throw new Error('Draft not found.');
   }
+  const existingPublished = await loadLatestMod(modId);
 
   ensureModOwnership(draft, userId);
   const validation = validateDraftInput({
@@ -324,6 +365,9 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
     updatedAt: publishedAt,
     publishedAt,
     publishedHash: createModFingerprint(draft),
+    ...(existingPublished?.status === 'published' && existingPublished.sharePostId
+      ? { sharePostId: existingPublished.sharePostId }
+      : {}),
   };
 
   await redis.set(getLatestKey(modId), JSON.stringify(published));
@@ -389,12 +433,16 @@ const removeSharePostIfPossible = async (sharePostId: string | undefined) => {
     return;
   }
 
+  const normalizedSharePostId = normalizeRedditPostId(sharePostId);
+
   try {
-    const sharePost = await reddit.getPostById(sharePostId as `t3_${string}`);
+    const sharePost = await reddit.getPostById(
+      normalizedSharePostId as `t3_${string}`
+    );
     await sharePost.delete();
   } catch (deleteError) {
     try {
-      await reddit.remove(sharePostId as `t3_${string}`, false);
+      await reddit.remove(normalizedSharePostId as `t3_${string}`, false);
     } catch (removeError) {
       console.warn('Failed to remove published share post', removeError);
       console.warn('Delete attempt failed first', deleteError);
@@ -436,45 +484,51 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
     throw new Error('You must be logged in to share a mod.');
   }
 
+  const { bodyText, postData } = buildSharePostPayload(latest);
+
   if (latest.sharePostId) {
-    return {
-      id: latest.sharePostId,
-      url: getPostUrl(latest.sharePostId, context.subredditName),
-    };
+    const normalizedSharePostId = normalizeRedditPostId(latest.sharePostId);
+
+    try {
+      const sharePost = await reddit.getPostById(
+        normalizedSharePostId as `t3_${string}`
+      );
+      await sharePost.setPostData(postData);
+      await sharePost.setTextFallback({
+        text: bodyText,
+      });
+      await persistPublishedSharePostId(userId, latest, normalizedSharePostId);
+      return {
+        id: normalizedSharePostId,
+        url: getPostUrl(normalizedSharePostId, context.subredditName),
+      };
+    } catch (error) {
+      console.warn('Failed to update existing share post', error);
+    }
   }
 
-  const slug = createSlug(latest.title);
-  const postData: SharePostData = {
-    modId: latest.id,
-    title: latest.title,
-    slug,
-    publishedHash: latest.publishedHash,
-  };
-  const parsedPostData = sharePostDataSchema.parse(postData);
   const post = await reddit.submitCustomPost({
     title: buildSharePostTitle(latest),
     entry: 'mod-splash',
-    postData: parsedPostData,
+    postData,
     runAs: 'USER',
     userGeneratedContent: {
-      text: latest.summary || latest.title,
+      text: bodyText,
     },
     textFallback: {
-      text: `${latest.title}\n\n${latest.summary}`,
+      text: bodyText,
     },
   });
 
-  latest.sharePostId = post.id;
-  await redis.set(getLatestKey(modId), JSON.stringify(latest));
-  await redis.set(
-    getDraftKey(userId, modId),
-    JSON.stringify({ ...latest, status: 'draft' })
+  const normalizedSharePostId = await persistPublishedSharePostId(
+    userId,
+    latest,
+    post.id
   );
-  await saveMeta(latest);
 
   return {
-    id: post.id,
-    url: getPostUrl(post.id, context.subredditName),
+    id: normalizedSharePostId,
+    url: getPostUrl(normalizedSharePostId, context.subredditName),
   };
 };
 

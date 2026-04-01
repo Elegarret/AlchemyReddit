@@ -14,6 +14,9 @@ import {
   PLAYTEST_RULESET_STORAGE_KEY,
   buildRulesetFromDraft,
   createModFingerprint,
+  getElementNameValidationError,
+  normalizeAuthoredElementName,
+  sanitizeElementName,
   validateModDraft,
 } from '../modding/runtime';
 import {
@@ -72,6 +75,9 @@ export const ModEditorApp = () => {
   const [elementSearch, setElementSearch] = useState('');
   const [reactionSearch, setReactionSearch] = useState('');
   const [authorsHelpPageUrl, setAuthorsHelpPageUrl] = useState<string | null>(
+    null
+  );
+  const [scriptingHelpPageUrl, setScriptingHelpPageUrl] = useState<string | null>(
     null
   );
   const [isAdvancedOptionsOpen, setIsAdvancedOptionsOpen] = useState(false);
@@ -257,10 +263,14 @@ export const ModEditorApp = () => {
   useEffect(() => {
     trpc.mods.getEditorSettings
       .query()
-      .then((settings) => setAuthorsHelpPageUrl(settings.authorsHelpPageUrl))
+      .then((settings) => {
+        setAuthorsHelpPageUrl(settings.authorsHelpPageUrl);
+        setScriptingHelpPageUrl(settings.scriptingHelpPageUrl);
+      })
       .catch((error) => {
         console.error(error);
         setAuthorsHelpPageUrl(null);
+        setScriptingHelpPageUrl(null);
       });
   }, []);
 
@@ -277,6 +287,15 @@ export const ModEditorApp = () => {
     }
 
     navigateTo(authorsHelpPageUrl);
+  };
+
+  const openScriptingHelpPage = () => {
+    if (!scriptingHelpPageUrl) {
+      showToast('Scripting Help Page URL is not configured.');
+      return;
+    }
+
+    navigateTo(scriptingHelpPageUrl);
   };
 
   useEffect(() => {
@@ -313,13 +332,14 @@ export const ModEditorApp = () => {
   };
 
   const renameElement = (elementId: string, nextName: string) => {
+    const sanitizedName = sanitizeElementName(nextName);
     updateDraft((current) => ({
       ...current,
       elements: current.elements.map((element) =>
         element.id === elementId
           ? {
               ...element,
-              name: nextName,
+              name: sanitizedName,
             }
           : element
       ),
@@ -354,15 +374,29 @@ export const ModEditorApp = () => {
 
   const finalizeElementName = (elementId: string) => {
     updateDraft((current) => {
-      const nextName = getNextGeneratedElementName(
+      const fallbackName = getNextGeneratedElementName(
         current.elements.filter((element) => element.id !== elementId)
       );
 
       return {
         ...current,
         elements: current.elements.map((element) => {
-          if (element.id !== elementId || element.name.trim()) {
+          if (element.id !== elementId) {
             return element;
+          }
+
+          const nextName = normalizeAuthoredElementName(element.name) || fallbackName;
+          const validationError = getElementNameValidationError(nextName);
+          if (validationError) {
+            showToast(validationError);
+            return {
+              ...element,
+              name: fallbackName,
+              emoji:
+                element.emoji === deriveElementGlyph(element.name)
+                  ? deriveElementGlyph(fallbackName)
+                  : element.emoji,
+            };
           }
 
           const shouldRefreshEmoji =
@@ -399,6 +433,9 @@ export const ModEditorApp = () => {
 
     updateDraft((current) => {
       const resolved = ensureElementInDraft(current, trimmed);
+      if (!resolved.elementId) {
+        return current;
+      }
       if (
         resolved.draft.counters.some(
           (counter) => counter.elementId === resolved.elementId
@@ -533,6 +570,9 @@ export const ModEditorApp = () => {
     if (!trimmed) return;
     updateDraft((current) => {
       const resolved = ensureElementInDraft(current, trimmed);
+      if (!resolved.elementId) {
+        return current;
+      }
       if (
         resolved.draft.counters.some(
           (counter) => counter.elementId === resolved.elementId
@@ -588,8 +628,14 @@ export const ModEditorApp = () => {
 
     let nextDraft = draft;
     const leftResolved = ensureElementInDraft(nextDraft, leftTrimmed);
+    if (!leftResolved.elementId) {
+      return;
+    }
     nextDraft = leftResolved.draft;
     const rightResolved = ensureElementInDraft(nextDraft, rightTrimmed);
+    if (!rightResolved.elementId) {
+      return;
+    }
     nextDraft = rightResolved.draft;
 
     const outputIds: string[] = [];
@@ -599,6 +645,9 @@ export const ModEditorApp = () => {
         continue;
       }
       const resolved = ensureElementInDraft(nextDraft, trimmed);
+      if (!resolved.elementId) {
+        continue;
+      }
       nextDraft = resolved.draft;
       outputIds.push(resolved.elementId);
     }
@@ -1106,8 +1155,22 @@ export const ModEditorApp = () => {
             <div className="realm-panel rounded-3xl p-5 backdrop-blur-xl">
               <div className="mb-4 flex flex-col gap-4">
                 <div className="w-full">
-                  <div className="catalog-title-font realm-text-muted mb-2 text-[11px] font-bold tracking-[0.24em] uppercase">
-                    Realm Info
+                  <div className="mb-2 flex items-center gap-2">
+                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                      Realm Info
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openAuthorsHelpPage}
+                      title={
+                        authorsHelpPageUrl
+                          ? 'Open Authors Help Page'
+                          : 'Authors Help Page URL is not configured.'
+                      }
+                      className="realm-button-muted catalog-title-font rounded-full px-2.5 py-1 text-[9px] font-bold tracking-[0.14em] uppercase"
+                    >
+                      Authors Help
+                    </button>
                   </div>
                   <input
                     value={draft.title}
@@ -1557,15 +1620,29 @@ export const ModEditorApp = () => {
                       </>
                     )}
                     {reactionView === 'text' && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setIsReactionTextExpanded((current) => !current)
-                        }
-                        className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
-                      >
-                        {isReactionTextExpanded ? '<Compact' : 'Expand>'}
-                      </button>
+                      <div className="flex flex-col items-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setIsReactionTextExpanded((current) => !current)
+                          }
+                          className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
+                        >
+                          {isReactionTextExpanded ? '<Compact' : 'Expand>'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openScriptingHelpPage}
+                          title={
+                            scriptingHelpPageUrl
+                              ? 'Open Scripting Help Page'
+                              : 'Scripting Help Page URL is not configured.'
+                          }
+                          className="realm-button-muted catalog-title-font rounded-full px-3 py-1 text-[9px] font-bold tracking-[0.14em] uppercase"
+                        >
+                          Scripting Help
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1580,9 +1657,12 @@ export const ModEditorApp = () => {
                         index={index}
                         reaction={reaction}
                         elements={draft.elements}
+                        scriptingHelpPageUrl={scriptingHelpPageUrl}
                         onAddMissingElement={addMissingReactionElement}
+                        onAutoAddElement={addMissingReactionElement}
                         onCommit={commitReaction}
                         onMoveReaction={moveReaction}
+                        onOpenScriptingHelp={openScriptingHelpPage}
                         onUpdateScript={updateReactionScript}
                         onDelete={deleteReaction}
                         onNewReaction={addReaction}
@@ -1616,8 +1696,9 @@ export const ModEditorApp = () => {
                       mode="reaction-text"
                       onBlur={() => syncDraftFromText(reactionText)}
                       onChange={setReactionText}
+                      onElementCommitted={addMissingReactionElement}
                       placeholder={
-                        'Water+Fire=Steam, Fog\nCupboard+Key=\n    message("It opens.")\n    add Treasure'
+                        'Water+Fire=Steam, Fog\nCupboard+Key=\n    message "It opens."\n    add Treasure'
                       }
                       rows={18}
                       value={reactionText}
@@ -1738,7 +1819,7 @@ export const ModEditorApp = () => {
                               }
                             />
                             <ElementAdvancedButton
-                              authorsHelpPageUrl={authorsHelpPageUrl}
+                              scriptingHelpPageUrl={scriptingHelpPageUrl}
                               element={element}
                               counterDefinition={
                                 draft.counters.find(
@@ -1748,7 +1829,7 @@ export const ModEditorApp = () => {
                               isStarting={draft.startingElementIds.includes(
                                 element.id
                               )}
-                              onOpenAuthorsHelp={openAuthorsHelpPage}
+                              onOpenScriptingHelp={openScriptingHelpPage}
                               onApply={(patch) =>
                                 updateElementAdvanced(element.id, patch)
                               }
@@ -1780,7 +1861,7 @@ export const ModEditorApp = () => {
                     <div className="grid grid-cols-4 gap-3">
                       {filteredElements.map((element) => (
                         <CompactElementTile
-                          authorsHelpPageUrl={authorsHelpPageUrl}
+                          scriptingHelpPageUrl={scriptingHelpPageUrl}
                           counterDefinition={
                             draft.counters.find(
                               (counter) => counter.elementId === element.id
@@ -1791,7 +1872,7 @@ export const ModEditorApp = () => {
                           isStarting={draft.startingElementIds.includes(
                             element.id
                           )}
-                          onOpenAuthorsHelp={openAuthorsHelpPage}
+                          onOpenScriptingHelp={openScriptingHelpPage}
                           onRename={(name) => renameElement(element.id, name)}
                           onBlurName={() => finalizeElementName(element.id)}
                           onChangeEmoji={(emoji) =>

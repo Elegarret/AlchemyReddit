@@ -48,7 +48,14 @@ export const publicProcedure = t.procedure;
 export const appRouter = t.router({
   init: t.router({
     get: publicProcedure
-      .input(z.object({ modId: z.string().optional() }).optional())
+      .input(
+        z
+          .object({
+            modId: z.string().optional(),
+            countPlayerOpen: z.boolean().optional(),
+          })
+          .optional()
+      )
       .query(async ({ input }) => {
         const userId = context.userId;
         const [count, username] = await Promise.all([
@@ -65,7 +72,7 @@ export const appRouter = t.router({
           resolvedRuleset = await resolveRulesetFromPostData();
         }
 
-        if (userId && resolvedRuleset.modId) {
+        if (input?.countPlayerOpen && userId && resolvedRuleset.modId) {
           await recordUniqueModPlayer(resolvedRuleset.modId, userId);
         }
 
@@ -134,10 +141,14 @@ export const appRouter = t.router({
     getEditorSettings: publicProcedure.query(async () => {
       const authorsHelpPageUrl =
         (await settings.get<string>('authorsHelpPage'))?.trim() ?? '';
+      const scriptingHelpPageUrl =
+        (await settings.get<string>('scriptingHelpPage'))?.trim() ?? '';
 
       return {
         authorsHelpPageUrl:
           authorsHelpPageUrl.length > 0 ? authorsHelpPageUrl : null,
+        scriptingHelpPageUrl:
+          scriptingHelpPageUrl.length > 0 ? scriptingHelpPageUrl : null,
       };
     }),
     validateDraft: publicProcedure

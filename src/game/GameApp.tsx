@@ -60,6 +60,29 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const STARTER_ELEMENT_SIZE = 80;
 const STARTER_ELEMENT_GAP = 28;
 const STARTER_EDGE_MARGIN = 56;
+const REACTION_CLUSTER_RADIUS = 50;
+
+const getReactionClusterPositions = (
+	centerX: number,
+	centerY: number,
+	count: number
+) => {
+	if (count <= 0) {
+		return [];
+	}
+
+	if (count === 1) {
+		return [{ x: centerX, y: centerY }];
+	}
+
+	return Array.from({ length: count }, (_, index) => {
+		const angle = -Math.PI / 2 + (index / count) * Math.PI * 2;
+		return {
+			x: centerX + Math.cos(angle) * REACTION_CLUSTER_RADIUS,
+			y: centerY + Math.sin(angle) * REACTION_CLUSTER_RADIUS,
+		};
+	});
+};
 
 const getStarterElementIcon = (ruleset: ActiveRuleset, elementId: string) => {
 	const rawIcon = ruleset.elementIcons[elementId];
@@ -229,6 +252,7 @@ const GameSession = ({
 	const [confirmWipe, setConfirmWipe] = useState(false);
 	const [infoPopup, setInfoPopup] = useState<string | null>(null);
 	const [computerPopup, setComputerPopup] = useState<string | null>(null);
+	const [reactionMessage, setReactionMessage] = useState<string | null>(null);
 	const [scriptedPopupQueue, setScriptedPopupQueue] = useState<
 		ReactionScriptPopupEvent[]
 	>([]);
@@ -743,6 +767,7 @@ const GameSession = ({
 		setDragging(null);
 		setReactiveIDs([]);
 		setScriptedPopupQueue([]);
+		setReactionMessage(null);
 		setDiscoveryPopup(null);
 		setInfoPopup(null);
 		setComputerPopup(null);
@@ -771,6 +796,7 @@ const GameSession = ({
 	const navigateBackToRealmsList = (
 		event: ReactMouseEvent<HTMLButtonElement>
 	) => {
+		setReactionMessage(null);
 		setScriptedPopupQueue([]);
 		setShowOptions(false);
 		localStorage.removeItem('override-mod-id');
@@ -1070,6 +1096,7 @@ const GameSession = ({
 				const result = reactionResolution.result;
 				const midX = (draggedEl.x + targetEl.x) / 2;
 				const midY = (draggedEl.y + targetEl.y) / 2;
+				const nextReactionMessage = result.messages.join('\n').trim();
 
 				// Trigger Flash
 				setFlash({ x: midX, y: midY, id: ++flashCounter.current });
@@ -1129,10 +1156,26 @@ const GameSession = ({
 						...(icon ? { icon } : {}),
 					};
 				});
+				const persistentReactionElementIds = [draggedEl.id, targetEl.id].filter(
+					(tableElementId) => !removedElementIds.has(tableElementId)
+				);
+				const reactionClusterElementIds = [
+					...persistentReactionElementIds,
+					...newResultElements.map((element) => element.id),
+				];
+				const reactionClusterPositions = getReactionClusterPositions(
+					midX,
+					midY,
+					reactionClusterElementIds.length
+				);
+				const reactionClusterPositionByElementId = new Map(
+					reactionClusterElementIds.map((tableElementId, index) => [
+						tableElementId,
+						reactionClusterPositions[index] ?? { x: midX, y: midY },
+					])
+				);
 				setCounterValues(result.counterValues);
-				result.messages.forEach((message) => {
-					showToast(message);
-				});
+				setReactionMessage(nextReactionMessage.length > 0 ? nextReactionMessage : null);
 				if (result.popupEvents.length > 0) {
 					setScriptedPopupQueue((current) => [
 						...current,
@@ -1162,27 +1205,25 @@ const GameSession = ({
 				// Step 1: Place at center
 				setElements([...updatedFilteredElements, ...newResultElements]);
 
-				// Step 2: Bounce away if more than one result
-				if (newResultElements.length > 1) {
+				// Step 2: Move surviving non-consumable inputs and outputs into the reaction cluster
+				if (reactionClusterPositionByElementId.size > 0) {
 					setTimeout(() => {
 						setElements((prev) =>
 							prev.map((el) => {
-								const resIdx = newResultElements.findIndex((r) => r.id === el.id);
-								if (resIdx !== -1) {
-									const angle = (resIdx / newResultElements.length) * Math.PI * 2;
-									const dist = 50;
+								const targetPosition = reactionClusterPositionByElementId.get(
+									el.id
+								);
+								if (targetPosition) {
 									return {
 										...el,
-										x: midX + Math.cos(angle) * dist,
-										y: midY + Math.sin(angle) * dist,
+										x: targetPosition.x,
+										y: targetPosition.y,
 									};
 								}
 								return el;
 							})
 						);
 					}, 50);
-				} else if (newResultElements.length === 1) {
-					// Just shift by a tiny bit to trigger transition if needed or keep at center
 				}
 			} else if (!isComputerAction) {
 				// 1. Trigger shake first at current position
@@ -1479,15 +1520,28 @@ const GameSession = ({
 								)}
 							</p>
 						</>
-					) : (
-						<h1 className="text-xl font-bold tracking-tight text-primary opacity-60">
-							{ruleset.title}
-						</h1>
-					)}
+					) : null}
 				</div>
 				{!ruleset.showPalette && counterBar && (
 					<div className="pointer-events-none absolute inset-x-0 bottom-4 z-30">
 						{counterBar}
+					</div>
+				)}
+				{reactionMessage && (
+					<div
+						className={`pointer-events-none absolute inset-x-0 z-[120] flex justify-center px-3 pr-14 ${
+							isPlaytest ? 'top-10' : 'top-2'
+						}`}
+					>
+						<button
+							type="button"
+							onClick={() => setReactionMessage(null)}
+							className="pointer-events-auto w-fit max-w-full cursor-pointer rounded-[1.35rem] border border-cyan-200/22 bg-slate-950/92 px-4 py-2 text-left text-sm font-semibold text-cyan-50 shadow-[0_14px_32px_rgba(2,6,23,0.42)] backdrop-blur-xl transition-colors hover:bg-slate-950"
+						>
+							<span className="block whitespace-pre-line break-words">
+								{reactionMessage}
+							</span>
+						</button>
 					</div>
 				)}
 
@@ -2141,7 +2195,10 @@ export const GameRoot = () => {
 		}
 
 		trpc.init.get
-			.query(overrideModId ? { modId: overrideModId } : undefined)
+			.query({
+				...(overrideModId ? { modId: overrideModId } : {}),
+				countPlayerOpen: true,
+			})
 			.then((response) => {
 				if (response.rulesetUnavailableReason) {
 					setState({

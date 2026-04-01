@@ -30,15 +30,16 @@ describe('parseReactionScript', () => {
       [
         'dust',
         'add dust, key',
-        'set(money += 1)',
-        'set(money -= 1)',
-        'set(health = 10)',
+        'set money += 1',
+        'set money -= 1',
+        'set health = 10',
         'remove flashlight',
         'remove_all dust',
-        'message("The cupboard is locked.")',
-        'popup("A hidden clue appears.", key)',
-        'win("You escaped.")',
-        'lose("The room collapses.", dust)',
+        'remove_all',
+        'message "The cupboard is locked."',
+        'popup "A hidden clue appears.", key',
+        'win "You escaped."',
+        'lose "The room collapses.", dust',
         'stop',
       ].join('\n')
     );
@@ -100,9 +101,14 @@ describe('parseReactionScript', () => {
         line: 7,
       },
       {
-        action: { kind: 'message', text: 'The cupboard is locked.' },
+        action: { kind: 'remove_all' },
         conditions: [],
         line: 8,
+      },
+      {
+        action: { kind: 'message', text: 'The cupboard is locked.' },
+        conditions: [],
+        line: 9,
       },
       {
         action: {
@@ -111,12 +117,12 @@ describe('parseReactionScript', () => {
           text: 'A hidden clue appears.',
         },
         conditions: [],
-        line: 9,
+        line: 10,
       },
       {
         action: { kind: 'win', text: 'You escaped.' },
         conditions: [],
-        line: 10,
+        line: 11,
       },
       {
         action: {
@@ -125,12 +131,12 @@ describe('parseReactionScript', () => {
           text: 'The room collapses.',
         },
         conditions: [],
-        line: 11,
+        line: 12,
       },
       {
         action: { kind: 'stop' },
         conditions: [],
-        line: 12,
+        line: 13,
       },
     ]);
   });
@@ -183,9 +189,10 @@ describe('parseReactionScript', () => {
         'emit scratched-note, bandage',
         'if(count(health)<10)bandage',
         'if (on_table(flashlight) and undiscovered(jacket)) jacket',
-        'message("Done.")',
-        'popup("A hidden clue appears.", key)',
-        'lose("The room collapses.")',
+        'remove_all',
+        'message "Done."',
+        'popup "A hidden clue appears.", key',
+        'lose "The room collapses."',
       ].join('\n')
     );
 
@@ -195,9 +202,10 @@ describe('parseReactionScript', () => {
         'add scratched-note, bandage',
         'if (count(health) < 10) add bandage',
         'if (on_table(flashlight) and not_discovered(jacket)) add jacket',
-        'message("Done.")',
-        'popup("A hidden clue appears.", key)',
-        'lose("The room collapses.")',
+        'remove_all',
+        'message "Done."',
+        'popup "A hidden clue appears.", key',
+        'lose "The room collapses."',
       ].join('\n')
     );
   });
@@ -225,7 +233,7 @@ describe('parseReactionScript', () => {
       {
         line: 2,
         message:
-          'Use set(counterName = number), set(counterName += number), or set(counterName -= number).',
+          'Use set counterName = number, set counterName += number, or set counterName -= number.',
       },
       {
         line: 3,
@@ -234,7 +242,7 @@ describe('parseReactionScript', () => {
       {
         line: 4,
         message:
-          'popup(...) must contain a double-quoted string and an optional element name.',
+          'popup must contain a double-quoted string and an optional element name.',
       },
     ]);
   });
@@ -242,7 +250,7 @@ describe('parseReactionScript', () => {
 
 describe('validateReactionScript', () => {
   it('rejects unknown counters when none are configured', () => {
-    const validation = validateReactionScript('set(money += 1)', {
+    const validation = validateReactionScript('set money += 1', {
       counterNames: [],
       elements: elementRefs,
     });
@@ -274,7 +282,7 @@ describe('validateReactionScript', () => {
   });
 
   it('rejects unknown popup icon element refs', () => {
-    const validation = validateReactionScript('popup("A hidden clue appears.", relic)', {
+    const validation = validateReactionScript('popup "A hidden clue appears.", relic', {
       counterNames: [],
       elements: elementRefs,
     });
@@ -300,13 +308,13 @@ describe('validateReactionScript', () => {
       {
         line: 1,
         message:
-          'Counter "health" cannot act as a normal element here. Use count(...) or set(...) instead.',
+          'Counter "health" cannot act as a normal element here. Use count(...) or set counterName += 1 instead.',
       },
     ]);
   });
 
   it('still allows counters as popup icons', () => {
-    const validation = validateReactionScript('popup("A hidden clue appears.", Health)', {
+    const validation = validateReactionScript('popup "A hidden clue appears.", Health', {
       counterNames: ['health'],
       elements: [...elementRefs, { id: 'health', name: 'Health' }],
       nonGameplayElementIds: ['health'],
@@ -327,11 +335,11 @@ describe('executeReactionScript', () => {
       discoveredElementIds: ['flashlight'],
       elements: elementRefs,
       script: [
-        'set(money += 1)',
+        'set money += 1',
         'if (count(health) < 10) add bandage, key',
         'remove flashlight',
         'remove_all dust',
-        'message("It is locked.")',
+        'message "It is locked."',
       ].join('\n'),
       tableElements: [
         { elementId: 'flashlight', id: 'table-1' },
@@ -366,9 +374,9 @@ describe('executeReactionScript', () => {
       elements: elementRefs,
       script: parseOrThrow(
         [
-          'popup("The room shifts.", dust)',
-          'popup("A key turns.", key)',
-          'win("You escaped.", jacket)',
+          'popup "The room shifts.", dust',
+          'popup "A key turns.", key',
+          'win "You escaped.", jacket',
           'add bandage',
         ].join('\n')
       ),
@@ -452,7 +460,7 @@ describe('executeReactionScript', () => {
       },
       discoveredElementIds: [],
       elements: elementRefs,
-      script: ['set(health += 10)', 'set(Health -= 99)'].join('\n'),
+      script: ['set health += 10', 'set Health -= 99'].join('\n'),
       tableElements: [],
     });
 
@@ -464,5 +472,31 @@ describe('executeReactionScript', () => {
     expect(execution.result.counterValues).toEqual({
       Health: 0,
     });
+  });
+
+  it('clears the full table for bare remove_all', () => {
+    const execution = executeReactionScript({
+      counterNames: [],
+      counters: {},
+      discoveredElementIds: [],
+      elements: elementRefs,
+      script: 'remove_all',
+      tableElements: [
+        { elementId: 'flashlight', id: 'table-1' },
+        { elementId: 'dust', id: 'table-2' },
+        { elementId: 'key', id: 'table-3' },
+      ],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.removedTableElementIds).toEqual([
+      'table-1',
+      'table-2',
+      'table-3',
+    ]);
   });
 });
