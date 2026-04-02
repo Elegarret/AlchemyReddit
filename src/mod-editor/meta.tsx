@@ -74,7 +74,7 @@ export const EditorValidationPlank = ({
 
   return (
     <div
-      className={`editor-validation-plank sticky top-[5.25rem] z-30 overflow-hidden rounded-2xl border backdrop-blur-xl ${
+      className={`editor-validation-plank sticky top-0 z-30 overflow-hidden rounded-2xl border backdrop-blur-xl ${
         hasBlockingItems
           ? 'editor-validation-plank-blocked'
           : 'editor-validation-plank-ready'

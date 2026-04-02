@@ -317,8 +317,20 @@ const highlightReactionEditorValue = (value: string): HighlightToken[] =>
         });
       }
 
-      return tokens;
-    });
+        return tokens;
+      });
+
+const getDisplayHighlightedTokens = (value: string): HighlightToken[] => {
+  const tokens = highlightReactionEditorValue(value);
+
+  // Preserve a final blank wrapped line so the overlay scroll height matches
+  // the native textarea when the content ends with a newline.
+  if (value.endsWith('\n')) {
+    return [...tokens, { text: '\u200b', tone: 'base' }];
+  }
+
+  return tokens;
+};
 
 export const ReactionScriptAutocompleteTextarea = ({
   beautifyOnBlur = false,
@@ -351,7 +363,7 @@ export const ReactionScriptAutocompleteTextarea = ({
     null
   );
   const highlightedTokens = useMemo(
-    () => highlightReactionEditorValue(value),
+    () => getDisplayHighlightedTokens(value),
     [value]
   );
 
@@ -411,6 +423,15 @@ export const ReactionScriptAutocompleteTextarea = ({
     hasPendingEditRef.current = true;
     return formatted;
   };
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    syncHighlightScroll(textarea);
+  }, [value]);
 
   useEffect(() => {
     if (suggestions.length === 0) {
@@ -530,7 +551,7 @@ export const ReactionScriptAutocompleteTextarea = ({
         <pre
           ref={highlightRef}
           aria-hidden={true}
-          className="editor-code-highlight custom-scrollbar col-start-1 row-start-1 m-0 overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+          className="editor-code-highlight custom-scrollbar col-start-1 row-start-1 m-0 overflow-auto whitespace-pre-wrap break-words"
           style={{
             font: 'inherit',
             lineHeight: 'inherit',

@@ -103,6 +103,8 @@ export const ModEditorApp = () => {
     useState<ElementPanelView>('compact');
   const [isValidationBlinking, setIsValidationBlinking] = useState(false);
   const [isValidationExpanded, setIsValidationExpanded] = useState(false);
+  const [shouldShowValidationPlank, setShouldShowValidationPlank] =
+    useState(false);
   const validationBlinkTimeoutRef = useRef<number | null>(null);
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
   const [isReactionTextExpanded, setIsReactionTextExpanded] = useState(true);
@@ -136,6 +138,11 @@ export const ModEditorApp = () => {
 
     setDraft(parsed.draft);
     return parsed;
+  };
+
+  const handleReactionTextChange = (text: string) => {
+    setShouldShowValidationPlank(true);
+    setReactionText(text);
   };
 
   const toggleReactionView = () => {
@@ -329,6 +336,7 @@ export const ModEditorApp = () => {
   const updateDraft = (
     updater: (current: SaveDraftInput) => SaveDraftInput
   ) => {
+    setShouldShowValidationPlank(true);
     setDraft((current) => updater(current));
   };
 
@@ -749,6 +757,7 @@ export const ModEditorApp = () => {
       outputIds.push(leftResolved.elementId);
     }
 
+    setShouldShowValidationPlank(true);
     setDraft({
       ...nextDraft,
       reactions: nextDraft.reactions.map((reaction, reactionIndex) =>
@@ -1053,6 +1062,8 @@ export const ModEditorApp = () => {
         reactions: loaded.reactions,
         reactionComments: loaded.reactionComments,
       });
+      setShouldShowValidationPlank(true);
+      setIsValidationExpanded(false);
       setReactionText(
         formatReactionText({
           id: loaded.id,
@@ -1105,6 +1116,8 @@ export const ModEditorApp = () => {
       await trpc.mods.remove.mutate(modId);
       if (loadedDraftId === modId) {
         setDraft(createEmptyDraft());
+        setShouldShowValidationPlank(false);
+        setIsValidationExpanded(false);
         setLoadedDraftId(null);
         setShareUrl(null);
         setEditorTargetModId(null);
@@ -1220,7 +1233,7 @@ export const ModEditorApp = () => {
           </div>
         )}
 
-        <div className="editor-sticky-header sticky top-0 z-40 mb-4 rounded-b-3xl px-4 py-3 backdrop-blur-xl">
+        <div className="editor-sticky-header mb-4 rounded-b-3xl px-4 py-3 backdrop-blur-xl">
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
             <div className="justify-self-start">
               <button
@@ -1653,15 +1666,17 @@ export const ModEditorApp = () => {
               </div>
             </div>
 
-            <EditorValidationPlank
-              blockingItems={blockingValidationItems}
-              warningItems={warningValidationItems}
-              isBlinking={isValidationBlinking}
-              isExpanded={isValidationExpanded}
-              onToggle={() =>
-                setIsValidationExpanded((current) => !current)
-              }
-            />
+            {shouldShowValidationPlank && (
+              <EditorValidationPlank
+                blockingItems={blockingValidationItems}
+                warningItems={warningValidationItems}
+                isBlinking={isValidationBlinking}
+                isExpanded={isValidationExpanded}
+                onToggle={() =>
+                  setIsValidationExpanded((current) => !current)
+                }
+              />
+            )}
 
             <div
               className={`grid items-start gap-4 ${
@@ -1788,7 +1803,7 @@ export const ModEditorApp = () => {
                       mode="reaction-text"
                       textareaClassName="resize-none"
                       onBlur={() => syncDraftFromText(reactionText)}
-                      onChange={setReactionText}
+                      onChange={handleReactionTextChange}
                       onElementCommitted={addMissingReactionElement}
                       placeholder={
                         'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    message "It opens."\n    add Treasure'

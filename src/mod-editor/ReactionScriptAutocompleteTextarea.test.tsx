@@ -216,6 +216,37 @@ describe('ReactionScriptAutocompleteTextarea', () => {
     });
   });
 
+  it('preserves a trailing blank line in the highlight layer', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const value = 'starters: Air, Fire\n';
+
+    await act(async () => {
+      root.render(
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="reaction-text"
+          onChange={() => undefined}
+          placeholder="Type reactions"
+          rows={6}
+          value={value}
+        />
+      );
+    });
+
+    const pre = container.querySelector('pre');
+    expect(pre?.textContent).toBe(`${value}\u200b`);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it('does not open autocomplete when the caret is inside a comment', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
