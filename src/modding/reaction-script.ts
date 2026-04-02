@@ -1,8 +1,22 @@
 import type { ActiveCounterDefinition } from './types';
 
 export type ReactionScriptAst = {
+  sourceLines?: ReactionScriptSourceLine[];
   statements: ReactionScriptStatement[];
 };
+
+export type ReactionScriptSourceLine =
+  | {
+      commentText: string;
+      kind: 'comment';
+      line: number;
+    }
+  | {
+      commentText?: string;
+      kind: 'statement';
+      line: number;
+      statement: ReactionScriptStatement;
+    };
 
 export type ReactionScriptStatement = {
   action: ReactionScriptAction;
@@ -104,7 +118,9 @@ export type ReactionScriptTableElement = {
 
 export type ReactionScriptExecutionContext = ReactionScriptValidationContext & {
   counters: Record<string, number>;
-  counterDefinitions?: Array<Pick<ActiveCounterDefinition, 'max' | 'min' | 'name'>>;
+  counterDefinitions?: Array<
+    Pick<ActiveCounterDefinition, 'max' | 'min' | 'name'>
+  >;
   discoveredElementIds: string[];
   script: ReactionScriptAst | string;
   tableElements: ReactionScriptTableElement[];
@@ -150,8 +166,23 @@ const isReactionScriptIssue = (
 const normalizeLookupKey = (value: string) =>
   value.trim().toLowerCase().replace(/\s+/g, ' ');
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
+const clampToOptionalBounds = (
+  value: number,
+  min?: number,
+  max?: number
+) => {
+  let nextValue = value;
+
+  if (min !== undefined) {
+    nextValue = Math.max(nextValue, min);
+  }
+
+  if (max !== undefined) {
+    nextValue = Math.min(nextValue, max);
+  }
+
+  return nextValue;
+};
 
 const parseInteger = (value: string) => {
   if (!/^-?\d+$/.test(value)) {
@@ -172,6 +203,57 @@ const parseQuotedText = (rawValue: string) => {
   } catch {
     return null;
   }
+};
+
+export const findReactionScriptCommentStart = (value: string) => {
+  let inString = false;
+  let isEscaped = false;
+
+  for (let index = 0; index < value.length - 1; index += 1) {
+    const character = value[index];
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+
+      if (character === '\\') {
+        isEscaped = true;
+        continue;
+      }
+
+      if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (character === '/' && value[index + 1] === '/') {
+      return index;
+    }
+  }
+
+  return -1;
+};
+
+export const splitReactionScriptLineComment = (value: string) => {
+  const commentStart = findReactionScriptCommentStart(value);
+  if (commentStart === -1) {
+    return {
+      code: value,
+      commentText: null,
+    };
+  }
+
+  return {
+    code: value.slice(0, commentStart),
+    commentText: value.slice(commentStart + 2),
+  };
 };
 
 const parseElementRefs = (
@@ -959,8 +1041,20 @@ const formatAction = (action: ReactionScriptAction) => {
   }
 };
 
+const formatStatement = (statement: ReactionScriptStatement) => {
+  const actionText = formatAction(statement.action);
+  if (statement.conditions.length === 0) {
+    return actionText;
+  }
+
+  return `if (${statement.conditions.map(formatCondition).join(' and ')}) ${actionText}`;
+};
+
 export const hasReactionScript = (script: string | undefined) =>
-  (script ?? '').trim().length > 0;
+  (script ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .some((line) => splitReactionScriptLineComment(line).code.trim().length > 0);
 
 const formatReactionScriptIssueMessage = (message: string) =>
   message === 'If conditions cannot be empty.'
@@ -974,12 +1068,21 @@ export const parseReactionScript = (
   scriptText: string
 ): ReactionScriptParseResult => {
   const statements: ReactionScriptStatement[] = [];
+  const sourceLines: ReactionScriptSourceLine[] = [];
   const errors: ReactionScriptIssue[] = [];
   const lines = scriptText.replace(/\r\n/g, '\n').split('\n');
 
   lines.forEach((lineText, index) => {
-    const trimmedLine = lineText.trim();
+    const { code, commentText } = splitReactionScriptLineComment(lineText);
+    const trimmedLine = code.trim();
     if (!trimmedLine) {
+      if (commentText !== null) {
+        sourceLines.push({
+          commentText,
+          kind: 'comment',
+          line: index + 1,
+        });
+      }
       return;
     }
 
@@ -990,6 +1093,12 @@ export const parseReactionScript = (
     }
 
     statements.push(parsed);
+    sourceLines.push({
+      ...(commentText !== null ? { commentText } : {}),
+      kind: 'statement',
+      line: index + 1,
+      statement: parsed,
+    });
   });
 
   if (errors.length > 0) {
@@ -1001,23 +1110,31 @@ export const parseReactionScript = (
 
   return {
     ast: {
+      sourceLines,
       statements,
     },
     ok: true,
   };
 };
 
-export const formatReactionScriptAst = (ast: ReactionScriptAst) =>
-  ast.statements
-    .map((statement) => {
-      const actionText = formatAction(statement.action);
-      if (statement.conditions.length === 0) {
-        return actionText;
-      }
+export const formatReactionScriptAst = (ast: ReactionScriptAst) => {
+  if (ast.sourceLines) {
+    return ast.sourceLines
+      .map((sourceLine) => {
+        if (sourceLine.kind === 'comment') {
+          return `//${sourceLine.commentText}`;
+        }
 
-      return `if (${statement.conditions.map(formatCondition).join(' and ')}) ${actionText}`;
-    })
-    .join('\n');
+        const formattedStatement = formatStatement(sourceLine.statement);
+        return sourceLine.commentText !== undefined
+          ? `${formattedStatement} //${sourceLine.commentText}`
+          : formattedStatement;
+      })
+      .join('\n');
+  }
+
+  return ast.statements.map(formatStatement).join('\n');
+};
 
 export const formatReactionScript = (script: ReactionScriptAst | string) => {
   const parsed = parseScriptAst(script);
@@ -1244,7 +1361,7 @@ export const executeReactionScript = (
         nextValue = currentValue - statement.action.value;
       }
       counterValues[counterName] = bounds
-        ? clamp(nextValue, bounds.min, bounds.max)
+        ? clampToOptionalBounds(nextValue, bounds.min, bounds.max)
         : nextValue;
       continue;
     }

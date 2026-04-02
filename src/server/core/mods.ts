@@ -111,11 +111,15 @@ const buildSharePostTitle = (mod: Pick<ModDoc, 'title' | 'ownerUsername'>) =>
 const buildSharePostBody = (mod: Pick<ModDoc, 'summary' | 'title'>) =>
   mod.summary || mod.title;
 
-const ensureModOwnership = (mod: ModDoc, userId: string) => {
-  if (mod.ownerUserId !== userId) {
-    throw new Error('You do not own this mod.');
-  }
-};
+const takeModOwnership = (
+  mod: ModDoc,
+  userId: string,
+  username: string
+): ModDoc => ({
+  ...mod,
+  ownerUserId: userId,
+  ownerUsername: username,
+});
 
 const persistPublishedSharePostId = async (
   userId: string,
@@ -241,7 +245,11 @@ export const listModsForUser = async (userId: string) => {
   );
 };
 
-export const getEditableModForUser = async (userId: string, modId: string) => {
+export const getEditableModForUser = async (
+  userId: string,
+  username: string | undefined,
+  modId: string
+) => {
   const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
   if (draft) {
     return draft;
@@ -252,7 +260,7 @@ export const getEditableModForUser = async (userId: string, modId: string) => {
     return null;
   }
 
-  ensureModOwnership(latest, userId);
+  await assertCanManageMod(latest, userId, username);
   return {
     ...latest,
     status: 'draft',
@@ -287,7 +295,7 @@ export const saveDraftForUser = async (
   const input = saveDraftInputSchema.parse(rawInput);
   const existingPublished = input.id ? await loadLatestMod(input.id) : null;
   if (existingPublished) {
-    ensureModOwnership(existingPublished, userId);
+    await assertCanManageMod(existingPublished, userId, username);
   }
 
   const modId = input.id ?? createModId();
@@ -304,6 +312,7 @@ export const saveDraftForUser = async (
     showPalette: input.showPalette,
     elements: input.elements,
     reactions: input.reactions,
+    reactionComments: input.reactionComments,
     status: 'draft',
     updatedAt,
   };
@@ -323,7 +332,7 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
   }
   const existingPublished = await loadLatestMod(modId);
 
-  ensureModOwnership(draft, userId);
+  await assertCanManageMod(draft, userId, draft.ownerUsername);
   const validation = validateDraftInput({
     id: draft.id,
     title: draft.title,
@@ -385,6 +394,24 @@ export const isCurrentUserModerator = async (username: string | undefined) => {
   return (await moderators.all()).length > 0;
 };
 
+const canManageMod = async (
+  mod: ModDoc,
+  userId: string,
+  username: string | undefined
+) => mod.ownerUserId === userId || (await isCurrentUserModerator(username));
+
+const assertCanManageMod = async (
+  mod: ModDoc,
+  userId: string,
+  username: string | undefined
+) => {
+  if (await canManageMod(mod, userId, username)) {
+    return;
+  }
+
+  throw new Error('You do not own this mod.');
+};
+
 export const hidePublishedMod = async (
   userId: string,
   username: string | undefined,
@@ -395,10 +422,7 @@ export const hidePublishedMod = async (
     throw new Error('Mod not found.');
   }
 
-  if (
-    latest.ownerUserId !== userId &&
-    !(await isCurrentUserModerator(username))
-  ) {
+  if (!(await canManageMod(latest, userId, username))) {
     throw new Error('You are not allowed to hide this mod.');
   }
 
@@ -436,7 +460,11 @@ const removeSharePostIfPossible = async (sharePostId: string | undefined) => {
   }
 };
 
-export const removeModForUser = async (userId: string, modId: string) => {
+export const removeModForUser = async (
+  userId: string,
+  username: string | undefined,
+  modId: string
+) => {
   const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
   const latest = await loadLatestMod(modId);
   const target = draft ?? latest;
@@ -445,16 +473,29 @@ export const removeModForUser = async (userId: string, modId: string) => {
     throw new Error('Mod not found.');
   }
 
-  ensureModOwnership(target, userId);
+  await assertCanManageMod(target, userId, username);
   await removeSharePostIfPossible(target.sharePostId);
+
+  const ownerIds = new Set(
+    [draft?.ownerUserId, latest?.ownerUserId, userId].filter(
+      (candidate): candidate is string => Boolean(candidate)
+    )
+  );
 
   await redis.del(
     getDraftKey(userId, modId),
+    ...Array.from(ownerIds)
+      .filter((ownerId) => ownerId !== userId)
+      .map((ownerId) => getDraftKey(ownerId, modId)),
     getLatestKey(modId),
     getMetaKey(modId),
     getPlayerKey(modId)
   );
-  await redis.zRem(getOwnerKey(userId), [modId]);
+  await Promise.all(
+    Array.from(ownerIds).map(async (ownerId) =>
+      await redis.zRem(getOwnerKey(ownerId), [modId])
+    )
+  );
   await redis.zRem(catalogKey, [modId]);
 
   return { success: true };
@@ -513,7 +554,11 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
   };
 };
 
-export const unpublishModForUser = async (userId: string, modId: string) => {
+export const unpublishModForUser = async (
+  userId: string,
+  username: string | undefined,
+  modId: string
+) => {
   const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
   const latest = await loadLatestMod(modId);
   const source = latest ?? draft;
@@ -522,14 +567,14 @@ export const unpublishModForUser = async (userId: string, modId: string) => {
     throw new Error('Mod not found.');
   }
 
-  ensureModOwnership(source, userId);
+  await assertCanManageMod(source, userId, username);
 
   await removeSharePostIfPossible(latest?.sharePostId ?? draft?.sharePostId);
 
   const now = new Date().toISOString();
   const unpublished: ModDoc = {
     ...stripPublishedFields({
-      ...(draft ?? latest ?? source),
+      ...takeModOwnership(draft ?? latest ?? source, userId, username ?? 'unknown'),
       status: 'draft',
       updatedAt: now,
     }),

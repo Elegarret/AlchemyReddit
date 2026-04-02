@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   executeReactionScript,
   formatReactionScript,
+  hasReactionScript,
   parseReactionScript,
   validateReactionScript,
 } from './reaction-script';
@@ -182,6 +183,35 @@ describe('parseReactionScript', () => {
     expect(compact.ast).toEqual(spaced.ast);
   });
 
+  it('ignores full-line and trailing comments while preserving them in formatted output', () => {
+    const script = [
+      '// boot note',
+      'add dust // spawn dust',
+      'message "Use // literally."',
+    ].join('\n');
+
+    const parsed = parseReactionScript(script);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    expect(parsed.ast.statements).toEqual([
+      {
+        action: { elementRefs: ['dust'], kind: 'add' },
+        conditions: [],
+        line: 2,
+      },
+      {
+        action: { kind: 'message', text: 'Use // literally.' },
+        conditions: [],
+        line: 3,
+      },
+    ]);
+    expect(formatReactionScript(parsed.ast)).toBe(script);
+  });
+
   it('formats valid scripts into canonical output', () => {
     const formatted = formatReactionScript(
       [
@@ -241,6 +271,25 @@ describe('parseReactionScript', () => {
       },
       {
         line: 4,
+        message:
+          'popup must contain a double-quoted string and an optional element name.',
+      },
+    ]);
+  });
+
+  it('keeps physical line numbers when comments are present', () => {
+    const parsed = parseReactionScript(
+      ['// comment', 'add dust', 'popup mystery'].join('\n')
+    );
+
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) {
+      return;
+    }
+
+    expect(parsed.errors).toEqual([
+      {
+        line: 3,
         message:
           'popup must contain a double-quoted string and an optional element name.',
       },
@@ -321,6 +370,11 @@ describe('validateReactionScript', () => {
     });
 
     expect(validation.ok).toBe(true);
+  });
+
+  it('treats comment-only scripts as empty for override checks', () => {
+    expect(hasReactionScript('// note only')).toBe(false);
+    expect(hasReactionScript('// note only\nadd dust')).toBe(true);
   });
 });
 
@@ -471,6 +525,61 @@ describe('executeReactionScript', () => {
 
     expect(execution.result.counterValues).toEqual({
       Health: 0,
+    });
+  });
+
+  it('supports optional one-sided counter bounds', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Health'],
+      counterDefinitions: [
+        {
+          name: 'Health',
+          min: 0,
+        },
+      ],
+      counters: {
+        Health: 8,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      script: ['set health += 10', 'set Health -= 99'].join('\n'),
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.counterValues).toEqual({
+      Health: 0,
+    });
+  });
+
+  it('leaves counters unbounded when no authored bounds exist', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Health'],
+      counterDefinitions: [
+        {
+          name: 'Health',
+        },
+      ],
+      counters: {
+        Health: 8,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      script: ['set health += 10', 'set Health -= 99'].join('\n'),
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.counterValues).toEqual({
+      Health: -81,
     });
   });
 

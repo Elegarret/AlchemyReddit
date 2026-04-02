@@ -7,22 +7,24 @@ One statement per line. Lines run top to bottom. A bare element name is shorthan
 - `line := action | if_line`
 - `if_line := if ( condition_list ) action`
 - `condition_list := condition (and condition)*`
+- `// comment` starts a line comment outside double-quoted strings and runs to end of line
 
 ## Actions
 
-- `add dust`
-- `add dust, key`
-- `dust`
-- `remove flashlight`
-- `remove_all dust`
-- `set(money += 1)`
-- `set(money -= 1)`
-- `set(health = 10)`
-- `message("The cupboard is locked.")`
-- `popup("The cupboard is locked.")`
-- `popup("The cupboard is locked.", key)`
-- `win("You restored the realm.")`
-- `lose("The realm is lost.", corpse)`
+- `add element_1`
+- `add element_1, element_2`
+- `element_1`
+- `remove element_1`
+- `remove_all`
+- `remove_all element_1`
+- `set counter += 1`
+- `set counter -= 1`
+- `set counter = 10`
+- `message "Message at the top of the screen"`
+- `popup "message in the big blocking popup"`
+- `popup "message in the big blocking popup with an icon of element_x", element_x`
+- `win "Win popup, game over, contratulations!", icon_element`
+- `lose "You lose, so bad, start over", icon_element`
 - `stop`
 
 ## Conditions
@@ -49,19 +51,26 @@ Use `if (...) action` for a single conditional action. Conditions are flat and A
 
 Bracketed tokens are whitespace-tolerant on input, so `if(count(health)<10)add bandage` also parses, but canonical output uses one space where needed.
 
+Comments can be full-line or trailing:
+
+- `// explain why this line exists`
+- `add bandage // reward for low health`
+- `message "Use // literally in text."`
+
 ## Example
 
 ```txt
-message("The cupboard is locked.")
-popup("You found a hidden compartment.", key)
+// cupboard branch
+message "The cupboard is locked."
+popup "You found a hidden compartment.", key
 if (not_on_table(key)) stop
 remove flashlight
 add scratched-note, bandage
-set(money += 1)
+set money += 1
 
-`message(...)` shows a non-blocking toast.
-`popup(...)` shows a blocking modal the player must dismiss.
-`win(...)` and `lose(...)` show blocking end-state screens.
+`message "..."` shows a non-blocking toast.
+`popup "..."` shows a blocking modal the player must dismiss.
+`win "..."` and `lose "..."` show blocking end-state screens.
 ```
 
 ##  possible autocomplete flaws:

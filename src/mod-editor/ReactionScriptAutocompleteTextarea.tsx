@@ -8,7 +8,10 @@ import {
   type ReactionScriptAutocompleteMode,
   type ReactionScriptAutocompleteSuggestion,
 } from '../modding/reaction-script-autocomplete';
-import { formatReactionScript } from '../modding/reaction-script';
+import {
+  formatReactionScript,
+  splitReactionScriptLineComment,
+} from '../modding/reaction-script';
 
 type ScriptAutocompleteTextareaProps = {
   beautifyOnBlur?: boolean;
@@ -34,7 +37,7 @@ type CaretPopupPosition = {
 
 type HighlightToken = {
   text: string;
-  tone: 'base' | 'element' | 'keyword' | 'symbol';
+  tone: 'base' | 'comment' | 'element' | 'keyword' | 'symbol';
 };
 
 const POPUP_WIDTH = 240;
@@ -45,16 +48,19 @@ const SYSTEM_WORDS = new Set([
   'add',
   'and',
   'count',
+  'counters',
   'discovered',
   'if',
   'message',
   'not_discovered',
   'not_on_table',
+  'nonconsumables',
   'on_table',
   'popup',
   'remove',
   'remove_all',
   'set',
+  'starters',
   'stop',
   'undiscovered',
   'win',
@@ -257,7 +263,7 @@ const tokenizeSegment = (segment: string): HighlightToken[] => {
   return tokens;
 };
 
-const highlightReactionEditorValue = (value: string): HighlightToken[] => {
+const highlightReactionEditorCode = (value: string): HighlightToken[] => {
   const tokens: HighlightToken[] = [];
   let lastIndex = 0;
 
@@ -287,6 +293,32 @@ const highlightReactionEditorValue = (value: string): HighlightToken[] => {
 
   return tokens;
 };
+
+const highlightReactionEditorValue = (value: string): HighlightToken[] =>
+  value
+    .replace(/\r\n/g, '\n')
+    .split(/(\n)/)
+    .flatMap((segment) => {
+      if (segment === '\n') {
+        return [
+          {
+            text: segment,
+            tone: 'base',
+          } satisfies HighlightToken,
+        ];
+      }
+
+      const { code, commentText } = splitReactionScriptLineComment(segment);
+      const tokens = highlightReactionEditorCode(code);
+      if (commentText !== null) {
+        tokens.push({
+          text: `//${commentText}`,
+          tone: 'comment',
+        });
+      }
+
+      return tokens;
+    });
 
 export const ReactionScriptAutocompleteTextarea = ({
   beautifyOnBlur = false,
@@ -516,6 +548,8 @@ export const ReactionScriptAutocompleteTextarea = ({
                     ? 'editor-code-token-keyword'
                     : token.tone === 'element'
                       ? 'editor-code-token-element'
+                      : token.tone === 'comment'
+                        ? 'editor-code-token-comment'
                       : token.tone === 'symbol'
                         ? 'editor-code-token-symbol'
                         : 'editor-code-token-base'

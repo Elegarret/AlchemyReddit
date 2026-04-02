@@ -22,6 +22,7 @@ import {
 import {
   MAX_REALM_INTRO_LENGTH,
   MAX_REALM_SUMMARY_LENGTH,
+  normalizeModCounterDefinition,
   type ModCounterDefinition,
   type ModElement,
   type ModListItem,
@@ -48,7 +49,6 @@ import {
   type ElementPanelView,
 } from './constants';
 import {
-  applyReactionTextToDraft,
   clampRealmSummary,
   createEmptyDraft,
   createStarterElement,
@@ -57,8 +57,11 @@ import {
   ensureUniqueElementId,
   formatDate,
   formatReactionText,
+  formatReactionTextIssue,
   getNextGeneratedElementName,
   getSharePostUrl,
+  normalizeReactionComments,
+  parseReactionTextToDraft,
 } from './draft';
 
 type BlockedScriptReaction = {
@@ -101,8 +104,24 @@ export const ModEditorApp = () => {
     {}
   );
 
+  const reactionTextParse = useMemo(
+    () =>
+      reactionView === 'text' ? parseReactionTextToDraft(draft, reactionText) : null,
+    [draft, reactionText, reactionView]
+  );
+  const reactionTextIssues =
+    reactionView === 'text' ? reactionTextParse?.errors ?? [] : [];
+  const draftWithTextChanges =
+    reactionView === 'text' && reactionTextParse?.ok ? reactionTextParse.draft : draft;
+
   const syncDraftFromText = (text: string) => {
-    updateDraft((currentDraft) => applyReactionTextToDraft(currentDraft, text));
+    const parsed = parseReactionTextToDraft(draft, text);
+    if (!parsed.ok) {
+      return parsed;
+    }
+
+    setDraft(parsed.draft);
+    return parsed;
   };
 
   const toggleReactionView = () => {
@@ -111,12 +130,27 @@ export const ModEditorApp = () => {
       setIsReactionTextExpanded(true);
       setReactionView('text');
     } else {
-      syncDraftFromText(reactionText);
+      const parsed = parseReactionTextToDraft(draft, reactionText);
+      if (!parsed.ok) {
+        const firstIssue = parsed.errors[0];
+        showValidationFeedback(
+          firstIssue
+            ? formatReactionTextIssue(firstIssue)
+            : 'Fix text editor errors first'
+        );
+        return;
+      }
+
+      setDraft(parsed.draft);
+      setReactionText(formatReactionText(parsed.draft));
       setReactionView('visual');
     }
   };
 
-  const validation = useMemo(() => validateModDraft(draft), [draft]);
+  const validation = useMemo(
+    () => validateModDraft(draftWithTextChanges),
+    [draftWithTextChanges]
+  );
   const blockedScriptReactions = useMemo<BlockedScriptReaction[]>(() => {
     const grouped = new Map<string, BlockedScriptReaction>();
 
@@ -179,16 +213,16 @@ export const ModEditorApp = () => {
   const currentDraftFingerprint = useMemo(
     () =>
       createModFingerprint({
-        title: draft.title,
-        summary: draft.summary,
-        intro: draft.intro,
-        startingElementIds: draft.startingElementIds,
-        counters: draft.counters,
-        showPalette: draft.showPalette,
-        elements: draft.elements,
-        reactions: draft.reactions,
+        title: draftWithTextChanges.title,
+        summary: draftWithTextChanges.summary,
+        intro: draftWithTextChanges.intro,
+        startingElementIds: draftWithTextChanges.startingElementIds,
+        counters: draftWithTextChanges.counters,
+        showPalette: draftWithTextChanges.showPalette,
+        elements: draftWithTextChanges.elements,
+        reactions: draftWithTextChanges.reactions,
       }),
-    [draft]
+    [draftWithTextChanges]
   );
   const hasPublishedDraftChanges = Boolean(
     hasLoadedPublishedVersion &&
@@ -200,8 +234,11 @@ export const ModEditorApp = () => {
       : 'unpublish';
   const loadedSharePostUrl = loadedMod ? getSharePostUrl(loadedMod) : null;
   const publishBlockedReason =
-    primaryPublishAction === 'publish' && !validation.isValid
-      ? validation.errors[0] ??
+    primaryPublishAction === 'publish' &&
+    (reactionTextIssues.length > 0 || !validation.isValid)
+      ? reactionTextIssues[0]
+          ? formatReactionTextIssue(reactionTextIssues[0])
+          : validation.errors[0] ??
         validation.scriptErrors[0] ??
         'Fix validation errors first'
       : null;
@@ -242,6 +279,9 @@ export const ModEditorApp = () => {
   const showValidationFeedback = (message?: string) => {
     showToast(
       message ??
+        (reactionTextIssues[0]
+          ? formatReactionTextIssue(reactionTextIssues[0])
+          : undefined) ??
         validation.errors[0] ??
         validation.scriptErrors[0] ??
         'Fix validation errors first'
@@ -416,14 +456,7 @@ export const ModEditorApp = () => {
 
   const normalizeCounterDefinition = (
     counter: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'>
-  ) => {
-    const max = Math.max(counter.min, counter.max);
-    return {
-      initial: Math.min(Math.max(counter.initial, counter.min), max),
-      max,
-      min: counter.min,
-    };
-  };
+  ) => normalizeModCounterDefinition(counter);
 
   const addCounterElement = (name: string) => {
     const trimmed = name.trim();
@@ -534,32 +567,51 @@ export const ModEditorApp = () => {
   };
 
   const removeElement = (elementId: string) => {
-    updateDraft((current) => ({
-      ...current,
-      counters: current.counters.filter(
-        (counter) => counter.elementId !== elementId
-      ),
-      elements: current.elements.filter((element) => element.id !== elementId),
-      startingElementIds: current.startingElementIds.filter(
-        (id) => id !== elementId
-      ),
-      reactions: current.reactions
-        .filter(
-          (reaction) =>
-            reaction.leftId !== elementId && reaction.rightId !== elementId
-        )
-        .map((reaction) => ({
-          ...reaction,
-          outputIds: reaction.outputIds.filter(
-            (outputId) => outputId !== elementId
-          ),
+    updateDraft((current) => {
+      const normalizedComments = normalizeReactionComments(current);
+      const pairedReactions = current.reactions
+        .map((reaction, index) => ({
+          commentBlock: normalizedComments.byReaction[index],
+          reaction,
         }))
         .filter(
-          (reaction) =>
+          ({ reaction }) =>
+            reaction.leftId !== elementId && reaction.rightId !== elementId
+        )
+        .map(({ commentBlock, reaction }) => ({
+          commentBlock,
+          reaction: {
+            ...reaction,
+            outputIds: reaction.outputIds.filter(
+              (outputId) => outputId !== elementId
+            ),
+          },
+        }))
+        .filter(
+          ({ reaction }) =>
             reaction.outputIds.length > 0 ||
             (reaction.script?.trim().length ?? 0) > 0
+        );
+
+      return {
+        ...current,
+        counters: current.counters.filter(
+          (counter) => counter.elementId !== elementId
         ),
-    }));
+        elements: current.elements.filter((element) => element.id !== elementId),
+        startingElementIds: current.startingElementIds.filter(
+          (id) => id !== elementId
+        ),
+        reactions: pairedReactions.map(({ reaction }) => reaction),
+        reactionComments: {
+          byReaction: pairedReactions.map(({ commentBlock }) => ({
+            headerComment: commentBlock?.headerComment,
+            leadingComments: [...(commentBlock?.leadingComments ?? [])],
+          })),
+          trailingComments: [...normalizedComments.trailingComments],
+        },
+      };
+    });
     setPendingElementFocusId((current) =>
       current === elementId ? null : current
     );
@@ -605,13 +657,20 @@ export const ModEditorApp = () => {
       return;
     }
 
-    updateDraft((current) => ({
-      ...current,
-      reactions: [
-        ...current.reactions,
-        { leftId: '', rightId: '', outputIds: [''], script: '' },
-      ],
-    }));
+    updateDraft((current) => {
+      const reactionComments = normalizeReactionComments(current);
+      return {
+        ...current,
+        reactions: [
+          ...current.reactions,
+          { leftId: '', rightId: '', outputIds: [''], script: '' },
+        ],
+        reactionComments: {
+          ...reactionComments,
+          byReaction: [...reactionComments.byReaction, { leadingComments: [] }],
+        },
+      };
+    });
   };
 
   const commitReaction = (
@@ -686,12 +745,40 @@ export const ModEditorApp = () => {
   };
 
   const deleteReaction = (index: number) => {
-    updateDraft((current) => ({
-      ...current,
-      reactions: current.reactions.filter(
-        (_, reactionIndex) => reactionIndex !== index
-      ),
-    }));
+    updateDraft((current) => {
+      const normalizedComments = normalizeReactionComments(current);
+      const nextCommentBlocks = [...normalizedComments.byReaction];
+      const removedCommentBlock = nextCommentBlocks.splice(index, 1)[0];
+      const trailingComments = [...normalizedComments.trailingComments];
+
+      if ((removedCommentBlock?.leadingComments.length ?? 0) > 0) {
+        if (index < nextCommentBlocks.length) {
+          const targetCommentBlock = nextCommentBlocks[index] ?? {
+            leadingComments: [],
+          };
+          nextCommentBlocks[index] = {
+            ...targetCommentBlock,
+            leadingComments: [
+              ...removedCommentBlock!.leadingComments,
+              ...(targetCommentBlock.leadingComments ?? []),
+            ],
+          };
+        } else {
+          trailingComments.unshift(...removedCommentBlock!.leadingComments);
+        }
+      }
+
+      return {
+        ...current,
+        reactions: current.reactions.filter(
+          (_, reactionIndex) => reactionIndex !== index
+        ),
+        reactionComments: {
+          byReaction: nextCommentBlocks,
+          trailingComments,
+        },
+      };
+    });
   };
 
   const moveReaction = (fromIndex: number, toIndex: number) => {
@@ -710,15 +797,23 @@ export const ModEditorApp = () => {
       }
 
       const reactions = [...current.reactions];
+      const reactionComments = normalizeReactionComments(current);
+      const commentBlocks = [...reactionComments.byReaction];
       const [movedReaction] = reactions.splice(fromIndex, 1);
+      const [movedCommentBlock] = commentBlocks.splice(fromIndex, 1);
       if (!movedReaction) {
         return current;
       }
 
       reactions.splice(toIndex, 0, movedReaction);
+      commentBlocks.splice(toIndex, 0, movedCommentBlock ?? { leadingComments: [] });
       return {
         ...current,
         reactions,
+        reactionComments: {
+          byReaction: commentBlocks,
+          trailingComments: reactionComments.trailingComments,
+        },
       };
     });
   };
@@ -728,10 +823,24 @@ export const ModEditorApp = () => {
   };
 
   const persistDraftSilently = async () => {
+    if (reactionView === 'text' && reactionTextIssues.length > 0) {
+      const firstIssue = reactionTextIssues[0];
+      throw new Error(
+        firstIssue
+          ? formatReactionTextIssue(firstIssue)
+          : 'Fix text editor errors first'
+      );
+    }
+
+    const nextDraft = draftWithTextChanges;
+    if (reactionView === 'text') {
+      setDraft(nextDraft);
+    }
+
     const saved = await trpc.mods.saveDraft.mutate({
-      ...draft,
-      summary: clampRealmSummary(draft.summary),
-      intro: draft.intro.trim(),
+      ...nextDraft,
+      summary: clampRealmSummary(nextDraft.summary),
+      intro: nextDraft.intro.trim(),
       ...(loadedDraftId ? { id: loadedDraftId } : {}),
     });
     setLoadedDraftId(saved.id);
@@ -756,7 +865,7 @@ export const ModEditorApp = () => {
   };
 
   const publishDraft = async () => {
-    if (!validation.isValid) {
+    if (reactionTextIssues.length > 0 || !validation.isValid) {
       showValidationFeedback();
       return;
     }
@@ -869,7 +978,7 @@ export const ModEditorApp = () => {
         PLAYTEST_RULESET_STORAGE_KEY,
         JSON.stringify(
           buildRulesetFromDraft({
-            ...draft,
+            ...draftWithTextChanges,
             ...(modId ? { id: modId } : {}),
           })
         )
@@ -904,7 +1013,22 @@ export const ModEditorApp = () => {
         showPalette: loaded.showPalette,
         elements: loaded.elements,
         reactions: loaded.reactions,
+        reactionComments: loaded.reactionComments,
       });
+      setReactionText(
+        formatReactionText({
+          id: loaded.id,
+          title: loaded.title,
+          summary: clampRealmSummary(loaded.summary),
+          intro: loaded.intro,
+          startingElementIds: loaded.startingElementIds,
+          counters: loaded.counters,
+          showPalette: loaded.showPalette,
+          elements: loaded.elements,
+          reactions: loaded.reactions,
+          reactionComments: loaded.reactionComments,
+        })
+      );
       setLoadedDraftId(loaded.id);
       setShareUrl(null);
       setPendingRemoveModId(null);
@@ -1513,14 +1637,28 @@ export const ModEditorApp = () => {
                     </div>
                     <span
                       className={`rounded-full px-3 py-1 text-[10px] font-bold tracking-[0.16em] uppercase ${
-                        validation.isValid
+                        reactionTextIssues.length === 0 && validation.isValid
                           ? 'editor-validation-badge-ready'
                           : 'editor-validation-badge-blocked'
                       }`}
                     >
-                      {validation.isValid ? 'Ready' : 'Blocked'}
+                      {reactionTextIssues.length === 0 && validation.isValid
+                        ? 'Ready'
+                        : 'Blocked'}
                     </span>
                   </div>
+                  {reactionTextIssues.length > 0 && (
+                    <div className="mb-3 space-y-2">
+                      {reactionTextIssues.slice(0, 3).map((issue) => (
+                        <div
+                          key={`${issue.line}-${issue.message}`}
+                          className="editor-validation-error rounded-xl px-3 py-2 text-sm"
+                        >
+                          {formatReactionTextIssue(issue)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {validation.errors.length > 0 && (
                     <div className="space-y-2">
                       {validation.errors.slice(0, 3).map((error) => (
@@ -1533,7 +1671,8 @@ export const ModEditorApp = () => {
                       ))}
                     </div>
                   )}
-                  {!validation.isValid && blockedScriptReactions.length > 0 && (
+                  {(reactionTextIssues.length > 0 || !validation.isValid) &&
+                    blockedScriptReactions.length > 0 && (
                     <div className="mt-3 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-3 text-sm text-rose-100">
                       <div className="catalog-title-font text-[11px] font-bold tracking-[0.16em] uppercase text-rose-100">
                         Bad Scripts
@@ -1554,7 +1693,8 @@ export const ModEditorApp = () => {
                       </ul>
                     </div>
                   )}
-                  {validation.errors.length === 0 &&
+                  {reactionTextIssues.length === 0 &&
+                    validation.errors.length === 0 &&
                     validation.warnings.length > 0 && (
                       <div className="space-y-2">
                       {validation.warnings.slice(0, 2).map((warning) => (
@@ -1594,7 +1734,7 @@ export const ModEditorApp = () => {
                         : 'Visual Editor'}
                     </button>
                     <div className="realm-text-soft mt-1 hidden text-sm lg:block">
-                      {draft.reactions.length} total
+                      {draftWithTextChanges.reactions.length} total
                     </div>
                   </div>
                   <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
@@ -1685,9 +1825,9 @@ export const ModEditorApp = () => {
                     )}
                   </div>
                 ) : (
-                  <div className="h-[500px] pb-6">
+                  <div className="flex h-[500px] flex-col gap-3 pb-6">
                     <ReactionScriptAutocompleteTextarea
-                      className="realm-input custom-scrollbar h-full w-full resize-none rounded-xl border p-4 font-mono text-sm font-bold outline-none"
+                      className="realm-input custom-scrollbar min-h-0 flex-1 w-full resize-none rounded-xl border p-4 font-mono text-sm font-bold outline-none"
                       counterNames={counterNames}
                       elementNames={gameplayElementNames}
                       iconElementNames={draft.elements
@@ -1699,11 +1839,23 @@ export const ModEditorApp = () => {
                       onChange={setReactionText}
                       onElementCommitted={addMissingReactionElement}
                       placeholder={
-                        'Water+Fire=Steam, Fog\nCupboard+Key=\n    message "It opens."\n    add Treasure'
+                        'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    message "It opens."\n    add Treasure'
                       }
                       rows={18}
                       value={reactionText}
                     />
+                    {reactionTextIssues.length > 0 && (
+                      <div className="space-y-2">
+                        {reactionTextIssues.slice(0, 4).map((issue) => (
+                          <div
+                            key={`reaction-text-${issue.line}-${issue.message}`}
+                            className="editor-validation-error rounded-xl px-3 py-2 text-sm"
+                          >
+                            {formatReactionTextIssue(issue)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

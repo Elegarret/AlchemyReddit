@@ -45,8 +45,23 @@ const RESERVED_ELEMENT_NAME_PREFIX_KEYWORDS = [
 	'undiscovered',
 ] as const;
 
-const clamp = (value: number, min: number, max: number) =>
-	Math.min(Math.max(value, min), max);
+const clampToOptionalBounds = (
+	value: number,
+	min?: number,
+	max?: number
+) => {
+	let nextValue = value;
+
+	if (min !== undefined) {
+		nextValue = Math.max(nextValue, min);
+	}
+
+	if (max !== undefined) {
+		nextValue = Math.min(nextValue, max);
+	}
+
+	return nextValue;
+};
 
 const normalizeName = (value: string) =>
 	value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -182,7 +197,7 @@ export const getRulesetCounterValues = (
 			([key]) => normalizeName(key) === normalizeName(counter.name)
 		);
 		const persistedValue = persistedEntry?.[1];
-		values[counter.name] = clamp(
+		values[counter.name] = clampToOptionalBounds(
 			typeof persistedValue === 'number' ? persistedValue : counter.initial,
 			counter.min,
 			counter.max

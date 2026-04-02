@@ -45,6 +45,7 @@ Keep this file updated when architecture, major flows, or important project conv
 ## Key Flows
 
 - Game progress is stored locally per ruleset and synced to Reddit progress for non-playtest sessions.
+- Programmatic post creation is Devvit Web-only: new `reddit.submitCustomPost()` flows must target named `devvit.json` entrypoints (`default`, `game`, `mod-catalog`, `mod-splash`, etc.) and must not reintroduce Blocks-era APIs, config, or splash fields.
 - Mod realms now expose authored counters with min/max/initial values in both the editor and the game. Counter values persist locally per ruleset, reset to authored initial values, and clamp during scripted updates.
 - Playtest sessions use `PLAYTEST_RULESET_STORAGE_KEY` in local storage and bypass Reddit progress syncing.
 - Editor saves persist draft data through tRPC, then publish/share actions operate on the saved draft id.
@@ -56,13 +57,17 @@ Keep this file updated when architecture, major flows, or important project conv
 - The shared realm splash swaps its secondary CTA to `Edit Realm` for the realm author or moderators/admins and preloads that realm into the editor; other viewers still get `Create My Realm`.
 - Mod reactions can optionally carry per-reaction script text. Non-empty scripts override `outputIds` at runtime, and the editor validates script lines inline plus during overall draft validation.
 - Reaction script syntax now canonically uses `add`, bracket-less action forms such as `set health += 1`, `message "..."`, `popup "..."`, `win "..."`, and `lose "..."`, plus condition predicates like `not_discovered(...)` and `count(...)` comparisons. The per-reaction textarea exposes lightweight local autocomplete for those token families, while the full text editor serializes valid scripts back out in canonical form.
+- Reaction scripts and the full reaction-text editor now support `//` comments outside quoted strings. Script beautifying preserves comment lines and trailing comments, and comment-only script bodies do not count as active scripted overrides.
+- Full reaction-text comments persist through save/load and visual/text mode switches via editor-only `reactionComments` metadata stored alongside reactions. That metadata must stay out of gameplay/runtime behavior and out of the published fingerprint.
 - `remove_all` now supports both `remove_all ElementName` to clear one element kind and a bare `remove_all` form that clears the entire table.
 - The full-text reaction editor now opens expanded by default when authors switch into text mode, can compact back to the split layout, autocompletes top-level `A + B =` reaction lines, and falls through to standard script autocomplete on indented lines.
+- The full-text reaction editor now starts with a declaration block for `starters:`, `counters:`, and `nonconsumables:`. Those lines round-trip with the visual editor, must stay above the first blank line, and `counters:` supports optional `min=` / `max=` bounds while still requiring `initial=`.
 - Both reaction text editors now auto-add newly finished element names to the realm when authors end an unknown element token with `+`, `,`, or non-autosuggest `Enter`, while deduping names case-insensitively after trimming outer whitespace.
 - Element names now reject reserved reaction/script syntax characters such as `+`, `,`, `=`, `:`, `(`, `)`, and `"` during authoring. New auto-created names are also normalized away from reserved scripting prefixes like `add` or `set`, and publish-time validation blocks any stale invalid names that slip in from older data.
 - Script-editor auto-add now parses complete `popup "..."`, `win "..."`, `lose "..."`, legacy popup-call syntax, and element-predicate calls safely, so closing syntax like `)` is not folded into new element names.
 - Name autocomplete now replaces the whole current token when accepted mid-word in either script mode or the full reaction-text editor, so accepting `sand` inside `sand` no longer produces duplicated suffixes like `sandnd`.
 - Reaction script actions now use bracket-less canonical syntax in the editor and formatter: `set counter += 10`, `message "Text"`, `popup "Text", Icon`, `win "Text"`, and `lose "Text"`. Condition predicates such as `count(...)` and `on_table(...)` still keep their existing parentheses form, and the parser remains backward-compatible with older saved action syntax.
+- Reaction tiles now use a left-edge dotted drag gutter and place the delete `X` beside the script button instead of floating it above the card.
 - The editor now exposes a separate subreddit-configured `Scripting Help Page URL`. Reaction widgets link to it from the script editor, the text reaction editor shows it under the expand/compact control, and the element counter help icon now opens scripting help. The `Authors Help` link moved next to the `Realm Info` heading.
 - Counter-marked elements remain editable in the general element list for icon/name/style changes, but they are treated as non-gameplay elements by validation and script authoring.
 - Elements can be marked `non-consumable`; those elements stay on the table after successful reactions unless a script explicitly removes them.
@@ -93,8 +98,11 @@ Keep this file updated when architecture, major flows, or important project conv
 ## Current Known Verification Note
 
 - `npm run type-check` passes after the current splash and gameplay updates.
+- `npm run test -- post` passes after making the default custom-post entrypoint explicit and covering Web entry selection in server tests.
 - `npm run test -- splash` passes after updating the inline splash CTA coverage.
 - `npm run test -- reaction-script-autocomplete` passes after the editor token-commit auto-add flow update.
+- `npm run test -- reaction-script` passes after adding preserved `//` comment support to the parser/formatter.
+- `npm run test -- draft` passes after adding reaction-text comment metadata round-tripping.
 - `npm run test -- runtime` passes after the single-copy non-consumable runtime filter.
 - `npm run test -- mods` passes after the share-post reuse-on-republish change.
 - The shared realm splash CTA change does not have dedicated automated coverage yet.

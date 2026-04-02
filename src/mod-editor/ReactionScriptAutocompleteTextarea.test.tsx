@@ -133,7 +133,7 @@ describe('ReactionScriptAutocompleteTextarea', () => {
     });
   });
 
-  it('renders highlighted tokens for keywords, elements, and symbols', async () => {
+  it('renders highlighted tokens for keywords, elements, symbols, and comments', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -150,7 +150,7 @@ describe('ReactionScriptAutocompleteTextarea', () => {
           onChange={() => undefined}
           placeholder="Type a script"
           rows={4}
-          value={'add Amber = Apple'}
+          value={'add Amber = Apple // note'}
         />
       );
     });
@@ -170,6 +170,93 @@ describe('ReactionScriptAutocompleteTextarea', () => {
         (node) => node.textContent
       )
     ).toContain('=');
+    expect(
+      Array.from(container.querySelectorAll('.editor-code-token-comment')).map(
+        (node) => node.textContent
+      )
+    ).toContain('// note');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('highlights declaration keys as keywords in reaction-text mode', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="reaction-text"
+          onChange={() => undefined}
+          placeholder="Type reactions"
+          rows={6}
+          value={
+            'starters: Air, Fire\ncounters: Health initial=1\nnonconsumables: Furnace'
+          }
+        />
+      );
+    });
+
+    expect(
+      Array.from(container.querySelectorAll('.editor-code-token-keyword')).map(
+        (node) => node.textContent
+      )
+    ).toEqual(expect.arrayContaining(['starters', 'counters', 'nonconsumables']));
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('does not open autocomplete when the caret is inside a comment', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState('add Amber // note');
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="script"
+          onChange={setValue}
+          placeholder="Type a script"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    await act(async () => {
+      textarea!.focus();
+      textarea!.setSelectionRange(13, 13);
+      textarea!.dispatchEvent(new Event('select', { bubbles: true }));
+    });
+
+    const suggestionLabels = Array.from(document.body.querySelectorAll('button'))
+      .map((button) => button.querySelector('span')?.textContent ?? '')
+      .filter((label) => elementNames.includes(label));
+
+    expect(suggestionLabels).toEqual([]);
 
     await act(async () => {
       root.unmount();

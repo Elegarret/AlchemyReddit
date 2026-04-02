@@ -15,6 +15,7 @@ export const createPost = async () => {
     'Alchemy - combine elements to discover all of them 🔥💧🦖💩';
   const post = await reddit.submitCustomPost({
     title: postTitle,
+    entry: 'default',
   });
 
   return {

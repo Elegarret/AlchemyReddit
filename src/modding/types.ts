@@ -79,19 +79,60 @@ export const modReactionSchema = z.object({
 
 export type ModReaction = z.infer<typeof modReactionSchema>;
 
+const reactionCommentLineSchema = z.string().max(MAX_REACTION_SCRIPT_LENGTH);
+
+export const reactionCommentBlockSchema = z.object({
+  headerComment: reactionCommentLineSchema.optional(),
+  leadingComments: z.array(reactionCommentLineSchema).optional().default([]),
+});
+
+export type ReactionCommentBlock = z.infer<typeof reactionCommentBlockSchema>;
+
+export const reactionCommentsSchema = z.object({
+  byReaction: z.array(reactionCommentBlockSchema).max(512).optional().default([]),
+  trailingComments: z.array(reactionCommentLineSchema).optional().default([]),
+});
+
+export type ReactionComments = z.infer<typeof reactionCommentsSchema>;
+
+export const normalizeModCounterDefinition = (counter: {
+  initial: number;
+  max?: number | undefined;
+  min?: number | undefined;
+}) => {
+  const min = counter.min;
+  const max =
+    counter.max !== undefined && min !== undefined
+      ? Math.max(min, counter.max)
+      : counter.max;
+  let initial = counter.initial;
+
+  if (min !== undefined) {
+    initial = Math.max(initial, min);
+  }
+
+  if (max !== undefined) {
+    initial = Math.min(initial, max);
+  }
+
+  return {
+    ...(max !== undefined ? { max } : {}),
+    ...(min !== undefined ? { min } : {}),
+    initial,
+  };
+};
+
 export const modCounterSchema = z
   .object({
     elementId: z.string().min(1).max(48),
     initial: z.number().int(),
-    max: z.number().int(),
-    min: z.number().int(),
+    max: z.number().int().optional(),
+    min: z.number().int().optional(),
   })
   .transform((counter) => {
-    const max = Math.max(counter.min, counter.max);
     return {
       ...counter,
-      initial: Math.min(Math.max(counter.initial, counter.min), max),
-      max,
+      ...normalizeModCounterDefinition(counter),
     };
   });
 
@@ -116,6 +157,10 @@ export const modDocSchema = z.object({
   showPalette: z.boolean().optional().default(true),
   elements: z.array(modElementSchema).max(128),
   reactions: z.array(modReactionSchema).max(512),
+  reactionComments: reactionCommentsSchema.optional().default({
+    byReaction: [],
+    trailingComments: [],
+  }),
   status: modStatusSchema,
   updatedAt: z.string().min(1).max(64),
   publishedAt: z.string().min(1).max(64).optional(),
@@ -123,7 +168,10 @@ export const modDocSchema = z.object({
   sharePostId: z.string().min(1).max(64).optional(),
 });
 
-export type ModDoc = z.infer<typeof modDocSchema>;
+type ParsedModDoc = z.infer<typeof modDocSchema>;
+export type ModDoc = Omit<ParsedModDoc, 'reactionComments'> & {
+  reactionComments?: ReactionComments;
+};
 
 export const modListItemSchema = z.object({
   id: z.string().min(1).max(64),
@@ -162,8 +210,8 @@ export type KeyItemData = {
 export type ActiveCounterDefinition = {
   elementId: string;
   initial: number;
-  max: number;
-  min: number;
+  max?: number | undefined;
+  min?: number | undefined;
   name: string;
 };
 
@@ -217,6 +265,13 @@ export const saveDraftInputSchema = z.object({
   showPalette: z.boolean().optional().default(true),
   elements: z.array(modElementSchema).max(128),
   reactions: z.array(modReactionSchema).max(512),
+  reactionComments: reactionCommentsSchema.optional().default({
+    byReaction: [],
+    trailingComments: [],
+  }),
 });
 
-export type SaveDraftInput = z.infer<typeof saveDraftInputSchema>;
+type ParsedSaveDraftInput = z.infer<typeof saveDraftInputSchema>;
+export type SaveDraftInput = Omit<ParsedSaveDraftInput, 'reactionComments'> & {
+  reactionComments?: ReactionComments;
+};

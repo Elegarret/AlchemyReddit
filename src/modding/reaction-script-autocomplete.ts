@@ -1,4 +1,7 @@
-import { parseReactionScript } from './reaction-script';
+import {
+  findReactionScriptCommentStart,
+  parseReactionScript,
+} from './reaction-script';
 
 export type ReactionScriptAutocompleteSuggestion = {
   cursorOffset: number;
@@ -440,6 +443,23 @@ const getConditionSegment = (value: string) => {
   };
 };
 
+const getCommentAwareLineContext = (line: string, cursorInLine: number) => {
+  const commentStart = findReactionScriptCommentStart(line);
+  if (commentStart === -1) {
+    return {
+      isInComment: false,
+      linePrefix: line.slice(0, cursorInLine),
+      lineValue: line,
+    };
+  }
+
+  return {
+    isInComment: cursorInLine >= commentStart,
+    linePrefix: line.slice(0, Math.min(cursorInLine, commentStart)),
+    lineValue: line.slice(0, commentStart),
+  };
+};
+
 const isCompleteCondition = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -661,7 +681,15 @@ const getCommittedScriptElementName = (params: {
   }
 
   const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
-  const linePrefix = value.slice(lineStart, cursor);
+  const commentContext = getCommentAwareLineContext(
+    value.slice(lineStart, cursor),
+    cursor - lineStart
+  );
+  if (commentContext.isInComment) {
+    return null;
+  }
+
+  const linePrefix = commentContext.linePrefix;
   const ifContext = getLineIfContext(linePrefix);
   if (ifContext?.kind === 'conditions') {
     return getCommittedElementPredicateName(ifContext.prefix);
@@ -697,7 +725,16 @@ const getCommittedReactionTextElementName = (params: {
 }) => {
   const { cursor, triggerKey, value } = params;
   const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
-  const linePrefix = value.slice(lineStart, cursor);
+  const rawLinePrefix = value.slice(lineStart, cursor);
+  const commentContext = getCommentAwareLineContext(
+    rawLinePrefix,
+    cursor - lineStart
+  );
+  if (commentContext.isInComment) {
+    return null;
+  }
+
+  const linePrefix = commentContext.linePrefix;
 
   if (linePrefix.startsWith('    ') || linePrefix.startsWith('\t')) {
     const indentLength = linePrefix.startsWith('    ') ? 4 : 1;
@@ -761,7 +798,15 @@ export const getReactionScriptAutocomplete = (params: {
     value,
   } = params;
   const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
-  const linePrefix = value.slice(lineStart, cursor);
+  const lineCommentContext = getCommentAwareLineContext(
+    value.slice(lineStart, cursor),
+    cursor - lineStart
+  );
+  if (lineCommentContext.isInComment) {
+    return { suggestions: [] };
+  }
+
+  const linePrefix = lineCommentContext.linePrefix;
   const ifContext = getLineIfContext(linePrefix);
 
   if (ifContext?.kind === 'conditions') {
@@ -825,7 +870,16 @@ export const getReactionTextAutocomplete = (params: {
     value,
   } = params;
   const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
-  const linePrefix = value.slice(lineStart, cursor);
+  const rawLinePrefix = value.slice(lineStart, cursor);
+  const lineCommentContext = getCommentAwareLineContext(
+    rawLinePrefix,
+    cursor - lineStart
+  );
+  if (lineCommentContext.isInComment) {
+    return { suggestions: [] };
+  }
+
+  const linePrefix = lineCommentContext.linePrefix;
 
   if (linePrefix.startsWith('    ') || linePrefix.startsWith('\t')) {
     const indentLength = linePrefix.startsWith('    ') ? 4 : 1;
@@ -836,7 +890,10 @@ export const getReactionTextAutocomplete = (params: {
 
     const lineEndIndex = value.indexOf('\n', cursor);
     const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
-    const lineValue = value.slice(lineStart + indentLength, lineEnd);
+    const lineValue = getCommentAwareLineContext(
+      value.slice(lineStart + indentLength, lineEnd),
+      lineCursor
+    ).lineValue;
 
     return {
       suggestions: getReactionScriptAutocomplete({

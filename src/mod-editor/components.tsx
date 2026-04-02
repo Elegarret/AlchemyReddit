@@ -16,7 +16,6 @@ import {
   IoColorPaletteSharp,
   IoEllipsisHorizontal,
   IoHelpCircleOutline,
-  IoReorderThreeSharp,
 } from 'react-icons/io5';
 import {
   getModElementClasses,
@@ -32,6 +31,7 @@ import {
 } from '../modding/reaction-script';
 import {
   MAX_ELEMENT_MESSAGE_LENGTH,
+  normalizeModCounterDefinition,
   type ModCounterDefinition,
   type ModElement,
   type ModElementEffect,
@@ -480,14 +480,7 @@ export const ElementAdvancedButton = ({
 
   const normalizeCounterDraft = (
     value: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'>
-  ) => {
-    const max = Math.max(value.min, value.max);
-    return {
-      initial: Math.min(Math.max(value.initial, value.min), max),
-      max,
-      min: value.min,
-    };
-  };
+  ) => normalizeModCounterDefinition(value);
 
   return (
     <div className={containerClassName || 'relative'}>
@@ -634,17 +627,21 @@ export const ElementAdvancedButton = ({
                     </div>
                     <input
                       type="number"
-                      value={counterDraft.min}
+                      value={counterDraft.min ?? ''}
                       onChange={(event) => {
-                        const nextMin = Number.parseInt(
-                          event.target.value,
-                          10
-                        );
+                        const trimmedValue = event.target.value.trim();
+                        const nextMin = Number.parseInt(trimmedValue, 10);
                         setCounterDraft((current) => ({
                           ...current,
-                          min: Number.isNaN(nextMin) ? current.min : nextMin,
+                          min:
+                            trimmedValue.length === 0
+                              ? undefined
+                              : Number.isNaN(nextMin)
+                                ? current.min
+                                : nextMin,
                         }));
                       }}
+                      placeholder="none"
                       className="realm-input w-full rounded-xl border px-3 py-2 text-sm outline-none"
                     />
                   </label>
@@ -654,17 +651,21 @@ export const ElementAdvancedButton = ({
                     </div>
                     <input
                       type="number"
-                      value={counterDraft.max}
+                      value={counterDraft.max ?? ''}
                       onChange={(event) => {
-                        const nextMax = Number.parseInt(
-                          event.target.value,
-                          10
-                        );
+                        const trimmedValue = event.target.value.trim();
+                        const nextMax = Number.parseInt(trimmedValue, 10);
                         setCounterDraft((current) => ({
                           ...current,
-                          max: Number.isNaN(nextMax) ? current.max : nextMax,
+                          max:
+                            trimmedValue.length === 0
+                              ? undefined
+                              : Number.isNaN(nextMax)
+                                ? current.max
+                                : nextMax,
                         }));
                       }}
+                      placeholder="none"
                       className="realm-input w-full rounded-xl border px-3 py-2 text-sm outline-none"
                     />
                   </label>
@@ -1132,7 +1133,7 @@ export const ReactionWidget = ({
       onDragEnd={() => {
         isDragHandleActiveRef.current = false;
       }}
-      className="realm-panel-soft relative flex flex-col gap-2 overflow-visible rounded-xl p-2 pt-4"
+      className="realm-panel-soft relative flex flex-col gap-2 overflow-visible rounded-xl py-2 pr-2 pl-6"
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes(REACTION_DRAG_TYPE)) {
           event.preventDefault();
@@ -1160,20 +1161,17 @@ export const ReactionWidget = ({
         onBlur={() => {
           isDragHandleActiveRef.current = false;
         }}
-        className="realm-button-muted absolute -top-2 -left-2 z-10 flex h-6 w-6 cursor-grab items-center justify-center rounded-full hover:bg-white/10 active:cursor-grabbing"
+        className="absolute inset-y-2 left-1 z-10 flex w-4 cursor-grab flex-col items-center justify-center gap-1 rounded-lg border border-transparent bg-transparent transition-colors hover:border-[color:var(--catalog-soft-border)] hover:bg-white/6 active:cursor-grabbing"
         title="Drag to reorder reaction"
       >
-        <IoReorderThreeSharp size={15} />
+        {Array.from({ length: 6 }).map((_, dotIndex) => (
+          <span
+            key={`reaction-handle-${index}-${dotIndex}`}
+            className="h-1 w-1 rounded-full bg-[color:var(--catalog-soft-text)] opacity-80"
+          />
+        ))}
       </button>
-      <button
-        type="button"
-        onClick={() => onDelete(index)}
-        className="realm-button-muted absolute -top-2 -right-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full hover:bg-rose-500/20 hover:text-rose-300"
-        title="Remove reaction"
-      >
-        <IoCloseSharp size={14} />
-      </button>
-      <div className="flex w-full min-w-0 flex-nowrap items-center gap-1.5 pr-8">
+      <div className="flex w-full min-w-0 flex-nowrap items-center gap-1.5">
         <DroppableInput
           value={leftText}
           onChange={setLeftText}
@@ -1214,6 +1212,14 @@ export const ReactionWidget = ({
           title={hasScript ? 'Edit scripted override' : 'Open scripted override'}
         >
           <IoCodeSlash size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(index)}
+          className="realm-button-muted flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-rose-500/20 hover:text-rose-300"
+          title="Remove reaction"
+        >
+          <IoCloseSharp size={14} />
         </button>
       </div>
 

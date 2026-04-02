@@ -133,7 +133,11 @@ export const appRouter = t.router({
         if (!context.userId) {
           throw new Error('You must be logged in.');
         }
-        return await getEditableModForUser(context.userId, input);
+        return await getEditableModForUser(
+          context.userId,
+          await reddit.getCurrentUsername(),
+          input
+        );
       }),
     getPublished: publicProcedure
       .input(z.string().min(1).max(64))
@@ -182,7 +186,11 @@ export const appRouter = t.router({
         if (!context.userId) {
           throw new Error('You must be logged in.');
         }
-        return await unpublishModForUser(context.userId, input);
+        return await unpublishModForUser(
+          context.userId,
+          await reddit.getCurrentUsername(),
+          input
+        );
       }),
     createSharePost: publicProcedure
       .input(z.string().min(1).max(64))
@@ -212,7 +220,11 @@ export const appRouter = t.router({
           throw new Error('You must be logged in.');
         }
 
-        return await removeModForUser(context.userId, input);
+        return await removeModForUser(
+          context.userId,
+          await reddit.getCurrentUsername(),
+          input
+        );
       }),
   }),
   counter: t.router({

@@ -25,7 +25,7 @@ Instead of always giving the same result, imagine `Door + Push` can lead to diff
 ```txt
 if (discovered(key)) add open door
 if (discovered(key)) stop
-message("The door is locked tight.")
+message "The door is locked tight."
 add locked door
 ```
 
@@ -55,14 +55,14 @@ Remove things:
 
 Show text:
 
-- `message("A hidden compartment slides open.")`
-- `popup("A hidden compartment slides open.")`
-- `popup("A hidden compartment slides open.", key)`
+- `message "A hidden compartment slides open."`
+- `popup "A hidden compartment slides open."`
+- `popup "A hidden compartment slides open.", key`
 
 Finish the realm:
 
-- `win("You restored the realm.")`
-- `lose("The realm is lost.", corpse)`
+- `win "You restored the realm."`
+- `lose "The realm is lost.", corpse`
 
 Stop the rest of the script:
 
@@ -100,10 +100,11 @@ If you are not using counters, you can ignore this part.
 - One statement per line.
 - Lines run top to bottom.
 - Blank lines are ignored.
+- `//` starts a comment that runs to the end of the line.
 - `stop` ends the script immediately.
-- `message(...)` shows a non-blocking toast.
-- `popup(...)` shows a blocking popup.
-- `win(...)` and `lose(...)` show blocking end-state screens.
+- `message "..."` shows a non-blocking toast.
+- `popup "..."` shows a blocking popup.
+- `win "..."` and `lose "..."` show blocking end-state screens.
 - `if (...)` only affects the action on that same line.
 - Element names must match the names in your realm.
 
@@ -115,14 +116,14 @@ Actions:
 - `add firstElement, secondElement`
 - `remove elementName`
 - `remove_all elementName`
-- `set(counterName += number)`
-- `set(counterName -= number)`
-- `set(counterName = number)`
-- `message("Text here")`
-- `popup("Text here")`
-- `popup("Text here", elementName)`
-- `win("Text here")`
-- `lose("Text here", elementName)`
+- `set counterName += number`
+- `set counterName -= number`
+- `set counterName = number`
+- `message "Text here"`
+- `popup "Text here"`
+- `popup "Text here", elementName`
+- `win "Text here"`
+- `lose "Text here", elementName`
 - `stop`
 
 Conditions:

@@ -183,6 +183,40 @@ describe('validateModDraft', () => {
     expect(result.showPalette).toBe(false);
   });
 
+  it('preserves optional counter bounds in the built ruleset', () => {
+    const result = buildRulesetFromDraft({
+      title: 'Boundless Realm',
+      summary: 'Some counters only clamp on one side.',
+      intro: '',
+      startingElementIds: ['air', 'light'],
+      counters: [
+        {
+          elementId: 'light',
+          initial: 12,
+          min: 5,
+        },
+      ],
+      showPalette: true,
+      elements: [makeElement('air', 'Air'), makeElement('light', 'Lantern')],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'light',
+          outputIds: ['air'],
+        },
+      ],
+    });
+
+    expect(result.counterDefinitions).toEqual([
+      {
+        elementId: 'light',
+        initial: 12,
+        min: 5,
+        name: 'Lantern',
+      },
+    ]);
+  });
+
   it('keeps plain reactions working without scripts', () => {
     const ruleset = buildRulesetFromDraft({
       title: 'Steam Realm',

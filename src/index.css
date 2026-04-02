@@ -895,12 +895,18 @@
 	color: var(--editor-code-element);
 }
 
+.editor-code-token-comment {
+	color: var(--editor-code-comment);
+	font-style: italic;
+}
+
 .editor-code-token-symbol {
 	color: var(--editor-code-symbol);
 }
 
 :root {
 	--editor-code-base: rgba(72, 56, 24, 0.9);
+	--editor-code-comment: rgba(21, 128, 61, 0.72);
 	--editor-code-keyword: #b45309;
 	--editor-code-element: #1d4ed8;
 	--editor-code-symbol: #2c241a;
