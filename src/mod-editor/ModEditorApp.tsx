@@ -1,5 +1,12 @@
 import { navigateTo, showShareSheet, showToast } from '@devvit/web/client';
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+} from 'react';
 import {
   IoAddSharp,
   IoCloseSharp,
@@ -63,11 +70,13 @@ import {
   normalizeReactionComments,
   parseReactionTextToDraft,
 } from './draft';
-
-type BlockedScriptReaction = {
-  messages: string[];
-  reactionName: string;
-};
+import {
+  EditorMetaTabsPanel,
+  EditorValidationPlank,
+  getBlockingValidationItems,
+  getWarningValidationItems,
+  type EditorMetaTab,
+} from './meta';
 
 export const ModEditorApp = () => {
   const [tab, setTab] = useState<EditorTab>('editor');
@@ -80,10 +89,10 @@ export const ModEditorApp = () => {
   const [authorsHelpPageUrl, setAuthorsHelpPageUrl] = useState<string | null>(
     null
   );
-  const [scriptingHelpPageUrl, setScriptingHelpPageUrl] = useState<string | null>(
-    null
-  );
-  const [isAdvancedOptionsOpen, setIsAdvancedOptionsOpen] = useState(false);
+  const [scriptingHelpPageUrl, setScriptingHelpPageUrl] = useState<
+    string | null
+  >(null);
+  const [activeMetaTab, setActiveMetaTab] = useState<EditorMetaTab>('starters');
   const [newCounterText, setNewCounterText] = useState('');
   const [newStartingText, setNewStartingText] = useState('');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -93,6 +102,7 @@ export const ModEditorApp = () => {
   const [elementPanelView, setElementPanelView] =
     useState<ElementPanelView>('compact');
   const [isValidationBlinking, setIsValidationBlinking] = useState(false);
+  const [isValidationExpanded, setIsValidationExpanded] = useState(false);
   const validationBlinkTimeoutRef = useRef<number | null>(null);
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
   const [isReactionTextExpanded, setIsReactionTextExpanded] = useState(true);
@@ -106,13 +116,17 @@ export const ModEditorApp = () => {
 
   const reactionTextParse = useMemo(
     () =>
-      reactionView === 'text' ? parseReactionTextToDraft(draft, reactionText) : null,
+      reactionView === 'text'
+        ? parseReactionTextToDraft(draft, reactionText)
+        : null,
     [draft, reactionText, reactionView]
   );
   const reactionTextIssues =
-    reactionView === 'text' ? reactionTextParse?.errors ?? [] : [];
+    reactionView === 'text' ? (reactionTextParse?.errors ?? []) : [];
   const draftWithTextChanges =
-    reactionView === 'text' && reactionTextParse?.ok ? reactionTextParse.draft : draft;
+    reactionView === 'text' && reactionTextParse?.ok
+      ? reactionTextParse.draft
+      : draft;
 
   const syncDraftFromText = (text: string) => {
     const parsed = parseReactionTextToDraft(draft, text);
@@ -151,30 +165,18 @@ export const ModEditorApp = () => {
     () => validateModDraft(draftWithTextChanges),
     [draftWithTextChanges]
   );
-  const blockedScriptReactions = useMemo<BlockedScriptReaction[]>(() => {
-    const grouped = new Map<string, BlockedScriptReaction>();
-
-    validation.scriptErrors.forEach((scriptError) => {
-      const match = scriptError.match(/^"(.+?)" script line \d+: (.+)$/);
-      const reactionName = match?.[1] ?? 'Unknown reaction';
-      const message = match?.[2] ?? scriptError;
-      const existing = grouped.get(reactionName);
-
-      if (existing) {
-        if (!existing.messages.includes(message)) {
-          existing.messages.push(message);
-        }
-        return;
-      }
-
-      grouped.set(reactionName, {
-        reactionName,
-        messages: [message],
-      });
-    });
-
-    return Array.from(grouped.values());
-  }, [validation.scriptErrors]);
+  const blockingValidationItems = useMemo(
+    () =>
+      getBlockingValidationItems({
+        reactionTextIssues,
+        validation,
+      }),
+    [reactionTextIssues, validation]
+  );
+  const warningValidationItems = useMemo(
+    () => getWarningValidationItems(validation.warnings),
+    [validation.warnings]
+  );
   const counterElementIds = useMemo(
     () => draft.counters.map((counter) => counter.elementId),
     [draft.counters]
@@ -205,10 +207,10 @@ export const ModEditorApp = () => {
     [counterElementIds, draft.elements]
   );
   const loadedMod = loadedDraftId
-    ? myMods.find((mod) => mod.id === loadedDraftId) ?? null
+    ? (myMods.find((mod) => mod.id === loadedDraftId) ?? null)
     : null;
   const hasLoadedPublishedVersion = Boolean(
-    loadedMod?.hasPublishedVersion ?? (loadedMod?.status === 'published')
+    loadedMod?.hasPublishedVersion ?? loadedMod?.status === 'published'
   );
   const currentDraftFingerprint = useMemo(
     () =>
@@ -226,7 +228,7 @@ export const ModEditorApp = () => {
   );
   const hasPublishedDraftChanges = Boolean(
     hasLoadedPublishedVersion &&
-      loadedMod?.publishedHash !== currentDraftFingerprint
+    loadedMod?.publishedHash !== currentDraftFingerprint
   );
   const primaryPublishAction =
     !hasLoadedPublishedVersion || hasPublishedDraftChanges
@@ -237,10 +239,10 @@ export const ModEditorApp = () => {
     primaryPublishAction === 'publish' &&
     (reactionTextIssues.length > 0 || !validation.isValid)
       ? reactionTextIssues[0]
-          ? formatReactionTextIssue(reactionTextIssues[0])
-          : validation.errors[0] ??
-        validation.scriptErrors[0] ??
-        'Fix validation errors first'
+        ? formatReactionTextIssue(reactionTextIssues[0])
+        : (validation.errors[0] ??
+          validation.scriptErrors[0] ??
+          'Fix validation errors first')
       : null;
   const shareBlockedReason = !hasLoadedPublishedVersion
     ? 'Publish this realm first.'
@@ -251,7 +253,7 @@ export const ModEditorApp = () => {
       ? 'Share this realm first to create its page.'
       : null;
   const editorActionButtonClass =
-    'realm-button-accent catalog-title-font rounded-full px-4 py-2 text-sm font-bold transition-opacity';
+    'editor-action-button catalog-title-font inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-opacity';
 
   useEffect(() => {
     return () => {
@@ -260,6 +262,15 @@ export const ModEditorApp = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      blockingValidationItems.length === 0 &&
+      warningValidationItems.length === 0
+    ) {
+      setIsValidationExpanded(false);
+    }
+  }, [blockingValidationItems.length, warningValidationItems.length]);
 
   const blinkValidation = () => {
     setIsValidationBlinking(false);
@@ -277,6 +288,7 @@ export const ModEditorApp = () => {
   };
 
   const showValidationFeedback = (message?: string) => {
+    setIsValidationExpanded(true);
     showToast(
       message ??
         (reactionTextIssues[0]
@@ -425,7 +437,8 @@ export const ModEditorApp = () => {
             return element;
           }
 
-          const nextName = normalizeAuthoredElementName(element.name) || fallbackName;
+          const nextName =
+            normalizeAuthoredElementName(element.name) || fallbackName;
           const validationError = getElementNameValidationError(nextName);
           if (validationError) {
             showToast(validationError);
@@ -452,6 +465,20 @@ export const ModEditorApp = () => {
         }),
       };
     });
+  };
+
+  const handleElementNameDrop = (
+    elementId: string,
+    event: DragEvent<HTMLInputElement>
+  ) => {
+    event.preventDefault();
+    const droppedName = event.dataTransfer.getData('text/plain').trim();
+    if (!droppedName) {
+      return;
+    }
+
+    renameElement(elementId, droppedName);
+    setTimeout(() => finalizeElementName(elementId), 50);
   };
 
   const normalizeCounterDefinition = (
@@ -503,7 +530,9 @@ export const ModEditorApp = () => {
   const removeCounterElement = (elementId: string) => {
     updateDraft((current) => ({
       ...current,
-      counters: current.counters.filter((counter) => counter.elementId !== elementId),
+      counters: current.counters.filter(
+        (counter) => counter.elementId !== elementId
+      ),
     }));
   };
 
@@ -511,7 +540,10 @@ export const ModEditorApp = () => {
     elementId: string,
     patch: Pick<ModElement, 'message' | 'effect'> & {
       nonConsumable: boolean;
-      counterValues: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'> | null;
+      counterValues: Pick<
+        ModCounterDefinition,
+        'initial' | 'max' | 'min'
+      > | null;
       isCounter: boolean;
       isStarting: boolean;
     }
@@ -598,7 +630,9 @@ export const ModEditorApp = () => {
         counters: current.counters.filter(
           (counter) => counter.elementId !== elementId
         ),
-        elements: current.elements.filter((element) => element.id !== elementId),
+        elements: current.elements.filter(
+          (element) => element.id !== elementId
+        ),
         startingElementIds: current.startingElementIds.filter(
           (id) => id !== elementId
         ),
@@ -806,7 +840,11 @@ export const ModEditorApp = () => {
       }
 
       reactions.splice(toIndex, 0, movedReaction);
-      commentBlocks.splice(toIndex, 0, movedCommentBlock ?? { leadingComments: [] });
+      commentBlocks.splice(
+        toIndex,
+        0,
+        movedCommentBlock ?? { leadingComments: [] }
+      );
       return {
         ...current,
         reactions,
@@ -1105,15 +1143,16 @@ export const ModEditorApp = () => {
       }
 
       const leftName =
-        draft.elements.find((element) => element.id === reaction.leftId)?.name ??
-        '';
+        draft.elements.find((element) => element.id === reaction.leftId)
+          ?.name ?? '';
       const rightName =
-        draft.elements.find((element) => element.id === reaction.rightId)?.name ??
-        '';
+        draft.elements.find((element) => element.id === reaction.rightId)
+          ?.name ?? '';
       const outputNames = reaction.outputIds
         .map(
           (outputId) =>
-            draft.elements.find((element) => element.id === outputId)?.name ?? ''
+            draft.elements.find((element) => element.id === outputId)?.name ??
+            ''
         )
         .join(' ');
 
@@ -1124,7 +1163,7 @@ export const ModEditorApp = () => {
 
   return (
     <div className="realm-page min-h-screen">
-      <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-4 sm:px-6">
+      <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 pt-0 pb-4 sm:px-6">
         <datalist id={ELEMENT_DATALIST_ID}>
           {draft.elements.map((element) => (
             <option key={`element-option-${element.id}`} value={element.name} />
@@ -1143,7 +1182,9 @@ export const ModEditorApp = () => {
               <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
                 Share Realm
               </div>
-              <h2 className="catalog-title-font realm-text-ink mt-2 text-xl font-black">{draft.title}</h2>
+              <h2 className="catalog-title-font realm-text-ink mt-2 text-xl font-black">
+                {draft.title}
+              </h2>
               <p className="realm-text-soft mt-2 text-sm">
                 Share the published post for this realm.
               </p>
@@ -1179,29 +1220,34 @@ export const ModEditorApp = () => {
           </div>
         )}
 
-        <div className="realm-panel mb-4 flex flex-wrap items-center justify-between gap-3 rounded-3xl px-4 py-4 backdrop-blur-xl">
-          <div>
-            <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-              Alchemy Workshop
+        <div className="editor-sticky-header sticky top-0 z-40 mb-4 rounded-b-3xl px-4 py-3 backdrop-blur-xl">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+            <div className="justify-self-start">
+              <button
+                onClick={() => setTab('mine')}
+                className={`catalog-title-font rounded-full px-4 py-2 text-sm font-bold ${tab === 'mine' ? 'realm-button-accent' : 'realm-button-muted'}`}
+              >
+                My Realms
+              </button>
             </div>
-            <h1 className="catalog-title-font realm-text-ink text-2xl font-black tracking-tight">
-              Create and Share Realms
-            </h1>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setTab('mine')}
-              className={`catalog-title-font rounded-full px-4 py-2 text-sm font-bold ${tab === 'mine' ? 'realm-button-accent' : 'realm-button-muted'}`}
-            >
-              My Realms
-            </button>
-            <button
-              onClick={() => setTab('editor')}
-              className={`catalog-title-font rounded-full px-4 py-2 text-sm font-bold ${tab === 'editor' ? 'realm-button-accent' : 'realm-button-muted'}`}
-            >
-              Editor
-            </button>
+            <div className="min-w-0 text-center">
+              <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+              Alchemy Workshop
+              </div>
+              <h1 className="catalog-title-font realm-text-ink truncate text-2xl font-black tracking-tight">
+                Create and Share Realms
+              </h1>
+            </div>
+
+            <div className="justify-self-end">
+              <button
+                onClick={() => setTab('editor')}
+                className={`catalog-title-font rounded-full px-4 py-2 text-sm font-bold ${tab === 'editor' ? 'realm-button-accent' : 'realm-button-muted'}`}
+              >
+                Editor
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1277,25 +1323,8 @@ export const ModEditorApp = () => {
         {tab === 'editor' && (
           <div className="flex flex-1 flex-col gap-4">
             <div className="realm-panel rounded-3xl p-5 backdrop-blur-xl">
-              <div className="mb-4 flex flex-col gap-4">
-                <div className="w-full">
-                  <div className="mb-2 flex items-center gap-2">
-                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                      Realm Info
-                    </div>
-                    <button
-                      type="button"
-                      onClick={openAuthorsHelpPage}
-                      title={
-                        authorsHelpPageUrl
-                          ? 'Open Authors Help Page'
-                          : 'Authors Help Page URL is not configured.'
-                      }
-                      className="realm-button-muted catalog-title-font rounded-full px-2.5 py-1 text-[9px] font-bold tracking-[0.14em] uppercase"
-                    >
-                      Authors Help
-                    </button>
-                  </div>
+              <div className="grid gap-6 min-[600px]:grid-cols-[minmax(0,1fr)_minmax(18rem,0.88fr)]">
+                <div className="min-w-0">
                   <input
                     value={draft.title}
                     onChange={(event) =>
@@ -1306,183 +1335,204 @@ export const ModEditorApp = () => {
                     }
                     className="realm-input catalog-title-font mb-3 w-full rounded-2xl border px-4 py-3 text-2xl font-black outline-none"
                   />
-                  <textarea
-                    value={draft.summary}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        summary: clampRealmSummary(event.target.value),
-                      }))
-                    }
-                    maxLength={MAX_REALM_SUMMARY_LENGTH}
-                    placeholder="Describe the realm"
-                    rows={2}
-                    className="realm-input catalog-body-font w-full rounded-2xl border px-4 py-3 text-sm outline-none"
-                  />
-                  <div className="realm-text-muted mt-1 text-right text-xs">
-                    {draft.summary.length}/{MAX_REALM_SUMMARY_LENGTH}
-                  </div>
-                  <textarea
-                    value={draft.intro}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        intro: event.target.value.slice(0, MAX_REALM_INTRO_LENGTH),
-                      }))
-                    }
-                    maxLength={MAX_REALM_INTRO_LENGTH}
-                    placeholder="Intro shown when players open this realm. It disappears after the first reaction."
-                    rows={4}
-                    className="realm-input catalog-body-font mt-3 w-full rounded-2xl border px-4 py-3 text-sm outline-none"
-                  />
-                  <div className="realm-text-muted mt-1 text-right text-xs">
-                    {draft.intro.length}/{MAX_REALM_INTRO_LENGTH}
+                  <div className="relative">
+                    <textarea
+                      value={draft.summary}
+                      onChange={(event) =>
+                        updateDraft((current) => ({
+                          ...current,
+                          summary: clampRealmSummary(event.target.value),
+                        }))
+                      }
+                      maxLength={MAX_REALM_SUMMARY_LENGTH}
+                      placeholder="Describe the realm"
+                      rows={2}
+                      className="realm-input catalog-body-font w-full rounded-2xl border px-4 pt-3 pr-[4.5rem] pb-8 text-sm outline-none"
+                    />
+                    <div className="realm-text-muted pointer-events-none absolute right-4 bottom-3 text-xs">
+                      {draft.summary.length}/{MAX_REALM_SUMMARY_LENGTH}
+                    </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    disabled={isBusy}
-                    onClick={saveDraft}
-                    className={`${editorActionButtonClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
-                  >
-                    <IoSaveSharp className="mr-1 inline-block" />
-                    Save
-                  </button>
-                  <button
-                    disabled={isBusy}
-                    onClick={playtestDraft}
-                    className={`${editorActionButtonClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
-                  >
-                    <IoPlaySharp className="mr-1 inline-block" />
-                    Playtest
-                  </button>
-                  <button
-                    type="button"
-                    aria-disabled={isBusy || !!publishBlockedReason}
-                    title={
-                      publishBlockedReason ??
-                      (primaryPublishAction === 'unpublish'
-                        ? 'Move this realm back to drafts.'
-                        : hasLoadedPublishedVersion
-                          ? 'Publish this updated draft to the live realm.'
-                          : 'Publish this realm.')
-                    }
-                    onClick={() => {
-                      if (isBusy) {
-                        return;
-                      }
 
-                      if (publishBlockedReason) {
-                        showValidationFeedback(publishBlockedReason);
-                        return;
+                <div className="min-w-0">
+                  <div className="relative">
+                    <textarea
+                      value={draft.intro}
+                      onChange={(event) =>
+                        updateDraft((current) => ({
+                          ...current,
+                          intro: event.target.value.slice(
+                            0,
+                            MAX_REALM_INTRO_LENGTH
+                          ),
+                        }))
                       }
+                      maxLength={MAX_REALM_INTRO_LENGTH}
+                      placeholder="Intro shown when players open this realm. It disappears after the first reaction."
+                      rows={6}
+                      className="realm-input catalog-body-font w-full rounded-2xl border px-4 pt-3 pr-[4.5rem] pb-8 text-sm outline-none"
+                    />
+                    <div className="realm-text-muted pointer-events-none absolute right-4 bottom-3 text-xs">
+                      {draft.intro.length}/{MAX_REALM_INTRO_LENGTH}
+                    </div>
+                  </div>
+                </div>
 
-                      void (
-                        primaryPublishAction === 'unpublish'
+                <div className="min-[700px]:col-span-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      disabled={isBusy}
+                      onClick={saveDraft}
+                      className={`${editorActionButtonClass} editor-action-button-secondary cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      <IoSaveSharp />
+                      Save
+                    </button>
+                    <button
+                      disabled={isBusy}
+                      onClick={playtestDraft}
+                      className={`${editorActionButtonClass} editor-action-button-secondary cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      <IoPlaySharp />
+                      Playtest
+                    </button>
+                    <button
+                      type="button"
+                      aria-disabled={isBusy || !!publishBlockedReason}
+                      title={
+                        publishBlockedReason ??
+                        (primaryPublishAction === 'unpublish'
+                          ? 'Move this realm back to drafts.'
+                          : hasLoadedPublishedVersion
+                            ? 'Publish this updated draft to the live realm.'
+                            : 'Publish this realm.')
+                      }
+                      onClick={() => {
+                        if (isBusy) {
+                          return;
+                        }
+
+                        if (publishBlockedReason) {
+                          showValidationFeedback(publishBlockedReason);
+                          return;
+                        }
+
+                        void (primaryPublishAction === 'unpublish'
                           ? unpublishDraft()
-                          : publishDraft()
-                      );
-                    }}
-                    className={`${editorActionButtonClass} ${
-                      isBusy || publishBlockedReason
-                        ? 'cursor-not-allowed opacity-50'
-                        : 'cursor-pointer'
-                    }`}
-                  >
-                    <IoRocketSharp className="mr-1 inline-block" />
-                    {primaryPublishAction === 'unpublish'
-                      ? 'Unpublish'
-                      : hasLoadedPublishedVersion
-                        ? 'Publish Update'
-                        : 'Publish'}
-                  </button>
-                  <button
-                    type="button"
-                    aria-disabled={isBusy || !!shareBlockedReason}
-                    title={
-                      shareBlockedReason || 'Share the published realm post.'
-                    }
-                    onClick={() => {
-                      if (isBusy) {
-                        return;
+                          : publishDraft());
+                      }}
+                      className={`${editorActionButtonClass} editor-action-button-primary ${
+                        isBusy || publishBlockedReason
+                          ? 'cursor-not-allowed opacity-50'
+                          : 'cursor-pointer'
+                      }`}
+                    >
+                      <IoRocketSharp />
+                      {primaryPublishAction === 'unpublish'
+                        ? 'Unpublish'
+                        : hasLoadedPublishedVersion
+                          ? 'Publish Update'
+                          : 'Publish'}
+                    </button>
+                    <button
+                      type="button"
+                      aria-disabled={isBusy || !!shareBlockedReason}
+                      title={
+                        shareBlockedReason || 'Share the published realm post.'
                       }
+                      onClick={() => {
+                        if (isBusy) {
+                          return;
+                        }
 
-                      if (shareBlockedReason) {
-                        showToast(shareBlockedReason);
-                        return;
-                      }
+                        if (shareBlockedReason) {
+                          showToast(shareBlockedReason);
+                          return;
+                        }
 
-                      void shareDraft();
-                    }}
-                    className={`${editorActionButtonClass} ${
-                      isBusy || shareBlockedReason
-                        ? 'cursor-not-allowed opacity-50'
-                        : 'cursor-pointer'
-                    }`}
-                  >
-                    <IoShareOutline className="mr-1 inline-block" />
-                    Share
-                  </button>
-                  <button
-                    type="button"
-                    aria-disabled={isBusy || !!realmPageBlockedReason}
-                    title={
-                      realmPageBlockedReason || 'Open the published realm page.'
-                    }
-                    onClick={() => {
-                      if (isBusy) {
-                        return;
+                        void shareDraft();
+                      }}
+                      className={`${editorActionButtonClass} editor-action-button-secondary ${
+                        isBusy || shareBlockedReason
+                          ? 'cursor-not-allowed opacity-50'
+                          : 'cursor-pointer'
+                      }`}
+                    >
+                      <IoShareOutline />
+                      Share
+                    </button>
+                    <button
+                      type="button"
+                      aria-disabled={isBusy || !!realmPageBlockedReason}
+                      title={
+                        realmPageBlockedReason || 'Open the published realm page.'
                       }
+                      onClick={() => {
+                        if (isBusy) {
+                          return;
+                        }
 
-                      if (realmPageBlockedReason) {
-                        showToast(realmPageBlockedReason);
-                        return;
-                      }
+                        if (realmPageBlockedReason) {
+                          showToast(realmPageBlockedReason);
+                          return;
+                        }
 
-                      if (loadedSharePostUrl) {
-                        navigateTo(loadedSharePostUrl);
+                        if (loadedSharePostUrl) {
+                          navigateTo(loadedSharePostUrl);
+                        }
+                      }}
+                      className={`${editorActionButtonClass} editor-action-button-secondary ${
+                        isBusy || realmPageBlockedReason
+                          ? 'cursor-not-allowed opacity-50'
+                          : 'cursor-pointer'
+                      }`}
+                    >
+                      Realm Page
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openAuthorsHelpPage}
+                      title={
+                        authorsHelpPageUrl
+                          ? 'Open Authors Help Page'
+                          : 'Authors Help Page URL is not configured.'
                       }
-                    }}
-                    className={`${editorActionButtonClass} ${
-                      isBusy || realmPageBlockedReason
-                        ? 'cursor-not-allowed opacity-50'
-                        : 'cursor-pointer'
-                    }`}
-                  >
-                    Realm Page
-                  </button>
+                      className={`${editorActionButtonClass} editor-action-button-secondary cursor-pointer`}
+                    >
+                      Authors Help
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
-                  <div>
-                    <div className="mb-2">
-                      <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                        Starting Elements ({draft.startingElementIds.length})
-                      </div>
-                    </div>
+              <div className="mt-5">
+                <EditorMetaTabsPanel
+                  activeTab={activeMetaTab}
+                  onTabChange={setActiveMetaTab}
+                  starterCount={draft.startingElementIds.length}
+                  startersContent={
                     <div className="flex flex-wrap items-center gap-2">
-                      {draft.startingElementIds.map((id, index) => {
-                        const el = draft.elements.find((e) => e.id === id);
-                        return el ? (
-                          <div
-                            key={`starting-${id}-${index}`}
-                            className="editor-starter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
-                          >
-                            <span className="text-base leading-none">
-                              {el.emoji}
-                            </span>
-                            <span>{el.name}</span>
-                            <button
-                              onClick={() => removeStartingElement(index)}
-                              className="editor-starter-remove ml-0.5"
+                        {draft.startingElementIds.map((id, index) => {
+                          const el = draft.elements.find((e) => e.id === id);
+                          return el ? (
+                            <div
+                              key={`starting-${id}-${index}`}
+                              className="editor-starter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
                             >
-                              <IoCloseSharp size={16} />
-                            </button>
-                          </div>
-                        ) : null;
-                      })}
+                              <span className="text-base leading-none">
+                                {el.emoji}
+                              </span>
+                              <span>{el.name}</span>
+                              <button
+                                onClick={() => removeStartingElement(index)}
+                                className="editor-starter-remove ml-0.5"
+                              >
+                                <IoCloseSharp size={16} />
+                              </button>
+                            </div>
+                          ) : null;
+                        })}
                       <div className="ml-1 flex items-center">
                         <DroppableInput
                           value={newStartingText}
@@ -1497,7 +1547,7 @@ export const ModEditorApp = () => {
                               : undefined
                           }
                           placeholder="Add starter"
-                          className="realm-input w-28 rounded-l-lg border"
+                          className="realm-input w-24 rounded-l-lg border sm:w-28"
                           onEnter={() => {
                             addStartingElement(newStartingText);
                             setNewStartingText('');
@@ -1514,202 +1564,104 @@ export const ModEditorApp = () => {
                         </button>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="realm-panel-soft rounded-2xl p-4">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setIsAdvancedOptionsOpen((current) => !current)
-                      }
-                      className="flex w-full items-center gap-3 text-left"
-                    >
-                      <span className="realm-text-ink text-lg">
-                        {isAdvancedOptionsOpen ? '−' : '+'}
-                      </span>
-                      <div>
-                        <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                          Advanced Options
-                        </div>
-                      </div>
-                    </button>
-
-                    {isAdvancedOptionsOpen && (
-                      <div className="mt-4 space-y-4">
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={draft.showPalette}
-                            onChange={(event) =>
-                              updateDraft((current) => ({
-                                ...current,
-                                showPalette: event.target.checked,
-                              }))
-                            }
-                            className="h-4 w-4"
-                          />
-                          <span>
-                            show palette
-                            <span className="realm-text-soft">
-                              {' '}
-                              (turn this off for quest realms)
-                            </span>
+                  }
+                  advancedContent={
+                    <div className="space-y-4">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={draft.showPalette}
+                          onChange={(event) =>
+                            updateDraft((current) => ({
+                              ...current,
+                              showPalette: event.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4"
+                        />
+                        <span>
+                          show palette
+                          <span className="realm-text-soft">
+                            {' '}
+                            (turn this off for quest realms)
                           </span>
-                        </label>
+                        </span>
+                      </label>
 
-                        <div>
-                          <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
-                            Counters ({draft.counters.length})
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            {counterElements.map(({ counter, element }) => (
-                              <div
-                                key={`counter-${counter.elementId}`}
-                                className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
-                              >
-                                <span className="text-base leading-none">
-                                  {element.emoji}
-                                </span>
-                                <span>
-                                  {element.name}({counter.initial})
-                                </span>
-                                <button
-                                  onClick={() =>
-                                    removeCounterElement(counter.elementId)
-                                  }
-                                  className="editor-counter-remove ml-0.5"
-                                >
-                                  <IoCloseSharp size={16} />
-                                </button>
-                              </div>
-                            ))}
-                            <div className="ml-1 flex items-center">
-                              <DroppableInput
-                                value={newCounterText}
-                                onChange={setNewCounterText}
-                                onDropValue={(value) => {
-                                  addCounterElement(value);
-                                  setNewCounterText('');
-                                }}
-                                onClear={
-                                  newCounterText
-                                    ? () => setNewCounterText('')
-                                    : undefined
-                                }
-                                placeholder="Add counter"
-                                className="realm-input w-28 rounded-l-lg border"
-                                onEnter={() => {
-                                  addCounterElement(newCounterText);
-                                  setNewCounterText('');
-                                }}
-                              />
+                      <div>
+                        <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                          Counters ({draft.counters.length})
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {counterElements.map(({ counter, element }) => (
+                            <div
+                              key={`counter-${counter.elementId}`}
+                              className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
+                            >
+                              <span className="text-base leading-none">
+                                {element.emoji}
+                              </span>
+                              <span>
+                                {element.name}({counter.initial})
+                              </span>
                               <button
-                                onClick={() => {
-                                  addCounterElement(newCounterText);
-                                  setNewCounterText('');
-                                }}
-                                className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
+                                onClick={() =>
+                                  removeCounterElement(counter.elementId)
+                                }
+                                className="editor-counter-remove ml-0.5"
                               >
-                                <IoAddSharp size={20} />
+                                <IoCloseSharp size={16} />
                               </button>
                             </div>
-                          </div>
+                          ))}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                <div
-                  className={`realm-panel-soft rounded-2xl p-4 ${
-                    isValidationBlinking ? 'animate-shake ring-2 ring-rose-300/70' : ''
-                  }`}
-                >
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="catalog-title-font realm-text-ink text-sm font-black">
-                        Validation
-                      </div>
-                      <div className="realm-text-soft text-sm">
-                        ({validation.reachableElementIds.length}/
-                        {validation.totalElements} reachable)
-                      </div>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-[10px] font-bold tracking-[0.16em] uppercase ${
-                        reactionTextIssues.length === 0 && validation.isValid
-                          ? 'editor-validation-badge-ready'
-                          : 'editor-validation-badge-blocked'
-                      }`}
-                    >
-                      {reactionTextIssues.length === 0 && validation.isValid
-                        ? 'Ready'
-                        : 'Blocked'}
-                    </span>
-                  </div>
-                  {reactionTextIssues.length > 0 && (
-                    <div className="mb-3 space-y-2">
-                      {reactionTextIssues.slice(0, 3).map((issue) => (
-                        <div
-                          key={`${issue.line}-${issue.message}`}
-                          className="editor-validation-error rounded-xl px-3 py-2 text-sm"
-                        >
-                          {formatReactionTextIssue(issue)}
+                        <div className="mt-3 flex items-center">
+                          <DroppableInput
+                            value={newCounterText}
+                            onChange={setNewCounterText}
+                            onDropValue={(value) => {
+                              addCounterElement(value);
+                              setNewCounterText('');
+                            }}
+                            onClear={
+                              newCounterText
+                                ? () => setNewCounterText('')
+                                : undefined
+                            }
+                            placeholder="Add counter"
+                            className="realm-input w-32 rounded-l-lg border sm:w-40"
+                            onEnter={() => {
+                              addCounterElement(newCounterText);
+                              setNewCounterText('');
+                            }}
+                          />
+                          <button
+                            onClick={() => {
+                              addCounterElement(newCounterText);
+                              setNewCounterText('');
+                            }}
+                            className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
+                          >
+                            <IoAddSharp size={20} />
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {validation.errors.length > 0 && (
-                    <div className="space-y-2">
-                      {validation.errors.slice(0, 3).map((error) => (
-                        <div
-                          key={error}
-                          className="editor-validation-error rounded-xl px-3 py-2 text-sm"
-                        >
-                          {error}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {(reactionTextIssues.length > 0 || !validation.isValid) &&
-                    blockedScriptReactions.length > 0 && (
-                    <div className="mt-3 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-3 text-sm text-rose-100">
-                      <div className="catalog-title-font text-[11px] font-bold tracking-[0.16em] uppercase text-rose-100">
-                        Bad Scripts
                       </div>
-                      <div className="mt-2 text-sm text-rose-100/90">
-                        Scripted reactions are blocking publish. Fix these reactions:
-                      </div>
-                      <ul className="mt-2 space-y-1.5">
-                        {blockedScriptReactions.slice(0, 4).map((entry) => (
-                          <li key={entry.reactionName}>
-                            <span className="font-bold">{entry.reactionName}</span>
-                            {`: ${entry.messages[0]}`}
-                            {entry.messages.length > 1
-                              ? ` (+${entry.messages.length - 1} more)`
-                              : ''}
-                          </li>
-                        ))}
-                      </ul>
                     </div>
-                  )}
-                  {reactionTextIssues.length === 0 &&
-                    validation.errors.length === 0 &&
-                    validation.warnings.length > 0 && (
-                      <div className="space-y-2">
-                      {validation.warnings.slice(0, 2).map((warning) => (
-                        <div
-                          key={warning}
-                          className="editor-validation-warning rounded-xl px-3 py-2 text-sm"
-                        >
-                          {warning}
-                        </div>
-                        ))}
-                      </div>
-                    )}
-                </div>
+                  }
+                />
               </div>
             </div>
+
+            <EditorValidationPlank
+              blockingItems={blockingValidationItems}
+              warningItems={warningValidationItems}
+              isBlinking={isValidationBlinking}
+              isExpanded={isValidationExpanded}
+              onToggle={() =>
+                setIsValidationExpanded((current) => !current)
+              }
+            />
 
             <div
               className={`grid items-start gap-4 ${
@@ -1718,8 +1670,8 @@ export const ModEditorApp = () => {
                   : 'sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]'
               }`}
             >
-              <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
-                <div className="mb-4 flex flex-nowrap items-start gap-3">
+              <div className="realm-panel min-w-0 rounded-3xl p-3 backdrop-blur-xl lg:p-4">
+                <div className="mb-4 flex flex-wrap items-start gap-3">
                   <div className="min-w-[112px] shrink-0">
                     <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
                       Reactions
@@ -1788,7 +1740,7 @@ export const ModEditorApp = () => {
                 </div>
 
                 {reactionView === 'visual' ? (
-                  <div className="custom-scrollbar h-[500px] space-y-3 overflow-x-visible overflow-y-auto px-2 pt-2 pb-6">
+                  <div className="custom-scrollbar h-[500px] overflow-x-hidden overflow-y-auto pt-2 pb-6">
                     {filteredReactions.map(({ reaction, index }) => (
                       <ReactionWidget
                         counterElementIds={counterElementIds}
@@ -1827,7 +1779,7 @@ export const ModEditorApp = () => {
                 ) : (
                   <div className="flex h-[500px] flex-col gap-3 pb-6">
                     <ReactionScriptAutocompleteTextarea
-                      className="realm-input custom-scrollbar min-h-0 flex-1 w-full resize-none rounded-xl border p-4 font-mono text-sm font-bold outline-none"
+                      className="realm-input custom-scrollbar min-h-0 w-full flex-1 resize-none rounded-xl border p-4 font-mono text-sm font-bold outline-none"
                       counterNames={counterNames}
                       elementNames={gameplayElementNames}
                       iconElementNames={draft.elements
@@ -1861,208 +1813,220 @@ export const ModEditorApp = () => {
               </div>
 
               {!isReactionPanelExpanded && (
-                <div className="realm-panel rounded-3xl p-3 backdrop-blur-xl lg:p-4">
-                <div className="mb-4 flex flex-nowrap items-start gap-3">
-                  <div className="min-w-[112px] shrink-0">
-                    <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
-                      Elements ({draft.elements.length})
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setElementPanelView((current) =>
-                          current === 'extended' ? 'compact' : 'extended'
-                        )
-                      }
-                      className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
-                    >
-                      {elementPanelView === 'extended'
-                        ? 'Compact View'
-                        : 'Extended View'}
-                    </button>
-                  </div>
-                  <div className="ml-auto flex min-w-0 flex-1 items-center gap-2">
-                    <div className="realm-input flex min-w-0 flex-1 items-center rounded-lg border">
-                      <DroppableInput
-                        value={elementSearch}
-                        onChange={setElementSearch}
-                        onClear={
-                          elementSearch ? () => setElementSearch('') : undefined
+                <div className="realm-panel min-w-0 rounded-3xl p-3 backdrop-blur-xl lg:p-4">
+                  <div className="mb-4 flex flex-wrap items-start gap-3">
+                    <div className="min-w-[112px] shrink-0">
+                      <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                        Elements ({draft.elements.length})
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setElementPanelView((current) =>
+                            current === 'extended' ? 'compact' : 'extended'
+                          )
                         }
-                        placeholder="Search element"
-                        className="w-full border-0"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={addElement}
-                      title="Add element"
-                      className="realm-button-accent catalog-title-font flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-lg font-bold"
-                    >
-                      <IoAddSharp />
-                    </button>
-                  </div>
-                </div>
-
-                {elementPanelView === 'extended' ? (
-                  <div className="custom-scrollbar h-[500px] space-y-3 overflow-y-auto pr-2 pb-6">
-                    {filteredCounterElements.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {filteredCounterElements.map(({ counter, element }) => (
-                          <div
-                            key={`elements-counter-${counter.elementId}`}
-                            className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-2 pl-2 text-sm font-bold"
-                          >
-                            <span className="text-base leading-none">
-                              {element.emoji}
-                            </span>
-                            <span>
-                              {element.name}({counter.initial})
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {filteredElements.map((element) => (
-                      <div
-                        key={element.id}
-                        className="realm-panel-soft relative overflow-visible rounded-xl p-2 pt-4"
+                        className="realm-button-muted catalog-title-font rounded px-2 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors"
                       >
-                        <button
-                          onClick={() => removeElement(element.id)}
-                          className="absolute -top-2.5 -right-2.5 z-20 rounded-full bg-[color:rgba(255,255,255,0.96)] p-1 text-slate-700 shadow-lg transition-colors hover:bg-rose-500 hover:text-white"
-                        >
-                          <IoCloseSharp size={12} />
-                        </button>
-                        <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
-                          <ElementPreview
-                            element={element}
-                            onChangeEmoji={(val) =>
-                              updateElementEmoji(element.id, val)
-                            }
-                            draggable={true}
-                          />
-                          <div className="flex min-w-[12rem] flex-1 items-center gap-1.5 pr-1 sm:min-w-0">
-                            <input
-                              ref={(node) => {
-                                elementNameInputRefs.current[element.id] = node;
-                              }}
-                              value={element.name}
-                              maxLength={32}
-                              onChange={(event) =>
-                                renameElement(element.id, event.target.value)
-                              }
-                              onBlur={() => finalizeElementName(element.id)}
-                              placeholder="Name"
-                              className="realm-input min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm outline-none"
-                            />
-                            <DualColorPicker
-                              element={element}
-                              onChangeBgColor={(value) =>
-                                updateElementColors(element.id, {
-                                  bgColorToken: value,
-                                  frameColorToken: element.frameColorToken,
-                                })
-                              }
-                              onChangeFrameColor={(value) =>
-                                updateElementColors(element.id, {
-                                  bgColorToken: element.bgColorToken,
-                                  frameColorToken: value,
-                                })
-                              }
-                            />
-                            <ElementAdvancedButton
-                              scriptingHelpPageUrl={scriptingHelpPageUrl}
-                              element={element}
-                              counterDefinition={
-                                draft.counters.find(
-                                  (counter) => counter.elementId === element.id
-                                ) ?? null
-                              }
-                              isStarting={draft.startingElementIds.includes(
-                                element.id
-                              )}
-                              onOpenScriptingHelp={openScriptingHelpPage}
-                              onApply={(patch) =>
-                                updateElementAdvanced(element.id, patch)
-                              }
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="custom-scrollbar h-[500px] overflow-x-visible overflow-y-auto pr-1 pb-6">
-                    {filteredCounterElements.length > 0 && (
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        {filteredCounterElements.map(({ counter, element }) => (
-                          <div
-                            key={`compact-counter-${counter.elementId}`}
-                            className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-2 pl-2 text-sm font-bold"
-                          >
-                            <span className="text-base leading-none">
-                              {element.emoji}
-                            </span>
-                            <span>
-                              {element.name}({counter.initial})
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="grid grid-cols-4 gap-3">
-                      {filteredElements.map((element) => (
-                        <CompactElementTile
-                          scriptingHelpPageUrl={scriptingHelpPageUrl}
-                          counterDefinition={
-                            draft.counters.find(
-                              (counter) => counter.elementId === element.id
-                            ) ?? null
+                        {elementPanelView === 'extended'
+                          ? 'Compact View'
+                          : 'Extended View'}
+                      </button>
+                    </div>
+                    <div className="ml-auto flex min-w-0 flex-1 items-center gap-2">
+                      <div className="realm-input flex min-w-0 flex-1 items-center rounded-lg border">
+                        <DroppableInput
+                          value={elementSearch}
+                          onChange={setElementSearch}
+                          onClear={
+                            elementSearch
+                              ? () => setElementSearch('')
+                              : undefined
                           }
-                          key={element.id}
-                          element={element}
-                          isStarting={draft.startingElementIds.includes(
-                            element.id
-                          )}
-                          onOpenScriptingHelp={openScriptingHelpPage}
-                          onRename={(name) => renameElement(element.id, name)}
-                          onBlurName={() => finalizeElementName(element.id)}
-                          onChangeEmoji={(emoji) =>
-                            updateElementEmoji(element.id, emoji)
-                          }
-                          onChangeBgColor={(value) =>
-                            updateElementColors(element.id, {
-                              bgColorToken: value,
-                              frameColorToken: element.frameColorToken,
-                            })
-                          }
-                          onChangeFrameColor={(value) =>
-                            updateElementColors(element.id, {
-                              bgColorToken: element.bgColorToken,
-                              frameColorToken: value,
-                            })
-                          }
-                          onApplyAdvanced={(patch) =>
-                            updateElementAdvanced(element.id, patch)
-                          }
-                          onRemove={() => removeElement(element.id)}
-                          inputRef={(node) => {
-                            elementNameInputRefs.current[element.id] = node;
-                          }}
+                          placeholder="Search element"
+                          className="w-full border-0"
                         />
-                      ))}
+                      </div>
                       <button
                         type="button"
                         onClick={addElement}
                         title="Add element"
-                        className="realm-button-accent catalog-title-font flex h-[60px] w-[60px] cursor-pointer items-center justify-center rounded-[10px] border-2 text-2xl font-black"
+                        className="realm-button-accent catalog-title-font flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-lg font-bold"
                       >
-                        +
+                        <IoAddSharp />
                       </button>
                     </div>
                   </div>
-                )}
+
+                  {elementPanelView === 'extended' ? (
+                    <div className="custom-scrollbar h-[500px] space-y-3 overflow-y-auto pr-2 pb-6">
+                      {filteredCounterElements.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {filteredCounterElements.map(
+                            ({ counter, element }) => (
+                              <div
+                                key={`elements-counter-${counter.elementId}`}
+                                className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-2 pl-2 text-sm font-bold"
+                              >
+                                <span className="text-base leading-none">
+                                  {element.emoji}
+                                </span>
+                                <span>
+                                  {element.name}({counter.initial})
+                                </span>
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
+                      {filteredElements.map((element) => (
+                        <div
+                          key={element.id}
+                          className="realm-panel-soft relative overflow-visible rounded-xl p-2 pt-4"
+                        >
+                          <button
+                            onClick={() => removeElement(element.id)}
+                            className="absolute -top-2.5 -right-2.5 z-20 rounded-full bg-[color:rgba(255,255,255,0.96)] p-1 text-slate-700 shadow-lg transition-colors hover:bg-rose-500 hover:text-white"
+                          >
+                            <IoCloseSharp size={12} />
+                          </button>
+                          <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
+                            <ElementPreview
+                              element={element}
+                              onChangeEmoji={(val) =>
+                                updateElementEmoji(element.id, val)
+                              }
+                              draggable={true}
+                            />
+                            <div className="flex min-w-[12rem] flex-1 items-center gap-1.5 pr-1 sm:min-w-0">
+                              <input
+                                ref={(node) => {
+                                  elementNameInputRefs.current[element.id] =
+                                    node;
+                                }}
+                                value={element.name}
+                                maxLength={32}
+                                onChange={(event) =>
+                                  renameElement(element.id, event.target.value)
+                                }
+                                onBlur={() => finalizeElementName(element.id)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={(event) =>
+                                  handleElementNameDrop(element.id, event)
+                                }
+                                placeholder="Name"
+                                className="realm-input min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm outline-none"
+                              />
+                              <DualColorPicker
+                                element={element}
+                                onChangeBgColor={(value) =>
+                                  updateElementColors(element.id, {
+                                    bgColorToken: value,
+                                    frameColorToken: element.frameColorToken,
+                                  })
+                                }
+                                onChangeFrameColor={(value) =>
+                                  updateElementColors(element.id, {
+                                    bgColorToken: element.bgColorToken,
+                                    frameColorToken: value,
+                                  })
+                                }
+                              />
+                              <ElementAdvancedButton
+                                scriptingHelpPageUrl={scriptingHelpPageUrl}
+                                element={element}
+                                counterDefinition={
+                                  draft.counters.find(
+                                    (counter) =>
+                                      counter.elementId === element.id
+                                  ) ?? null
+                                }
+                                isStarting={draft.startingElementIds.includes(
+                                  element.id
+                                )}
+                                onOpenScriptingHelp={openScriptingHelpPage}
+                                onApply={(patch) =>
+                                  updateElementAdvanced(element.id, patch)
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="custom-scrollbar h-[500px] overflow-x-hidden overflow-y-auto pr-1 pb-6">
+                      {filteredCounterElements.length > 0 && (
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {filteredCounterElements.map(
+                            ({ counter, element }) => (
+                              <div
+                                key={`compact-counter-${counter.elementId}`}
+                                className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-2 pl-2 text-sm font-bold"
+                              >
+                                <span className="text-base leading-none">
+                                  {element.emoji}
+                                </span>
+                                <span>
+                                  {element.name}({counter.initial})
+                                </span>
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-4 justify-items-center gap-2">
+                        {filteredElements.map((element) => (
+                          <CompactElementTile
+                            scriptingHelpPageUrl={scriptingHelpPageUrl}
+                            counterDefinition={
+                              draft.counters.find(
+                                (counter) => counter.elementId === element.id
+                              ) ?? null
+                            }
+                            key={element.id}
+                            element={element}
+                            isStarting={draft.startingElementIds.includes(
+                              element.id
+                            )}
+                            onOpenScriptingHelp={openScriptingHelpPage}
+                            onRename={(name) => renameElement(element.id, name)}
+                            onBlurName={() => finalizeElementName(element.id)}
+                            onChangeEmoji={(emoji) =>
+                              updateElementEmoji(element.id, emoji)
+                            }
+                            onChangeBgColor={(value) =>
+                              updateElementColors(element.id, {
+                                bgColorToken: value,
+                                frameColorToken: element.frameColorToken,
+                              })
+                            }
+                            onChangeFrameColor={(value) =>
+                              updateElementColors(element.id, {
+                                bgColorToken: element.bgColorToken,
+                                frameColorToken: value,
+                              })
+                            }
+                            onApplyAdvanced={(patch) =>
+                              updateElementAdvanced(element.id, patch)
+                            }
+                            onRemove={() => removeElement(element.id)}
+                            inputRef={(node) => {
+                              elementNameInputRefs.current[element.id] = node;
+                            }}
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={addElement}
+                          title="Add element"
+                          className="realm-button-accent catalog-title-font flex h-[60px] w-[60px] cursor-pointer items-center justify-center rounded-[10px] border-2 text-2xl font-black"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

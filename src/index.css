@@ -855,14 +855,85 @@
 	color: var(--editor-counter-remove-hover);
 }
 
-.editor-validation-badge-ready {
-	background: var(--editor-validation-ready-fill);
+.editor-action-button {
+	border: 1px solid var(--catalog-soft-border);
+	line-height: 1.1;
+}
+
+.editor-action-button-primary {
+	background: var(--catalog-play-hover);
+	color: var(--catalog-play-hover-text);
+}
+
+.editor-action-button-primary:hover {
+	filter: brightness(1.05);
+}
+
+.editor-action-button-secondary {
+	background: color-mix(in srgb, var(--catalog-play-fill) 84%, transparent);
+	color: var(--catalog-ink);
+}
+
+.editor-action-button-secondary:hover {
+	background: var(--catalog-header-hover);
+}
+
+.editor-sticky-header {
+	background: color-mix(in srgb, var(--catalog-header-fill) 96%, transparent);
+	box-shadow: var(--catalog-card-shadow);
+}
+
+.editor-validation-plank {
+	box-shadow: var(--catalog-card-shadow);
+}
+
+.editor-validation-plank-ready {
+	border-color: color-mix(
+		in srgb,
+		var(--editor-validation-ready-fill) 55%,
+		var(--catalog-soft-border)
+	);
+	background: color-mix(
+		in srgb,
+		var(--editor-validation-ready-fill) 68%,
+		var(--catalog-header-fill)
+	);
 	color: var(--editor-validation-ready-text);
 }
 
-.editor-validation-badge-blocked {
-	background: var(--editor-validation-blocked-fill);
+.editor-validation-plank-blocked {
+	border-color: color-mix(
+		in srgb,
+		var(--editor-validation-blocked-fill) 65%,
+		var(--catalog-soft-border)
+	);
+	background: color-mix(
+		in srgb,
+		var(--editor-validation-blocked-fill) 72%,
+		var(--catalog-header-fill)
+	);
 	color: var(--editor-validation-blocked-text);
+}
+
+.editor-meta-tab {
+	border: 1px solid var(--catalog-soft-border);
+	background: transparent;
+	color: var(--catalog-muted);
+	transition:
+		background-color 120ms ease,
+		color 120ms ease,
+		border-color 120ms ease;
+}
+
+.editor-meta-tab:hover {
+	background: var(--catalog-input-fill);
+	color: var(--catalog-ink);
+}
+
+.editor-meta-tab-active {
+	border-color: var(--catalog-soft-border);
+	background: var(--catalog-button-fill);
+	color: var(--catalog-ink);
 }
 
 .editor-validation-error {

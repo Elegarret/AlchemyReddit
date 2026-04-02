@@ -69,6 +69,7 @@ Keep this file updated when architecture, major flows, or important project conv
 - Reaction script actions now use bracket-less canonical syntax in the editor and formatter: `set counter += 10`, `message "Text"`, `popup "Text", Icon`, `win "Text"`, and `lose "Text"`. Condition predicates such as `count(...)` and `on_table(...)` still keep their existing parentheses form, and the parser remains backward-compatible with older saved action syntax.
 - Reaction tiles now use a left-edge dotted drag gutter and place the delete `X` beside the script button instead of floating it above the card.
 - The editor now exposes a separate subreddit-configured `Scripting Help Page URL`. Reaction widgets link to it from the script editor, the text reaction editor shows it under the expand/compact control, and the element counter help icon now opens scripting help. The `Authors Help` link moved next to the `Realm Info` heading.
+- The editor meta area now uses a two-column realm-info layout on wide screens, keeps validation in a sticky narrow plank at the top of the editor column, and merges `Starting Elements` / `Advanced Options` into one shared tabbed panel.
 - Counter-marked elements remain editable in the general element list for icon/name/style changes, but they are treated as non-gameplay elements by validation and script authoring.
 - Elements can be marked `non-consumable`; those elements stay on the table after successful reactions unless a script explicitly removes them.
 - Non-consumable outputs are now single-copy on the table: if one already survives a reaction, duplicate emitted copies are silently suppressed unless the same reaction removed the existing copy first.
@@ -94,6 +95,10 @@ Keep this file updated when architecture, major flows, or important project conv
 - `npm test -- my-file-name`: targeted test execution
 - `npm test`: full test suite
 - `npm run sync:emoji-data`: refreshes `public/emoji-data.json` from the installed official emoji dataset
+
+## Documentation Convention
+
+- Assistant responses that reference repo files should use absolute local links with a leading slash, for example `[ModEditorApp.tsx](/b:/Reddit/alchemygame/src/mod-editor/ModEditorApp.tsx#L1727)`, so the UI opens the local file instead of treating the path as a web URL.
 
 ## Current Known Verification Note
 

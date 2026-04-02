@@ -59,6 +59,18 @@ const isEmojiPickerEvent = (
 };
 
 const REACTION_DRAG_TYPE = 'application/x-alchemy-reaction-index';
+const ELEMENT_NAME_DRAG_TYPE = 'text/plain';
+
+const setDraggedElementName = (
+  dataTransfer: DataTransfer,
+  elementName: string
+) => {
+  dataTransfer.setData(ELEMENT_NAME_DRAG_TYPE, elementName);
+  dataTransfer.effectAllowed = 'copy';
+};
+
+const getDraggedElementName = (dataTransfer: DataTransfer) =>
+  dataTransfer.getData(ELEMENT_NAME_DRAG_TYPE).trim();
 
 const getElementPreviewStyle = (element: ModElement) => {
   const { bgColor, frameColor } = resolveModElementColors(
@@ -82,8 +94,7 @@ const getColorOptionSwatchStyle = (
   }
 
   return {
-    backgroundColor:
-      type === 'bg' ? definition.bgColor : definition.frameColor,
+    backgroundColor: type === 'bg' ? definition.bgColor : definition.frameColor,
     borderColor: 'rgba(255,255,255,0.2)',
   };
 };
@@ -169,7 +180,7 @@ const EmojiDropdown = ({
         }}
         className={
           buttonClassName ||
-          'pointer-events-auto realm-text-ink flex h-full w-full cursor-pointer items-center justify-center bg-transparent pb-0.5 text-[26px] font-black outline-none hover:bg-white/10'
+          'realm-text-ink pointer-events-auto flex h-full w-full cursor-pointer items-center justify-center bg-transparent pb-0.5 text-[26px] font-black outline-none hover:bg-white/10'
         }
       >
         {children || emoji}
@@ -184,10 +195,7 @@ const EmojiDropdown = ({
               onPointerDown={(e) => e.stopPropagation()}
               onDragStart={(e) => e.stopPropagation()}
             >
-              <emoji-picker
-                ref={pickerRef}
-                dataSource="/emoji-data.json"
-              />
+              <emoji-picker ref={pickerRef} dataSource="/emoji-data.json" />
             </div>
           </div>,
           document.body
@@ -207,8 +215,7 @@ export const ElementPreview = ({
 }) => {
   const handleDragStart = (e: DragEvent) => {
     if (draggable) {
-      e.dataTransfer.setData('text/plain', element.name);
-      e.dataTransfer.effectAllowed = 'copy';
+      setDraggedElementName(e.dataTransfer, element.name);
     }
   };
 
@@ -385,7 +392,7 @@ export const DualColorPicker = ({
         onClick={() => setIsOpen((current) => !current)}
         className={
           buttonClassName ||
-          'relative flex h-8 w-8 shrink-0 cursor-pointer items-end justify-end overflow-hidden rounded-lg border-2 outline-none transition-transform hover:scale-[1.04] focus-visible:scale-[1.04]'
+          'relative flex h-8 w-8 shrink-0 cursor-pointer items-end justify-end overflow-hidden rounded-lg border-2 transition-transform outline-none hover:scale-[1.04] focus-visible:scale-[1.04]'
         }
         style={
           buttonStyle ||
@@ -453,12 +460,17 @@ export const ElementAdvancedButton = ({
   counterDefinition: ModCounterDefinition | null;
   isStarting: boolean;
   onOpenScriptingHelp: () => void;
-  onApply: (patch: Pick<ModElement, 'message' | 'effect'> & {
-    nonConsumable: boolean;
-    counterValues: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'> | null;
-    isCounter: boolean;
-    isStarting: boolean;
-  }) => void;
+  onApply: (
+    patch: Pick<ModElement, 'message' | 'effect'> & {
+      nonConsumable: boolean;
+      counterValues: Pick<
+        ModCounterDefinition,
+        'initial' | 'max' | 'min'
+      > | null;
+      isCounter: boolean;
+      isStarting: boolean;
+    }
+  ) => void;
   containerClassName?: string;
   buttonClassName?: string;
 }) => {
@@ -493,7 +505,9 @@ export const ElementAdvancedButton = ({
           setIsCounterDraft(counterDefinition !== null);
           setIsStartingDraft(isStarting);
           setIsNonConsumableDraft(element.nonConsumable);
-          setCounterDraft(counterDefinition ?? { initial: 0, max: 100, min: 0 });
+          setCounterDraft(
+            counterDefinition ?? { initial: 0, max: 100, min: 0 }
+          );
           setIsOpen(true);
         }}
         className={
@@ -562,7 +576,9 @@ export const ElementAdvancedButton = ({
                     type="checkbox"
                     checked={!isCounterDraft && isStartingDraft}
                     disabled={isCounterDraft}
-                    onChange={(event) => setIsStartingDraft(event.target.checked)}
+                    onChange={(event) =>
+                      setIsStartingDraft(event.target.checked)
+                    }
                     className="h-4 w-4"
                   />
                   <span className="font-semibold">Starter</span>
@@ -716,7 +732,7 @@ export const ElementAdvancedButton = ({
                       value={option.value}
                       className="bg-slate-950 text-slate-100"
                     >
-                        {option.label}
+                      {option.label}
                     </option>
                   ))}
                 </select>
@@ -783,23 +799,44 @@ export const CompactElementTile = ({
   counterDefinition: ModCounterDefinition | null;
   isStarting: boolean;
   onOpenScriptingHelp: () => void;
-  onApplyAdvanced: (patch: Pick<ModElement, 'message' | 'effect'> & {
-    nonConsumable: boolean;
-    counterValues: Pick<ModCounterDefinition, 'initial' | 'max' | 'min'> | null;
-    isCounter: boolean;
-    isStarting: boolean;
-  }) => void;
+  onApplyAdvanced: (
+    patch: Pick<ModElement, 'message' | 'effect'> & {
+      nonConsumable: boolean;
+      counterValues: Pick<
+        ModCounterDefinition,
+        'initial' | 'max' | 'min'
+      > | null;
+      isCounter: boolean;
+      isStarting: boolean;
+    }
+  ) => void;
   onRemove: () => void;
   inputRef?: (node: HTMLInputElement | null) => void;
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
+  const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
+    setDraggedElementName(event.dataTransfer, element.name);
+  };
+  const handleNameDrop = (event: DragEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    const droppedName = getDraggedElementName(event.dataTransfer);
+    if (!droppedName) {
+      return;
+    }
+
+    onRename(droppedName);
+    setIsEditingName(false);
+    setTimeout(onBlurName, 50);
+  };
 
   return (
     <div
       className={`group/element relative h-[60px] w-[60px] overflow-visible ${isEditingName ? 'z-40' : ''}`}
     >
       <div
-        className={`relative h-full w-full overflow-visible rounded-[10px] border-[4px] ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}
+        draggable={true}
+        onDragStart={handleDragStart}
+        className={`relative h-full w-full cursor-grab overflow-visible rounded-[10px] border-[4px] active:cursor-grabbing ${getModElementClasses(element.bgColorToken, element.frameColorToken)}`}
         style={getElementPreviewStyle(element)}
       >
         <DualColorPicker
@@ -832,7 +869,7 @@ export const CompactElementTile = ({
           type="button"
           onClick={onRemove}
           title={`Remove ${element.name}`}
-          className="absolute -top-1 -right-1 z-30 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-hover/element:opacity-100 group-focus-within/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
+          className="absolute -top-1 -right-1 z-30 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[color:rgba(44,36,26,0.28)] bg-[color:rgba(234,223,190,0.94)] text-[#2c241a] opacity-0 shadow-[0_2px_8px_rgba(44,36,26,0.18)] transition-all group-focus-within/element:opacity-100 group-hover/element:opacity-100 hover:bg-[#e3d5af] hover:text-[#2c241a] hover:opacity-100 focus-visible:bg-[#e3d5af] focus-visible:text-[#2c241a] focus-visible:opacity-100"
         >
           <IoCloseSharp size={10} />
         </button>
@@ -846,14 +883,13 @@ export const CompactElementTile = ({
           buttonClassName="group/emoji pointer-events-auto absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-[58%] cursor-pointer appearance-none items-center justify-center rounded-xl border border-transparent bg-transparent text-[32px] font-black text-[color:var(--catalog-ink)] outline-none transition-all hover:scale-105 hover:bg-transparent focus-visible:scale-105 focus-visible:bg-transparent active:bg-transparent"
         >
           <div className="relative flex h-full w-full items-center justify-center">
-            <span className="pointer-events-none absolute inset-0 rounded-xl border border-transparent transition-all group-hover/emoji:border-white group-hover/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)] group-focus-within/emoji:border-white group-focus-within/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)]" />
+            <span className="pointer-events-none absolute inset-0 rounded-xl border border-transparent transition-all group-focus-within/emoji:border-white group-focus-within/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)] group-hover/emoji:border-white group-hover/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)]" />
             <span className="leading-none">{element.emoji}</span>
             <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/70 p-[1px] text-white opacity-0 transition-opacity group-hover/emoji:opacity-100">
               <IoChevronDownSharp size={8} />
             </span>
           </div>
         </EmojiDropdown>
-
       </div>
       <input
         ref={inputRef}
@@ -866,6 +902,8 @@ export const CompactElementTile = ({
           setIsEditingName(false);
           onBlurName();
         }}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={handleNameDrop}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault();
@@ -873,9 +911,9 @@ export const CompactElementTile = ({
           }
         }}
         title={`Rename ${element.name}`}
-        className={`pointer-events-auto absolute z-20 px-1 text-center text-[9px] font-bold tracking-[0.08em] text-white uppercase outline-none transition-all hover:bg-black/40 focus:bg-black/55 ${
+        className={`pointer-events-auto absolute z-20 px-1 text-center text-[9px] font-bold tracking-[0.08em] text-white uppercase transition-all outline-none hover:bg-black/40 focus:bg-black/55 ${
           isEditingName
-            ? 'bottom-[4px] left-1/2 h-[18px] min-w-full max-w-none -translate-x-1/2 rounded-md bg-black/55 shadow-lg'
+            ? 'bottom-[4px] left-1/2 h-[18px] max-w-none min-w-full -translate-x-1/2 rounded-md bg-black/55 shadow-lg'
             : 'right-[4px] bottom-[4px] left-[4px] h-[14px] rounded-b-[6px] bg-black/28'
         }`}
         style={
@@ -916,7 +954,7 @@ export const DroppableInput = ({
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    const data = e.dataTransfer.getData('text/plain');
+    const data = getDraggedElementName(e.dataTransfer);
     if (data) {
       if (onDropValue) {
         onDropValue(data);
@@ -1089,8 +1127,7 @@ export const ReactionWidget = ({
     commit(leftText, rightText, next);
   };
 
-  const reactionFieldClassName =
-    'realm-input w-[5rem] border sm:w-[6.5rem]';
+  const reactionFieldClassName = 'realm-input w-[5rem] border sm:w-[6.5rem]';
   const lastOutputIndex = outputTexts.length - 1;
   const hasSettledScriptError = scriptIssues.length > 0;
 
@@ -1133,7 +1170,7 @@ export const ReactionWidget = ({
       onDragEnd={() => {
         isDragHandleActiveRef.current = false;
       }}
-      className="realm-panel-soft relative flex flex-col gap-2 overflow-visible rounded-xl py-2 pr-2 pl-6"
+      className="realm-panel-soft relative flex flex-col overflow-visible rounded-xl py-2 pr-2 pl-4"
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes(REACTION_DRAG_TYPE)) {
           event.preventDefault();
@@ -1161,17 +1198,17 @@ export const ReactionWidget = ({
         onBlur={() => {
           isDragHandleActiveRef.current = false;
         }}
-        className="absolute inset-y-2 left-1 z-10 flex w-4 cursor-grab flex-col items-center justify-center gap-1 rounded-lg border border-transparent bg-transparent transition-colors hover:border-[color:var(--catalog-soft-border)] hover:bg-white/6 active:cursor-grabbing"
+        className="absolute inset-y-2 left-1 z-10 flex w-2 cursor-grab flex-col items-center justify-center gap-1 rounded-lg border border-transparent bg-transparent transition-colors hover:border-[color:var(--catalog-soft-border)] hover:bg-white/6 active:cursor-grabbing"
         title="Drag to reorder reaction"
       >
-        {Array.from({ length: 6 }).map((_, dotIndex) => (
+        {Array.from({ length: 4 }).map((_, dotIndex) => (
           <span
             key={`reaction-handle-${index}-${dotIndex}`}
             className="h-1 w-1 rounded-full bg-[color:var(--catalog-soft-text)] opacity-80"
           />
         ))}
       </button>
-      <div className="flex w-full min-w-0 flex-nowrap items-center gap-1.5">
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:flex-nowrap">
         <DroppableInput
           value={leftText}
           onChange={setLeftText}
@@ -1185,7 +1222,9 @@ export const ReactionWidget = ({
           className={reactionFieldClassName}
           grow={false}
         />
-        <div className="catalog-title-font realm-text-ink shrink-0 text-center font-black">+</div>
+        <div className="catalog-title-font realm-text-ink shrink-0 text-center font-black">
+          +
+        </div>
         <DroppableInput
           value={rightText}
           onChange={setRightText}
@@ -1206,26 +1245,28 @@ export const ReactionWidget = ({
             hasSettledScriptError
               ? 'bg-rose-500/18 text-rose-200 ring-1 ring-rose-400/40'
               : isScriptOpen || hasScript
-              ? 'bg-cyan-500/18 text-cyan-100'
-              : 'realm-button-muted'
+                ? 'bg-cyan-500/18 text-cyan-100'
+                : 'realm-button-muted'
           }`}
-          title={hasScript ? 'Edit scripted override' : 'Open scripted override'}
+          title={
+            hasScript ? 'Edit scripted override' : 'Open scripted override'
+          }
         >
           <IoCodeSlash size={14} />
         </button>
         <button
           type="button"
           onClick={() => onDelete(index)}
-          className="realm-button-muted flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-rose-500/20 hover:text-rose-300"
+          className="realm-button-muted flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-rose-500/20 hover:text-rose-300"
           title="Remove reaction"
         >
           <IoCloseSharp size={14} />
         </button>
       </div>
 
-      <div className="flex flex-col gap-2 pl-1">
+      <div className="flex flex-col gap-2">
         {isScriptOpen ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col pt-2">
             <div className="flex items-center justify-end">
               <button
                 type="button"
@@ -1275,7 +1316,9 @@ export const ReactionWidget = ({
                       {missingElementName && (
                         <button
                           type="button"
-                          onClick={() => onAddMissingElement(missingElementName)}
+                          onClick={() =>
+                            onAddMissingElement(missingElementName)
+                          }
                           className="realm-button-accent cursor-pointer rounded-full px-2 py-1 text-[10px] font-bold"
                         >
                           Add {missingElementName}
@@ -1330,7 +1373,7 @@ export const ReactionWidget = ({
                       onClick={() => {
                         addOutputField(outputTexts.length);
                       }}
-                      className="realm-button-accent shrink-0 rounded-r-lg rounded-l-none border border-l-0 border-white/10 px-2"
+                      className="realm-button-accent shrink-0 rounded-l-none rounded-r-lg border border-l-0 border-white/10 px-2"
                     >
                       <IoAddSharp size={16} />
                     </button>
@@ -1344,4 +1387,3 @@ export const ReactionWidget = ({
     </div>
   );
 };
-
