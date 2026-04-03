@@ -10,6 +10,7 @@ import {
 import {
   formatReactionScript,
   splitReactionScriptLineComment,
+  validateReactionScript,
 } from '../modding/reaction-script';
 import {
   MAX_REALM_SUMMARY_LENGTH,
@@ -168,6 +169,7 @@ type DeclarationLineKey = (typeof DECLARATION_LINE_KEYS)[number];
 export type ReactionTextIssue = {
   line: number;
   message: string;
+  missingElementName?: string;
 };
 
 export type ReactionTextParseResult = {
@@ -191,12 +193,78 @@ const parseDeclarationLine = (rawLine: string) => {
 const getSupportedDeclarationKey = (rawKey: string) =>
   DECLARATION_LINE_KEYS.find((key) => key === rawKey) ?? null;
 
+const startsWithSupportedDeclarationKeyword = (rawLine: string) =>
+  DECLARATION_LINE_KEYS.some((key) =>
+    new RegExp(`^\\s*${key}(?=\\s|$)`, 'i').test(rawLine)
+  );
+
 const parseIntegerToken = (value: string) => {
   if (!/^-?\d+$/.test(value)) {
     return null;
   }
 
   return Number(value);
+};
+
+const createReactionTextMissingElementIssue = (
+  line: number,
+  name: string
+): ReactionTextIssue => ({
+  line,
+  message: `Unknown element "${name}".`,
+  missingElementName: name,
+});
+
+const resolveExistingElementInDraft = (
+  draft: SaveDraftInput,
+  rawName: string
+) => {
+  const normalizedName = normalizeAuthoredElementName(rawName);
+  if (!normalizedName) {
+    return {
+      elementId: null,
+      normalizedName: null,
+    };
+  }
+
+  const existing = findElementByName(draft.elements, normalizedName);
+  return {
+    elementId: existing?.id ?? null,
+    normalizedName,
+  };
+};
+
+const getDraftCounterNames = (draft: SaveDraftInput) =>
+  draft.counters.flatMap((counter) => {
+    const element = draft.elements.find(
+      (candidate) => candidate.id === counter.elementId
+    );
+
+    return element?.name ? [element.name] : [];
+  });
+
+export const getReactionTextMissingElementNames = (
+  issues: ReactionTextIssue[]
+) => {
+  const seen = new Set<string>();
+  const missingElementNames: string[] = [];
+
+  issues.forEach((issue) => {
+    const missingElementName = issue.missingElementName?.trim();
+    if (!missingElementName) {
+      return;
+    }
+
+    const normalizedKey = missingElementName.toLowerCase();
+    if (seen.has(normalizedKey)) {
+      return;
+    }
+
+    seen.add(normalizedKey);
+    missingElementNames.push(missingElementName);
+  });
+
+  return missingElementNames;
 };
 
 const parseNameList = (
@@ -376,12 +444,17 @@ const parseReactionTextDeclarations = (
     const absoluteLine = index + 1;
     const parsedLine = parseDeclarationLine(rawLine);
     if (!parsedLine) {
-      errors.push({
-        line: absoluteLine,
-        message:
-          'Expected a declaration line: starters:, counters:, or nonconsumables:.',
-      });
-      continue;
+      if (startsWithSupportedDeclarationKeyword(rawLine)) {
+        errors.push({
+          line: absoluteLine,
+          message:
+            'Expected a declaration line: starters:, counters:, or nonconsumables:.',
+        });
+        continue;
+      }
+
+      bodyStartIndex = index;
+      break;
     }
 
     const declarationKey = getSupportedDeclarationKey(parsedLine.key);
@@ -411,8 +484,8 @@ const parseReactionTextDeclarations = (
       errors.push(...parsedList.errors);
 
       parsedList.names.forEach((name) => {
-        const resolved = ensureElementInDraft(nextDraft, name);
-        if (!resolved.elementId) {
+        const resolved = resolveExistingElementInDraft(nextDraft, name);
+        if (!resolved.normalizedName) {
           errors.push({
             line: absoluteLine,
             message: `${declarationKey} contains an invalid element name.`,
@@ -420,7 +493,16 @@ const parseReactionTextDeclarations = (
           return;
         }
 
-        nextDraft = resolved.draft;
+        if (!resolved.elementId) {
+          errors.push(
+            createReactionTextMissingElementIssue(
+              absoluteLine,
+              resolved.normalizedName
+            )
+          );
+          return;
+        }
+
         if (declarationKey === 'starters') {
           if (!startingElementIds.includes(resolved.elementId)) {
             startingElementIds.push(resolved.elementId);
@@ -444,8 +526,8 @@ const parseReactionTextDeclarations = (
         return;
       }
 
-      const resolved = ensureElementInDraft(nextDraft, parsedItem.name);
-      if (!resolved.elementId) {
+      const resolved = resolveExistingElementInDraft(nextDraft, parsedItem.name);
+      if (!resolved.normalizedName) {
         errors.push({
           line: absoluteLine,
           message: `Counter "${parsedItem.name}" has an invalid element name.`,
@@ -453,7 +535,16 @@ const parseReactionTextDeclarations = (
         return;
       }
 
-      nextDraft = resolved.draft;
+      if (!resolved.elementId) {
+        errors.push(
+          createReactionTextMissingElementIssue(
+            absoluteLine,
+            resolved.normalizedName
+          )
+        );
+        return;
+      }
+
       if (
         counterDefinitions.some(
           (counter) => counter.elementId === resolved.elementId
@@ -473,10 +564,6 @@ const parseReactionTextDeclarations = (
     });
   }
 
-  const counterElementIds = new Set(
-    counterDefinitions.map((counter) => counter.elementId)
-  );
-
   return {
     bodyStartIndex,
     draft: {
@@ -486,9 +573,7 @@ const parseReactionTextDeclarations = (
         ...element,
         nonConsumable: nonConsumableElementIds.has(element.id),
       })),
-      startingElementIds: startingElementIds.filter(
-        (elementId) => !counterElementIds.has(elementId)
-      ),
+      startingElementIds,
     },
     errors,
   };
@@ -549,33 +634,65 @@ const parseReactionBodyToDraft = (
       continue;
     }
 
-    const leftResolved = ensureElementInDraft(nextDraft, leftName);
+    const leftResolved = resolveExistingElementInDraft(nextDraft, leftName);
+    if (!leftResolved.normalizedName) {
+      continue;
+    }
+
+    const rightResolved = resolveExistingElementInDraft(nextDraft, rightName);
+    if (!rightResolved.normalizedName) {
+      continue;
+    }
+
     if (!leftResolved.elementId) {
-      continue;
+      errors.push(
+        createReactionTextMissingElementIssue(
+          absoluteLine,
+          leftResolved.normalizedName
+        )
+      );
     }
-    nextDraft = leftResolved.draft;
 
-    const rightResolved = ensureElementInDraft(nextDraft, rightName);
     if (!rightResolved.elementId) {
-      continue;
+      errors.push(
+        createReactionTextMissingElementIssue(
+          absoluteLine,
+          rightResolved.normalizedName
+        )
+      );
     }
-    nextDraft = rightResolved.draft;
 
+    const outputIds: string[] = [];
     if (inlineResult) {
-      const outputIds: string[] = [];
       inlineResult
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean)
         .forEach((outputName) => {
-          const resolved = ensureElementInDraft(nextDraft, outputName);
-          if (!resolved.elementId) {
+          const resolved = resolveExistingElementInDraft(nextDraft, outputName);
+          if (!resolved.normalizedName) {
             return;
           }
-          nextDraft = resolved.draft;
+
+          if (!resolved.elementId) {
+            errors.push(
+              createReactionTextMissingElementIssue(
+                absoluteLine,
+                resolved.normalizedName
+              )
+            );
+            return;
+          }
+
           outputIds.push(resolved.elementId);
         });
+    }
 
+    if (!leftResolved.elementId || !rightResolved.elementId) {
+      continue;
+    }
+
+    if (inlineResult) {
       reactions.push({
         leftId: leftResolved.elementId,
         rightId: rightResolved.elementId,
@@ -607,11 +724,42 @@ const parseReactionBodyToDraft = (
       break;
     }
 
+    const script =
+      formatReactionScript(scriptLines.join('\n')) ?? scriptLines.join('\n');
+    const scriptValidation = validateReactionScript(script, {
+      counterNames: getDraftCounterNames(nextDraft),
+      elements: nextDraft.elements.map((element) => ({
+        id: element.id,
+        name: element.name,
+      })),
+      nonGameplayElementIds: nextDraft.counters.map(
+        (counter) => counter.elementId
+      ),
+    });
+
+    if (!scriptValidation.ok) {
+      scriptValidation.errors.forEach((error) => {
+        if (!error.message.startsWith('Unknown element "')) {
+          return;
+        }
+
+        const missingElementName =
+          error.message.match(/^Unknown element "(.+)"\.$/)?.[1] ?? null;
+        errors.push({
+          line: absoluteLine + error.line,
+          message: error.message,
+          ...(missingElementName
+            ? { missingElementName }
+            : {}),
+        });
+      });
+    }
+
     reactions.push({
       leftId: leftResolved.elementId,
       rightId: rightResolved.elementId,
       outputIds: [],
-      script: formatReactionScript(scriptLines.join('\n')) ?? scriptLines.join('\n'),
+      script,
     });
     commentBlocks.push({
       headerComment: splitLine.commentText ?? undefined,

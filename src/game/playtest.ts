@@ -9,6 +9,7 @@ type PersistedRuleset = {
   intro?: string;
   storageScope: string;
   startingElements: string[];
+  startingCounterElementIds?: ActiveRuleset['startingCounterElementIds'];
   recipes: ActiveRuleset['recipes'];
   reactionScripts?: ActiveRuleset['reactionScripts'];
   elementNames?: ActiveRuleset['elementNames'];
@@ -84,6 +85,7 @@ export const readPlaytestRuleset = (): ActiveRuleset | null => {
       intro: parsed.intro ?? '',
       storageScope: parsed.storageScope,
       startingElements: parsed.startingElements,
+      startingCounterElementIds: parsed.startingCounterElementIds ?? [],
       recipes: parsed.recipes,
       reactionScripts: parsed.reactionScripts ?? {},
       elementStyles: parsed.elementStyles,

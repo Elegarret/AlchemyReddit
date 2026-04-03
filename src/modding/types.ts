@@ -73,7 +73,7 @@ export type ModElement = z.infer<typeof modElementSchema>;
 export const modReactionSchema = z.object({
   leftId: z.string().min(1).max(48),
   rightId: z.string().min(1).max(48),
-  outputIds: z.array(z.string().min(1).max(48)).max(4),
+  outputIds: z.array(z.string().min(1).max(48)).max(128),
   script: z.string().max(MAX_REACTION_SCRIPT_LENGTH).optional(),
 });
 
@@ -223,6 +223,7 @@ export type ActiveRuleset = {
   intro: string;
   storageScope: string;
   startingElements: string[];
+  startingCounterElementIds: string[];
   recipes: Record<string, string[]>;
   reactionScripts: Record<string, string>;
   elementNames?: Record<string, string>;

@@ -1011,7 +1011,7 @@ export const ReactionWidget = ({
   elements,
   scriptingHelpPageUrl,
   onAddMissingElement,
-  onAutoAddElement,
+  onPasteMissingElements,
   onCommit,
   onMoveReaction,
   onOpenScriptingHelp,
@@ -1288,6 +1288,7 @@ export const ReactionWidget = ({
               elementNames={gameplayElementNames}
               iconElementNames={scriptElementNames}
               mode="script"
+              onPasteMissingElements={onPasteMissingElements}
               textareaClassName="resize-y"
               value={scriptText}
               onChange={(nextValue) => {
@@ -1295,7 +1296,6 @@ export const ReactionWidget = ({
                 onUpdateScript(index, nextValue);
               }}
               onEditingSettled={() => setShouldShowScriptValidation(true)}
-              onElementCommitted={onAutoAddElement}
               placeholder={`add dust\npopup "The cupboard is locked.", key\nif (count(health) < 10) win "You survived."`}
             />
 

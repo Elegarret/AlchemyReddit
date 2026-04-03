@@ -180,6 +180,7 @@ describe('validateModDraft', () => {
       },
     ]);
     expect(result.counterNames).toEqual(['Lantern']);
+    expect(result.startingCounterElementIds).toEqual(['light']);
     expect(result.showPalette).toBe(false);
   });
 
@@ -259,9 +260,11 @@ describe('validateModDraft', () => {
     expect(resolved.result).toEqual({
       counterValues: {},
       emittedElementIds: ['steam'],
+      hiddenCounterNames: [],
       messages: [],
       popupEvents: [],
       removedTableElementIds: [],
+      shownCounterNames: [],
       stopped: false,
       usedScript: false,
     });
@@ -536,6 +539,56 @@ describe('validateModDraft', () => {
     expect(resolved.result.stopped).toBe(true);
   });
 
+  it('returns counter visibility changes through the runtime helper', () => {
+    const resolved = resolveReactionForRuleset({
+      counterValues: {
+        Health: 2,
+      },
+      currentTableElements: [
+        { elementId: 'air', id: 'table-1' },
+        { elementId: 'fire', id: 'table-2' },
+      ],
+      discoveredElementIds: ['air', 'fire'],
+      leftId: 'air',
+      rightId: 'fire',
+      ruleset: buildRulesetFromDraft({
+        title: 'Counter Toggle Realm',
+        summary: 'Scripts can show and hide counters without changing table state.',
+        intro: '',
+        startingElementIds: ['air', 'fire'],
+        counters: [
+          {
+            elementId: 'health',
+            initial: 2,
+          },
+        ],
+        showPalette: true,
+        elements: [
+          makeElement('air', 'Air'),
+          makeElement('fire', 'Fire'),
+          makeElement('health', 'Health'),
+        ],
+        reactions: [
+          {
+            leftId: 'air',
+            rightId: 'fire',
+            outputIds: [],
+            script: 'add Health\nremove Health',
+          },
+        ],
+      }),
+    });
+
+    expect(resolved?.ok).toBe(true);
+    if (!resolved || !resolved.ok) {
+      return;
+    }
+
+    expect(resolved.result.shownCounterNames).toEqual([]);
+    expect(resolved.result.hiddenCounterNames).toEqual(['Health']);
+    expect(resolved.result.emittedElementIds).toEqual([]);
+  });
+
   it('reports invalid scripted reactions during draft validation', () => {
     const result = validateModDraft({
       title: 'Broken Script Realm',
@@ -569,12 +622,12 @@ describe('validateModDraft', () => {
     expect(result.isValid).toBe(false);
   });
 
-  it('rejects counters as starters, reactions, and normal script elements', () => {
+  it('allows counters as starters while still rejecting counter ingredients and outputs', () => {
     const result = validateModDraft({
       title: 'Counter Realm',
       summary: 'Counters stay out of normal gameplay flows.',
       intro: '',
-      startingElementIds: ['air', 'health'],
+      startingElementIds: ['air', 'fire', 'health'],
       counters: [
         {
           elementId: 'health',
@@ -600,17 +653,74 @@ describe('validateModDraft', () => {
     });
 
     expect(result.errors).toContain(
-      'Counter Health cannot also be a starting element.'
-    );
-    expect(result.errors).toContain(
       'Reaction Health + Fire cannot use counters as ingredients.'
     );
     expect(result.errors).toContain(
       'Reaction Health + Fire cannot output counter Health as a normal element.'
     );
-    expect(result.scriptErrors).toContain(
-      '"Health + Fire" script line 1: Counter "Health" cannot act as a normal element here. Use count(...) or set counterName += 1 instead.'
-    );
+    expect(result.scriptErrors).toEqual([]);
+  });
+
+  it('does not count starter counters as unreachable elements', () => {
+    const result = validateModDraft({
+      title: 'Visible Counter Realm',
+      summary: 'Starter counters should not affect reachability checks.',
+      intro: '',
+      startingElementIds: ['air', 'fire', 'health'],
+      counters: [
+        {
+          elementId: 'health',
+          initial: 1,
+        },
+      ],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        makeElement('health', 'Health'),
+        makeElement('steam', 'Steam'),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: ['steam'],
+        },
+      ],
+    });
+
+    expect(result.errors).not.toContain('Unreachable elements: Health');
+  });
+
+  it('warns instead of blocking when a reaction has more than eight outputs', () => {
+    const result = validateModDraft({
+      title: 'Overflow Realm',
+      summary: 'Oversized outputs should stay saveable but not publishable.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        ...Array.from({ length: 9 }, (_, index) =>
+          makeElement(`out-${index + 1}`, `Out ${index + 1}`)
+        ),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: Array.from({ length: 9 }, (_, index) => `out-${index + 1}`),
+        },
+      ],
+    });
+
+    expect(result.isValid).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([
+      'Reaction Air + Fire has too many outputs. Max output length must be 8 elements.',
+    ]);
   });
 
   it('allows counters as popup icons while still treating them as counters', () => {

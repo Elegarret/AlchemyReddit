@@ -18,7 +18,7 @@ export type ReactionWidgetProps = {
     outputNames: string[]
   ) => void;
   onAddMissingElement: (name: string) => void;
-  onAutoAddElement: (name: string) => void;
+  onPasteMissingElements: (names: string[]) => void;
   onMoveReaction: (fromIndex: number, toIndex: number) => void;
   onOpenScriptingHelp: () => void;
   onUpdateScript: (index: number, script: string) => void;

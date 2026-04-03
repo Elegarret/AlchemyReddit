@@ -1,6 +1,6 @@
 import { act, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EditorMetaTabsPanel,
   EditorValidationPlank,
@@ -102,6 +102,66 @@ describe('editor meta ui', () => {
 
     expect(button?.textContent).toContain('(3 errors▼)');
     expect(container.textContent).not.toContain('A realm title is required.');
+
+    await unmount();
+  });
+
+  it('adds action buttons for missing and unreachable element validation items', async () => {
+    const onAddMissingElement = vi.fn();
+    const onRemoveUnreachableElements = vi.fn();
+    const blockingItems = getBlockingValidationItems({
+      onAddMissingElement,
+      onRemoveUnreachableElements,
+      reactionTextIssues: [
+        {
+          line: 3,
+          message: 'Unknown element "Steam".',
+          missingElementName: 'Steam',
+        },
+      ],
+      validation: {
+        errors: ['Unreachable elements: Crystal, Mist'],
+        scriptErrors: ['"Air + Fire" script line 1: Unknown element "Fog".'],
+      },
+    });
+
+    const { container, unmount } = await renderIntoDocument(
+      <EditorValidationPlank
+        blockingItems={blockingItems}
+        warningItems={[]}
+        isBlinking={false}
+        isExpanded={true}
+        onToggle={() => undefined}
+      />
+    );
+
+    const buttons = Array.from(container.querySelectorAll('button'));
+    const addSteamButton = buttons.find((button) =>
+      button.textContent?.includes('Add Steam')
+    );
+    const addFogButton = buttons.find((button) =>
+      button.textContent?.includes('Add Fog')
+    );
+    const removeAllButton = buttons.find((button) =>
+      button.textContent?.includes('Remove all')
+    );
+
+    expect(addSteamButton).toBeTruthy();
+    expect(addFogButton).toBeTruthy();
+    expect(removeAllButton).toBeTruthy();
+
+    await act(async () => {
+      addSteamButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      addFogButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      removeAllButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onAddMissingElement).toHaveBeenNthCalledWith(1, 'Steam');
+    expect(onAddMissingElement).toHaveBeenNthCalledWith(2, 'Fog');
+    expect(onRemoveUnreachableElements).toHaveBeenCalledWith([
+      'Crystal',
+      'Mist',
+    ]);
 
     await unmount();
   });

@@ -19,7 +19,7 @@ import type {
 
 export const MAX_MOD_ELEMENTS = 128;
 export const MAX_MOD_REACTIONS = 512;
-export const MAX_REACTION_OUTPUTS = 4;
+export const MAX_REACTION_OUTPUTS = 8;
 export const PLAYTEST_RULESET_STORAGE_KEY = 'alchemy-playtest-ruleset';
 export const DEFAULT_MOD_TITLE = 'Unknown Realm';
 const RESERVED_ELEMENT_NAME_CHARACTER_PATTERN = /[+,=:()"\r\n\t]/;
@@ -142,6 +142,7 @@ export const getLocalStorageKeys = (ruleset: ActiveRuleset) => {
 	if (ruleset.kind === 'base') {
 		return {
 			counters: 'alchemy-counters',
+			counterVisibility: 'alchemy-counter-visibility',
 			discovered: 'alchemy-discovered',
 			elements: 'alchemy-table-elements',
 			page: 'alchemy-current-page',
@@ -151,6 +152,7 @@ export const getLocalStorageKeys = (ruleset: ActiveRuleset) => {
 	const prefix = `alchemy-${ruleset.storageScope}`;
 	return {
 		counters: `${prefix}-counters`,
+		counterVisibility: `${prefix}-counter-visibility`,
 		discovered: `${prefix}-discovered`,
 		elements: `${prefix}-table-elements`,
 		page: `${prefix}-current-page`,
@@ -184,6 +186,13 @@ const buildCounterDefinitions = (
 				]
 			: [];
 	});
+
+export const getRulesetStartingCounterNames = (ruleset: ActiveRuleset) => {
+	const startingCounterIds = new Set(ruleset.startingCounterElementIds);
+	return ruleset.counterDefinitions.flatMap((counter) =>
+		startingCounterIds.has(counter.elementId) ? [counter.name] : []
+	);
+};
 
 export const getRulesetCounterValues = (
 	ruleset: ActiveRuleset,
@@ -284,9 +293,11 @@ export const hasReactionForRuleset = (
 export type ResolvedReactionResult = {
 	counterValues: Record<string, number>;
 	emittedElementIds: string[];
+	hiddenCounterNames: string[];
 	messages: string[];
 	popupEvents: ReactionScriptPopupEvent[];
 	removedTableElementIds: string[];
+	shownCounterNames: string[];
 	stopped: boolean;
 	usedScript: boolean;
 };
@@ -401,9 +412,11 @@ export const resolveReactionForRuleset = (params: {
 				removedTableElementIds: [],
 				ruleset,
 			}),
+			hiddenCounterNames: [],
 			messages: [],
 			popupEvents: [],
 			removedTableElementIds: [],
+			shownCounterNames: [],
 			stopped: false,
 			usedScript: false,
 		},
@@ -560,10 +573,6 @@ export const validateModDraft = (draft: {
 		errors.push(`Too many reactions. Maximum is ${MAX_MOD_REACTIONS}.`);
 	}
 
-	if (draft.startingElementIds.length < 2 || draft.startingElementIds.length > 8) {
-		errors.push('Choose between 2 and 8 starting elements.');
-	}
-
 	const elementIds = new Set<string>();
 	const elementNames = new Set<string>();
 	const elementNamesById = new Map<string, string>();
@@ -620,13 +629,15 @@ export const validateModDraft = (draft: {
 		counterNames.push(describeElement(counter.elementId));
 	}
 
-	draft.startingElementIds.forEach((elementId) => {
-		if (counterIds.has(elementId)) {
-			errors.push(
-				`Counter ${describeElement(elementId)} cannot also be a starting element.`
-			);
-		}
-	});
+	const gameplayStartingElementIds = draft.startingElementIds.filter(
+		(elementId) => !counterIds.has(elementId)
+	);
+	if (
+		gameplayStartingElementIds.length < 2 ||
+		gameplayStartingElementIds.length > 8
+	) {
+		errors.push('Choose between 2 and 8 starting elements.');
+	}
 
 	const seenReactions = new Set<string>();
 	for (const reaction of draft.reactions) {
@@ -651,8 +662,8 @@ export const validateModDraft = (draft: {
 		}
 
 		if (reaction.outputIds.length > MAX_REACTION_OUTPUTS) {
-			errors.push(
-				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} has too many outputs.`
+			warnings.push(
+				`Reaction ${describeElement(reaction.leftId)} + ${describeElement(reaction.rightId)} has too many outputs. Max output length must be ${MAX_REACTION_OUTPUTS} elements.`
 			);
 		}
 
@@ -696,13 +707,13 @@ export const validateModDraft = (draft: {
 	const reachableElementIds =
 		scriptErrors.length === 0
 			? getReachableElementIds(
-					draft.startingElementIds,
+					gameplayStartingElementIds,
 					draft.reactions,
 					draft.elements,
 					counterNames,
 					Array.from(counterIds)
 				)
-			: draft.startingElementIds.filter(
+			: gameplayStartingElementIds.filter(
 					(elementId) => elementIds.has(elementId) && !counterIds.has(elementId)
 				);
 	const unreachableIds =
@@ -776,6 +787,15 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
     }
 	}
   const counterDefinitions = buildCounterDefinitions(mod.counters, elementNames);
+  const counterElementIds = new Set(
+    counterDefinitions.map((counter) => counter.elementId)
+  );
+  const startingCounterElementIds = mod.startingElementIds.filter((elementId) =>
+    counterElementIds.has(elementId)
+  );
+  const startingElements = mod.startingElementIds.filter(
+    (elementId) => !counterElementIds.has(elementId)
+  );
 
   return {
     kind: 'mod',
@@ -784,7 +804,8 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
     summary: mod.summary,
     intro: mod.intro,
     storageScope: `mod:${mod.id}:${mod.publishedHash ?? createModFingerprint(mod)}`,
-    startingElements: mod.startingElementIds,
+    startingElements,
+    startingCounterElementIds,
     recipes,
     reactionScripts,
     elementNames,

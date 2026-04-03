@@ -17,6 +17,7 @@ export const BASE_RULESET: ActiveRuleset = {
 	intro: '',
 	storageScope: 'base',
 	startingElements: ['air', 'fire', 'earth', 'water'],
+	startingCounterElementIds: [],
 	recipes: RECIPES,
 	reactionScripts: {},
 	elementStyles: ELEMENT_COLORS,

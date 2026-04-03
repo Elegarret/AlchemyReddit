@@ -1,6 +1,10 @@
 # Reaction Script
 
-One statement per line. Lines run top to bottom. A bare element name is shorthand for `add elementName`, but canonical formatting uses `add elementName`.
+One statement per line. Lines run top to bottom.
+
+Canonical formatting uses bracket-less actions such as `set health += 1` and `popup "Text", key`. Older wrapped action forms like `set(health += 1)` or `message("Text")` may still parse, but the formatter rewrites them to canonical syntax.
+
+A bare element name is shorthand for `add elementName`, but canonical formatting still uses `add elementName`.
 
 ## Grammar
 
@@ -21,11 +25,28 @@ One statement per line. Lines run top to bottom. A bare element name is shorthan
 - `set counter -= 1`
 - `set counter = 10`
 - `message "Message at the top of the screen"`
-- `popup "message in the big blocking popup"`
-- `popup "message in the big blocking popup with an icon of element_x", element_x`
-- `win "Win popup, game over, contratulations!", icon_element`
-- `lose "You lose, so bad, start over", icon_element`
+- `popup "Blocking popup text"`
+- `popup "Blocking popup text", icon_name`
+- `win "Win popup, game over"`
+- `win "Win popup, game over", icon_name`
+- `lose "You lose, start over"`
+- `lose "You lose, start over", icon_name`
 - `stop`
+
+## Counter Behavior
+
+- `set counterName ...` changes a counter value.
+- `add counterName` shows that counter chip if the name resolves to a configured counter.
+- `remove counterName` hides that counter chip.
+- `add` and `remove` do not change the counter value by themselves.
+- `remove_all counterName` is invalid. `remove_all` only clears table elements.
+- Counter values clamp to authored `min` / `max` bounds when those bounds exist.
+
+This means counters can be invisible until a script reveals them:
+
+- `add Health`
+- `set Health -= 1`
+- `remove Health`
 
 ## Conditions
 
@@ -45,17 +66,23 @@ Use `if (...) action` for a single conditional action. Conditions are flat and A
 - `if (on_table(flashlight)) add scratched-note`
 - `if (on_table(flashlight) and not_discovered(jacket)) add jacket`
 - `if (count(health) < 10) add bandage`
-- `if (not_on_table(key)) message("It is locked.")`
-- `if (not_on_table(key)) popup("It is locked.", key)`
+- `if (not_on_table(key)) message "It is locked."`
+- `if (not_on_table(key)) popup "It is locked.", key`
 - `if (not_on_table(key)) stop`
 
 Bracketed tokens are whitespace-tolerant on input, so `if(count(health)<10)add bandage` also parses, but canonical output uses one space where needed.
 
-Comments can be full-line or trailing:
+## Notes
 
+- Blank lines are ignored.
+- Comments can be full-line or trailing:
 - `// explain why this line exists`
 - `add bandage // reward for low health`
 - `message "Use // literally in text."`
+- `message "..."` shows a non-blocking message.
+- `popup "..."` shows a blocking modal the player must dismiss.
+- `win "..."` and `lose "..."` show blocking end-state screens.
+- `stop` ends the script immediately.
 
 ## Example
 
@@ -66,14 +93,12 @@ popup "You found a hidden compartment.", key
 if (not_on_table(key)) stop
 remove flashlight
 add scratched-note, bandage
+add Health
 set money += 1
-
-`message "..."` shows a non-blocking toast.
-`popup "..."` shows a blocking modal the player must dismiss.
-`win "..."` and `lose "..."` show blocking end-state screens.
 ```
 
-##  possible autocomplete flaws:
+## Possible Autocomplete Flaws
+
 High: element names still allow syntax delimiters that the text/script editors treat as grammar, so some valid-looking elements cannot round-trip safely. Nothing in validation rejects names containing +, =, :, ,, (, ), or quotes in runtime.ts, but the full-text parser splits on +, = and : in draft.ts, and script parsing splits add on commas plus parses wrapped calls by parentheses in reaction-script.ts and reaction-script.ts. Cases like Iron+Wood, Door: Locked, or Key, Rusty are likely to serialize or parse incorrectly.
 
 High: malformed lines in the full reaction text editor are silently dropped on blur/toggle instead of surfacing an error. applyReactionTextToDraft() just continues when a line does not match the expected shape in draft.ts. That means an author can type an incomplete or slightly malformed reaction, switch back to visual mode, and lose that line without feedback.

@@ -78,6 +78,54 @@ import {
   type EditorMetaTab,
 } from './meta';
 
+const removeElementFromDraft = (
+  current: SaveDraftInput,
+  elementId: string
+): SaveDraftInput => {
+  const normalizedComments = normalizeReactionComments(current);
+  const pairedReactions = current.reactions
+    .map((reaction, index) => ({
+      commentBlock: normalizedComments.byReaction[index],
+      reaction,
+    }))
+    .filter(
+      ({ reaction }) =>
+        reaction.leftId !== elementId && reaction.rightId !== elementId
+    )
+    .map(({ commentBlock, reaction }) => ({
+      commentBlock,
+      reaction: {
+        ...reaction,
+        outputIds: reaction.outputIds.filter((outputId) => outputId !== elementId),
+      },
+    }))
+    .filter(
+      ({ reaction }) =>
+        reaction.outputIds.length > 0 ||
+        (reaction.script?.trim().length ?? 0) > 0
+    );
+
+  return {
+    ...current,
+    counters: current.counters.filter((counter) => counter.elementId !== elementId),
+    elements: current.elements.filter((element) => element.id !== elementId),
+    startingElementIds: current.startingElementIds.filter((id) => id !== elementId),
+    reactions: pairedReactions.map(({ reaction }) => reaction),
+    reactionComments: {
+      byReaction: pairedReactions.map(({ commentBlock }) => ({
+        headerComment: commentBlock?.headerComment,
+        leadingComments: [...(commentBlock?.leadingComments ?? [])],
+      })),
+      trailingComments: [...normalizedComments.trailingComments],
+    },
+  };
+};
+
+const removeElementsFromDraft = (
+  current: SaveDraftInput,
+  elementIds: string[]
+) => elementIds.reduce(removeElementFromDraft, current);
+
 export const ModEditorApp = () => {
   const [tab, setTab] = useState<EditorTab>('editor');
   const [draft, setDraft] = useState<SaveDraftInput>(createEmptyDraft);
@@ -96,6 +144,9 @@ export const ModEditorApp = () => {
   const [newCounterText, setNewCounterText] = useState('');
   const [newStartingText, setNewStartingText] = useState('');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [pasteMissingElements, setPasteMissingElements] = useState<string[] | null>(
+    null
+  );
   const [pendingRemoveModId, setPendingRemoveModId] = useState<string | null>(
     null
   );
@@ -172,18 +223,13 @@ export const ModEditorApp = () => {
     () => validateModDraft(draftWithTextChanges),
     [draftWithTextChanges]
   );
-  const blockingValidationItems = useMemo(
-    () =>
-      getBlockingValidationItems({
-        reactionTextIssues,
-        validation,
-      }),
-    [reactionTextIssues, validation]
-  );
-  const warningValidationItems = useMemo(
-    () => getWarningValidationItems(validation.warnings),
-    [validation.warnings]
-  );
+  const blockingValidationItems = getBlockingValidationItems({
+    onAddMissingElement: addMissingReactionElement,
+    onRemoveUnreachableElements: removeUnreachableElements,
+    reactionTextIssues,
+    validation,
+  });
+  const warningValidationItems = getWarningValidationItems(validation.warnings);
   const counterElementIds = useMemo(
     () => draft.counters.map((counter) => counter.elementId),
     [draft.counters]
@@ -244,11 +290,14 @@ export const ModEditorApp = () => {
   const loadedSharePostUrl = loadedMod ? getSharePostUrl(loadedMod) : null;
   const publishBlockedReason =
     primaryPublishAction === 'publish' &&
-    (reactionTextIssues.length > 0 || !validation.isValid)
+    (reactionTextIssues.length > 0 ||
+      !validation.isValid ||
+      validation.warnings.length > 0)
       ? reactionTextIssues[0]
         ? formatReactionTextIssue(reactionTextIssues[0])
         : (validation.errors[0] ??
           validation.scriptErrors[0] ??
+          validation.warnings[0] ??
           'Fix validation errors first')
       : null;
   const shareBlockedReason = !hasLoadedPublishedVersion
@@ -303,6 +352,7 @@ export const ModEditorApp = () => {
           : undefined) ??
         validation.errors[0] ??
         validation.scriptErrors[0] ??
+        validation.warnings[0] ??
         'Fix validation errors first'
     );
     blinkValidation();
@@ -607,53 +657,7 @@ export const ModEditorApp = () => {
   };
 
   const removeElement = (elementId: string) => {
-    updateDraft((current) => {
-      const normalizedComments = normalizeReactionComments(current);
-      const pairedReactions = current.reactions
-        .map((reaction, index) => ({
-          commentBlock: normalizedComments.byReaction[index],
-          reaction,
-        }))
-        .filter(
-          ({ reaction }) =>
-            reaction.leftId !== elementId && reaction.rightId !== elementId
-        )
-        .map(({ commentBlock, reaction }) => ({
-          commentBlock,
-          reaction: {
-            ...reaction,
-            outputIds: reaction.outputIds.filter(
-              (outputId) => outputId !== elementId
-            ),
-          },
-        }))
-        .filter(
-          ({ reaction }) =>
-            reaction.outputIds.length > 0 ||
-            (reaction.script?.trim().length ?? 0) > 0
-        );
-
-      return {
-        ...current,
-        counters: current.counters.filter(
-          (counter) => counter.elementId !== elementId
-        ),
-        elements: current.elements.filter(
-          (element) => element.id !== elementId
-        ),
-        startingElementIds: current.startingElementIds.filter(
-          (id) => id !== elementId
-        ),
-        reactions: pairedReactions.map(({ reaction }) => reaction),
-        reactionComments: {
-          byReaction: pairedReactions.map(({ commentBlock }) => ({
-            headerComment: commentBlock?.headerComment,
-            leadingComments: [...(commentBlock?.leadingComments ?? [])],
-          })),
-          trailingComments: [...normalizedComments.trailingComments],
-        },
-      };
-    });
+    updateDraft((current) => removeElementFromDraft(current, elementId));
     setPendingElementFocusId((current) =>
       current === elementId ? null : current
     );
@@ -865,8 +869,72 @@ export const ModEditorApp = () => {
     });
   };
 
-  const addMissingReactionElement = (name: string) => {
-    updateDraft((current) => ensureElementInDraft(current, name).draft);
+  function addMissingReactionElement(name: string) {
+    addMissingReactionElements([name]);
+  }
+
+  function addMissingReactionElements(names: string[]) {
+    updateDraft((current) =>
+      names.reduce(
+        (nextDraft, name) => ensureElementInDraft(nextDraft, name).draft,
+        current
+      )
+    );
+    setPasteMissingElements((current) => {
+      if (!current) {
+        return null;
+      }
+
+      const addedNames = new Set(
+        names.map((name) => name.trim().toLowerCase()).filter(Boolean)
+      );
+      const remainingNames = current.filter(
+        (name) => !addedNames.has(name.trim().toLowerCase())
+      );
+
+      return remainingNames.length > 0 ? remainingNames : null;
+    });
+  }
+
+  function removeUnreachableElements(names: string[]) {
+    const normalizedNames = names.map((name) => name.trim().toLowerCase());
+    if (normalizedNames.length === 0) {
+      return;
+    }
+
+    if (reactionView === 'text' && reactionTextParse?.ok) {
+      const nextDraft = removeElementsFromDraft(
+        reactionTextParse.draft,
+        reactionTextParse.draft.elements
+          .filter((element) =>
+            normalizedNames.includes(element.name.trim().toLowerCase())
+          )
+          .map((element) => element.id)
+      );
+      setShouldShowValidationPlank(true);
+      setDraft(nextDraft);
+      setReactionText(formatReactionText(nextDraft));
+      return;
+    }
+
+    updateDraft((current) =>
+      removeElementsFromDraft(
+        current,
+        current.elements
+          .filter((element) =>
+            normalizedNames.includes(element.name.trim().toLowerCase())
+          )
+          .map((element) => element.id)
+      )
+    );
+  }
+
+  const handlePasteMissingElements = (names: string[]) => {
+    if (names.length === 0) {
+      return;
+    }
+
+    setPasteMissingElements(names);
   };
 
   const persistDraftSilently = async () => {
@@ -912,8 +980,8 @@ export const ModEditorApp = () => {
   };
 
   const publishDraft = async () => {
-    if (reactionTextIssues.length > 0 || !validation.isValid) {
-      showValidationFeedback();
+    if (publishBlockedReason) {
+      showValidationFeedback(publishBlockedReason);
       return;
     }
 
@@ -1224,6 +1292,63 @@ export const ModEditorApp = () => {
                 <button
                   type="button"
                   onClick={() => setShareUrl(null)}
+                  className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pasteMissingElements && (
+          <div
+            className="fixed inset-0 z-[121] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+            onClick={() => setPasteMissingElements(null)}
+          >
+            <div
+              className="realm-panel w-full max-w-md rounded-3xl p-5 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="catalog-title-font realm-text-muted text-[11px] font-bold tracking-[0.24em] uppercase">
+                Missing Elements
+              </div>
+              <h2 className="catalog-title-font realm-text-ink mt-2 text-xl font-black">
+                Pasted code references new elements
+              </h2>
+              <p className="realm-text-soft mt-2 text-sm">
+                Add these elements to the realm only if they are intentional.
+              </p>
+              <div className="realm-panel-soft custom-scrollbar mt-4 max-h-56 space-y-2 overflow-y-auto rounded-2xl px-4 py-3 text-sm">
+                {pasteMissingElements.map((name) => (
+                  <div
+                    key={`paste-missing-${name}`}
+                    className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-3 py-2"
+                  >
+                    <span className="catalog-title-font text-xs font-bold tracking-[0.16em]">
+                      {name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => addMissingReactionElement(name)}
+                      className="realm-button-accent catalog-title-font shrink-0 cursor-pointer rounded-full px-3 py-1 text-[10px] font-bold"
+                    >
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => addMissingReactionElements(pasteMissingElements)}
+                  className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
+                >
+                  Add all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPasteMissingElements(null)}
                   className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
                 >
                   Close
@@ -1766,7 +1891,7 @@ export const ModEditorApp = () => {
                         elements={draft.elements}
                         scriptingHelpPageUrl={scriptingHelpPageUrl}
                         onAddMissingElement={addMissingReactionElement}
-                        onAutoAddElement={addMissingReactionElement}
+                        onPasteMissingElements={handlePasteMissingElements}
                         onCommit={commitReaction}
                         onMoveReaction={moveReaction}
                         onOpenScriptingHelp={openScriptingHelpPage}
@@ -1804,25 +1929,15 @@ export const ModEditorApp = () => {
                       textareaClassName="resize-none"
                       onBlur={() => syncDraftFromText(reactionText)}
                       onChange={handleReactionTextChange}
-                      onElementCommitted={addMissingReactionElement}
+                      onPasteMissingElements={handlePasteMissingElements}
                       placeholder={
                         'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    message "It opens."\n    add Treasure'
                       }
+                      reactionTextDraft={draft}
+                      reactionTextIssues={reactionTextIssues}
                       rows={18}
                       value={reactionText}
                     />
-                    {reactionTextIssues.length > 0 && (
-                      <div className="space-y-2">
-                        {reactionTextIssues.slice(0, 4).map((issue) => (
-                          <div
-                            key={`reaction-text-${issue.line}-${issue.message}`}
-                            className="editor-validation-error rounded-xl px-3 py-2 text-sm"
-                          >
-                            {formatReactionTextIssue(issue)}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

@@ -2,7 +2,6 @@ import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyReactionScriptAutocompleteSuggestion,
-  getCommittedReactionScriptAutocompleteElement,
   getReactionScriptAutocomplete,
   getReactionTextAutocomplete,
   type ReactionScriptAutocompleteMode,
@@ -11,7 +10,14 @@ import {
 import {
   formatReactionScript,
   splitReactionScriptLineComment,
+  validateReactionScript,
 } from '../modding/reaction-script';
+import { type SaveDraftInput } from '../modding/types';
+import {
+  getReactionTextMissingElementNames,
+  parseReactionTextToDraft,
+  type ReactionTextIssue,
+} from './draft';
 
 type ScriptAutocompleteTextareaProps = {
   beautifyOnBlur?: boolean;
@@ -24,7 +30,10 @@ type ScriptAutocompleteTextareaProps = {
   onChange: (value: string) => void;
   onEditingSettled?: (() => void) | undefined;
   onElementCommitted?: ((name: string) => void) | undefined;
+  onPasteMissingElements?: ((names: string[]) => void) | undefined;
   placeholder: string;
+  reactionTextDraft?: SaveDraftInput | undefined;
+  reactionTextIssues?: ReactionTextIssue[] | undefined;
   rows?: number;
   textareaClassName?: string;
   value: string;
@@ -36,8 +45,14 @@ type CaretPopupPosition = {
 };
 
 type HighlightToken = {
+  isUnknown?: boolean;
   text: string;
   tone: 'base' | 'comment' | 'element' | 'keyword' | 'symbol';
+};
+
+type HighlightLine = {
+  lineNumber: number;
+  tokens: HighlightToken[];
 };
 
 const POPUP_WIDTH = 240;
@@ -71,6 +86,8 @@ const TOKEN_PATTERN =
   /(\r\n|\n|\s+|"(?:\\.|[^"\\])*"|==|!=|<=|>=|\+=|-=|[=(),:+\-<>])/g;
 
 const WORD_PATTERN = /([A-Za-z_][A-Za-z0-9_]*)/g;
+
+const REACTION_TEXT_NAME_BOUNDARY_PATTERN = /[\s,:+=]/;
 
 const shouldTriggerAutocompleteFromKey = (event: {
   altKey: boolean;
@@ -168,6 +185,80 @@ const getSuggestionsForMode = (params: {
   }).suggestions;
 };
 
+const dedupeElementNames = (names: string[]) => {
+  const seen = new Set<string>();
+  const dedupedNames: string[] = [];
+
+  names.forEach((name) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const normalizedKey = trimmed.toLowerCase();
+    if (seen.has(normalizedKey)) {
+      return;
+    }
+
+    seen.add(normalizedKey);
+    dedupedNames.push(trimmed);
+  });
+
+  return dedupedNames;
+};
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const normalizeMissingElementName = (value: string) =>
+  value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const isReactionTextNameBoundary = (character: string | undefined) =>
+  character === undefined || REACTION_TEXT_NAME_BOUNDARY_PATTERN.test(character);
+
+const getMissingScriptElementNames = (params: {
+  counterNames: string[];
+  elementNames: string[];
+  iconElementNames?: string[];
+  value: string;
+}) => {
+  const {
+    counterNames,
+    elementNames,
+    iconElementNames = elementNames,
+    value,
+  } = params;
+  const validation = validateReactionScript(value, {
+    counterNames,
+    elements: iconElementNames.map((name) => ({
+      id: name,
+      name,
+    })),
+    nonGameplayElementIds: counterNames,
+  });
+
+  if (validation.ok) {
+    return [];
+  }
+
+  return dedupeElementNames(
+    validation.errors.flatMap((error) => {
+      const missingElementName =
+        error.message.match(/^Unknown element "(.+)"\.$/)?.[1] ?? null;
+
+      return missingElementName ? [missingElementName] : [];
+    })
+  );
+};
+
+const getMissingReactionTextElementNames = (params: {
+  draft: SaveDraftInput;
+  value: string;
+}) =>
+  getReactionTextMissingElementNames(
+    parseReactionTextToDraft(params.draft, params.value).errors
+  );
+
 const getCaretPopupPosition = (
   textarea: HTMLTextAreaElement,
   cursor: number,
@@ -263,6 +354,16 @@ const tokenizeSegment = (segment: string): HighlightToken[] => {
   return tokens;
 };
 
+const applyUnknownTone = (tokens: HighlightToken[]): HighlightToken[] =>
+  tokens.map((token) =>
+    token.text.trim().length > 0
+      ? {
+          ...token,
+          isUnknown: true,
+        }
+      : token
+  );
+
 const highlightReactionEditorCode = (value: string): HighlightToken[] => {
   const tokens: HighlightToken[] = [];
   let lastIndex = 0;
@@ -294,6 +395,163 @@ const highlightReactionEditorCode = (value: string): HighlightToken[] => {
   return tokens;
 };
 
+const findUnknownRanges = (
+  value: string,
+  missingElementNames: Set<string> | null
+) => {
+  if (!missingElementNames || missingElementNames.size === 0 || !value.trim()) {
+    return [];
+  }
+
+  const candidateRanges = [...missingElementNames].flatMap((missingElementName) => {
+    const pattern = missingElementName
+      .split(' ')
+      .map((part) => escapeRegExp(part))
+      .join('\\s+');
+    const matcher = new RegExp(pattern, 'gi');
+    const ranges: Array<{
+      end: number;
+      start: number;
+    }> = [];
+
+    let match = matcher.exec(value);
+    while (match) {
+      const start = match.index ?? 0;
+      const text = match[0] ?? '';
+      const end = start + text.length;
+
+      if (
+        text.length > 0 &&
+        isReactionTextNameBoundary(value[start - 1]) &&
+        isReactionTextNameBoundary(value[end])
+      ) {
+        ranges.push({
+          end,
+          start,
+        });
+      }
+
+      if (text.length === 0) {
+        matcher.lastIndex += 1;
+      }
+
+      match = matcher.exec(value);
+    }
+
+    return ranges;
+  });
+
+  const selectedRanges: Array<{
+    end: number;
+    start: number;
+  }> = [];
+
+  candidateRanges
+    .sort((left, right) =>
+      left.start === right.start
+        ? right.end - right.start - (left.end - left.start)
+        : left.start - right.start
+    )
+    .forEach((range) => {
+      const overlapsExisting = selectedRanges.some(
+        (existing) => range.start < existing.end && range.end > existing.start
+      );
+      if (!overlapsExisting) {
+        selectedRanges.push(range);
+      }
+    });
+
+  return selectedRanges.sort((left, right) => left.start - right.start);
+};
+
+const highlightReactionEditorCodeWithUnknowns = (
+  value: string,
+  missingElementNames: Set<string> | null
+): HighlightToken[] => {
+  const unknownRanges = findUnknownRanges(value, missingElementNames);
+  if (unknownRanges.length === 0) {
+    return highlightReactionEditorCode(value);
+  }
+
+  const tokens: HighlightToken[] = [];
+  let lastIndex = 0;
+
+  unknownRanges.forEach((range) => {
+    if (range.start > lastIndex) {
+      tokens.push(...highlightReactionEditorCode(value.slice(lastIndex, range.start)));
+    }
+
+    tokens.push(
+      ...applyUnknownTone(
+        highlightReactionEditorCode(value.slice(range.start, range.end))
+      )
+    );
+    lastIndex = range.end;
+  });
+
+  if (lastIndex < value.length) {
+    tokens.push(...highlightReactionEditorCode(value.slice(lastIndex)));
+  }
+
+  return tokens;
+};
+
+const buildReactionTextMissingElementsByLine = (issues: ReactionTextIssue[]) => {
+  const missingElementsByLine = new Map<number, Set<string>>();
+
+  issues.forEach((issue) => {
+    const missingElementName = issue.missingElementName?.trim();
+    if (!missingElementName) {
+      return;
+    }
+
+    const lineMissingElements =
+      missingElementsByLine.get(issue.line) ?? new Set<string>();
+    lineMissingElements.add(normalizeMissingElementName(missingElementName));
+    missingElementsByLine.set(issue.line, lineMissingElements);
+  });
+
+  return missingElementsByLine;
+};
+
+const highlightReactionTextLine = (
+  value: string,
+  lineNumber: number,
+  missingElementsByLine: Map<number, Set<string>>
+): HighlightLine => {
+  const { code, commentText } = splitReactionScriptLineComment(value);
+  const tokens = highlightReactionEditorCodeWithUnknowns(
+    code,
+    missingElementsByLine.get(lineNumber) ?? null
+  );
+
+  if (commentText !== null) {
+    tokens.push({
+      text: `//${commentText}`,
+      tone: 'comment',
+    });
+  }
+
+  return {
+    lineNumber,
+    tokens,
+  };
+};
+
+const getDisplayHighlightedLines = (
+  value: string,
+  reactionTextIssues: ReactionTextIssue[]
+): HighlightLine[] => {
+  const lines = value.replace(/\r\n/g, '\n').split('\n');
+  const missingElementsByLine = buildReactionTextMissingElementsByLine(
+    reactionTextIssues
+  );
+
+  return lines.map((line, index) =>
+    highlightReactionTextLine(line, index + 1, missingElementsByLine)
+  );
+};
+
 const highlightReactionEditorValue = (value: string): HighlightToken[] =>
   value
     .replace(/\r\n/g, '\n')
@@ -317,8 +575,8 @@ const highlightReactionEditorValue = (value: string): HighlightToken[] =>
         });
       }
 
-        return tokens;
-      });
+      return tokens;
+    });
 
 const getDisplayHighlightedTokens = (value: string): HighlightToken[] => {
   const tokens = highlightReactionEditorValue(value);
@@ -332,6 +590,23 @@ const getDisplayHighlightedTokens = (value: string): HighlightToken[] => {
   return tokens;
 };
 
+const getHighlightTokenClassName = (token: HighlightToken) => {
+  const toneClassName =
+    token.tone === 'keyword'
+      ? 'editor-code-token-keyword'
+      : token.tone === 'element'
+        ? 'editor-code-token-element'
+        : token.tone === 'comment'
+          ? 'editor-code-token-comment'
+          : token.tone === 'symbol'
+            ? 'editor-code-token-symbol'
+            : 'editor-code-token-base';
+
+  return token.isUnknown
+    ? `${toneClassName} editor-code-token-unknown`
+    : toneClassName;
+};
+
 export const ReactionScriptAutocompleteTextarea = ({
   beautifyOnBlur = false,
   className,
@@ -342,14 +617,16 @@ export const ReactionScriptAutocompleteTextarea = ({
   onBlur,
   onChange,
   onEditingSettled,
-  onElementCommitted,
+  onPasteMissingElements,
   placeholder,
+  reactionTextDraft,
+  reactionTextIssues = [],
   rows = 5,
   textareaClassName,
   value,
 }: ScriptAutocompleteTextareaProps) => {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const highlightRef = useRef<HTMLPreElement | null>(null);
+  const highlightRef = useRef<HTMLElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const shouldEnableAutocompleteOnChangeRef = useRef(false);
@@ -363,8 +640,15 @@ export const ReactionScriptAutocompleteTextarea = ({
     null
   );
   const highlightedTokens = useMemo(
-    () => getDisplayHighlightedTokens(value),
-    [value]
+    () => (mode === 'reaction-text' ? [] : getDisplayHighlightedTokens(value)),
+    [mode, value]
+  );
+  const highlightedLines = useMemo(
+    () =>
+      mode === 'reaction-text'
+        ? getDisplayHighlightedLines(value, reactionTextIssues)
+        : [],
+    [mode, reactionTextIssues, value]
   );
 
   const suggestions = useMemo(() => {
@@ -545,248 +829,296 @@ export const ReactionScriptAutocompleteTextarea = ({
     });
   };
 
+  const renderHighlightedToken = (token: HighlightToken, key: string) => (
+    <span key={key} className={getHighlightTokenClassName(token)}>
+      {token.text}
+    </span>
+  );
+
+  const renderTextarea = (gridClassName: string) => (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(event) => {
+        onChange(event.target.value);
+        hasPendingEditRef.current = true;
+        setSelectionStart(event.target.selectionStart);
+        setSelectedSuggestionIndex(0);
+        setIsAutocompleteEnabled(shouldEnableAutocompleteOnChangeRef.current);
+        shouldEnableAutocompleteOnChangeRef.current = false;
+      }}
+      onFocus={(event) => {
+        setIsFocused(true);
+        setSelectionStart(event.currentTarget.selectionStart);
+        setIsAutocompleteEnabled(false);
+      }}
+      onBlur={() => {
+        maybeBeautifyValue();
+        setIsFocused(false);
+        setIsAutocompleteEnabled(false);
+        settleEditing();
+        onBlur?.();
+      }}
+      onMouseDown={() => {
+        setIsAutocompleteEnabled(false);
+      }}
+      onScroll={(event) => {
+        syncHighlightScroll(event.currentTarget);
+      }}
+      onPaste={(event) => {
+        if (!onPasteMissingElements) {
+          return;
+        }
+
+        const pastedText = event.clipboardData.getData('text');
+        if (!pastedText) {
+          return;
+        }
+
+        const nextValue =
+          value.slice(0, event.currentTarget.selectionStart) +
+          pastedText +
+          value.slice(event.currentTarget.selectionEnd);
+        const missingElementNames =
+          mode === 'reaction-text'
+            ? reactionTextDraft
+              ? getMissingReactionTextElementNames({
+                  draft: reactionTextDraft,
+                  value: nextValue,
+                })
+              : []
+            : getMissingScriptElementNames({
+                counterNames,
+                elementNames,
+                ...(iconElementNames ? { iconElementNames } : {}),
+                value: nextValue,
+              });
+
+        if (missingElementNames.length > 0) {
+          onPasteMissingElements(missingElementNames);
+        }
+      }}
+      onSelect={(event) => {
+        const nextSelectionStart = event.currentTarget.selectionStart;
+        if (ignoreNextSelectRef.current) {
+          ignoreNextSelectRef.current = false;
+        } else {
+          settleEditing();
+        }
+        setSelectionStart(nextSelectionStart);
+        setSelectedSuggestionIndex(0);
+        setIsAutocompleteEnabled(
+          event.currentTarget.selectionStart ===
+            event.currentTarget.selectionEnd &&
+            shouldOpenAutocompleteAtCursor({
+              counterNames,
+              cursor: nextSelectionStart,
+              elementNames,
+              ...(iconElementNames ? { iconElementNames } : {}),
+              mode,
+              value: event.currentTarget.value,
+            })
+        );
+      }}
+      onKeyDown={(event) => {
+        if (
+          mode === 'script' &&
+          event.shiftKey &&
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === 'f'
+        ) {
+          event.preventDefault();
+          const formatted = formatReactionScript(event.currentTarget.value);
+          if (formatted && formatted !== event.currentTarget.value) {
+            applyTextareaMutation(
+              formatted,
+              Math.min(formatted.length, event.currentTarget.selectionStart)
+            );
+          }
+          return;
+        }
+
+        if (
+          event.key === 'Tab' &&
+          event.currentTarget.selectionStart ===
+            event.currentTarget.selectionEnd &&
+          event.currentTarget.selectionStart ===
+            getLineStart(
+              event.currentTarget.value,
+              event.currentTarget.selectionStart
+            )
+        ) {
+          event.preventDefault();
+          const applied = insertIndentAtSelection({
+            selectionEnd: event.currentTarget.selectionEnd,
+            selectionStart: event.currentTarget.selectionStart,
+            value: event.currentTarget.value,
+          });
+          applyTextareaMutation(applied.value, applied.cursor);
+          return;
+        }
+
+        if (
+          mode === 'reaction-text' &&
+          event.key === 'Enter' &&
+          event.currentTarget.selectionStart === event.currentTarget.selectionEnd &&
+          suggestions.length === 0
+        ) {
+          const lineEnd = getLineEnd(
+            event.currentTarget.value,
+            event.currentTarget.selectionStart
+          );
+          const lineStart = getLineStart(
+            event.currentTarget.value,
+            event.currentTarget.selectionStart
+          );
+          const currentLine = event.currentTarget.value.slice(lineStart, lineEnd);
+          const atLineEnd =
+            event.currentTarget.selectionStart === lineEnd &&
+            event.currentTarget.selectionEnd === lineEnd;
+          const isIndentedLine =
+            currentLine.startsWith('    ') || currentLine.startsWith('\t');
+          const isScriptBlockHeader =
+            !/^\s/.test(currentLine) && currentLine.trimEnd().endsWith(':');
+
+          if (atLineEnd && (isIndentedLine || isScriptBlockHeader)) {
+            event.preventDefault();
+            const applied = insertIndentedNewlineAtSelection({
+              selectionEnd: event.currentTarget.selectionEnd,
+              selectionStart: event.currentTarget.selectionStart,
+              value: event.currentTarget.value,
+            });
+            applyTextareaMutation(applied.value, applied.cursor);
+            return;
+          }
+        }
+
+        if (suggestions.length > 0) {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setSelectedSuggestionIndex((current) =>
+              current + 1 >= suggestions.length ? 0 : current + 1
+            );
+            return;
+          }
+
+          if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setSelectedSuggestionIndex((current) =>
+              current === 0 ? suggestions.length - 1 : current - 1
+            );
+            return;
+          }
+
+          if (event.key === 'Enter' || event.key === 'Tab') {
+            const suggestion = suggestions[selectedSuggestionIndex];
+            if (!suggestion) {
+              return;
+            }
+
+            event.preventDefault();
+            acceptSuggestion(suggestion);
+            return;
+          }
+        }
+
+        if (event.key === 'Escape') {
+          setIsAutocompleteEnabled(false);
+          settleEditing();
+          return;
+        }
+
+        shouldEnableAutocompleteOnChangeRef.current =
+          shouldTriggerAutocompleteFromKey(event);
+      }}
+      rows={rows}
+      spellCheck={false}
+      autoCapitalize="off"
+      autoCorrect="off"
+      placeholder={placeholder}
+      className={`custom-scrollbar ${gridClassName} h-full w-full overflow-auto border-0 bg-transparent text-transparent caret-[color:var(--catalog-ink)] outline-none selection:bg-sky-500/25 placeholder:text-[color:var(--catalog-input-placeholder)] ${
+        textareaClassName ?? 'resize-none'
+      }`}
+      style={{
+        font: 'inherit',
+        lineHeight: 'inherit',
+        tabSize: 'inherit',
+      }}
+    />
+  );
+
   return (
     <>
-      <div className={`grid ${className}`}>
-        <pre
-          ref={highlightRef}
-          aria-hidden={true}
-          className="editor-code-highlight custom-scrollbar col-start-1 row-start-1 m-0 overflow-auto whitespace-pre-wrap break-words"
-          style={{
-            font: 'inherit',
-            lineHeight: 'inherit',
-            tabSize: 'inherit',
-          }}
-        >
-          {highlightedTokens.length === 0 ? (
-            <span className="editor-code-token-base">{'\u200b'}</span>
-          ) : (
-            highlightedTokens.map((token, index) => (
-              <span
-                key={`${token.tone}-${index}-${token.text}`}
-                className={
-                  token.tone === 'keyword'
-                    ? 'editor-code-token-keyword'
-                    : token.tone === 'element'
-                      ? 'editor-code-token-element'
-                      : token.tone === 'comment'
-                        ? 'editor-code-token-comment'
-                      : token.tone === 'symbol'
-                        ? 'editor-code-token-symbol'
-                        : 'editor-code-token-base'
-                }
-              >
-                {token.text}
-              </span>
-            ))
-          )}
-        </pre>
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(event) => {
-            onChange(event.target.value);
-            hasPendingEditRef.current = true;
-            setSelectionStart(event.target.selectionStart);
-            setSelectedSuggestionIndex(0);
-            setIsAutocompleteEnabled(
-              shouldEnableAutocompleteOnChangeRef.current
-            );
-            shouldEnableAutocompleteOnChangeRef.current = false;
-          }}
-          onFocus={(event) => {
-            setIsFocused(true);
-            setSelectionStart(event.currentTarget.selectionStart);
-            setIsAutocompleteEnabled(false);
-          }}
-          onBlur={() => {
-            maybeBeautifyValue();
-            setIsFocused(false);
-            setIsAutocompleteEnabled(false);
-            settleEditing();
-            onBlur?.();
-          }}
-          onMouseDown={() => {
-            setIsAutocompleteEnabled(false);
-          }}
-          onScroll={(event) => {
-            syncHighlightScroll(event.currentTarget);
-          }}
-          onSelect={(event) => {
-            const nextSelectionStart = event.currentTarget.selectionStart;
-            if (ignoreNextSelectRef.current) {
-              ignoreNextSelectRef.current = false;
-            } else {
-              settleEditing();
-            }
-            setSelectionStart(nextSelectionStart);
-            setSelectedSuggestionIndex(0);
-            setIsAutocompleteEnabled(
-              event.currentTarget.selectionStart ===
-                event.currentTarget.selectionEnd &&
-                shouldOpenAutocompleteAtCursor({
-                  counterNames,
-                  cursor: nextSelectionStart,
-                  elementNames,
-                  ...(iconElementNames ? { iconElementNames } : {}),
-                  mode,
-                  value: event.currentTarget.value,
-                })
-            );
-          }}
-          onKeyDown={(event) => {
-            if (
-              mode === 'script' &&
-              event.shiftKey &&
-              (event.ctrlKey || event.metaKey) &&
-              event.key.toLowerCase() === 'f'
-            ) {
-              event.preventDefault();
-              const formatted = formatReactionScript(event.currentTarget.value);
-              if (formatted && formatted !== event.currentTarget.value) {
-                applyTextareaMutation(
-                  formatted,
-                  Math.min(formatted.length, event.currentTarget.selectionStart)
-                );
-              }
-              return;
-            }
-
-            if (
-              event.key === 'Tab' &&
-              event.currentTarget.selectionStart ===
-                event.currentTarget.selectionEnd &&
-              event.currentTarget.selectionStart ===
-                getLineStart(
-                  event.currentTarget.value,
-                  event.currentTarget.selectionStart
+      <div className={`${className} ${mode === 'reaction-text' ? 'min-h-0' : ''}`}>
+        {mode === 'reaction-text' ? (
+          <div className="editor-code-layout relative grid h-full min-h-0 overflow-hidden">
+            <div
+              ref={(node) => {
+                highlightRef.current = node;
+              }}
+              aria-hidden={true}
+              className="editor-code-highlight editor-code-highlight-lines custom-scrollbar absolute inset-0 m-0 overflow-auto"
+              style={{
+                font: 'inherit',
+                lineHeight: 'inherit',
+                tabSize: 'inherit',
+              }}
+            >
+              {highlightedLines.map((line) => (
+                <div key={`line-${line.lineNumber}`} className="editor-code-line">
+                  <span
+                    className="editor-code-line-number"
+                    data-line-number={line.lineNumber}
+                  >
+                    {line.lineNumber}
+                  </span>
+                  <span className="editor-code-line-content">
+                    {line.tokens.length === 0 ? (
+                      <span className="editor-code-token-base">{'\u200b'}</span>
+                    ) : (
+                      line.tokens.map((token, index) =>
+                        renderHighlightedToken(
+                          token,
+                          `${line.lineNumber}-${token.tone}-${index}-${token.text}`
+                        )
+                      )
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {renderTextarea(
+              'editor-code-textarea-with-gutter absolute inset-0 z-10'
+            )}
+          </div>
+        ) : (
+          <div className="grid">
+            <pre
+              ref={(node) => {
+                highlightRef.current = node;
+              }}
+              aria-hidden={true}
+              className="editor-code-highlight custom-scrollbar col-start-1 row-start-1 m-0 overflow-auto whitespace-pre-wrap break-words"
+              style={{
+                font: 'inherit',
+                lineHeight: 'inherit',
+                tabSize: 'inherit',
+              }}
+            >
+              {highlightedTokens.length === 0 ? (
+                <span className="editor-code-token-base">{'\u200b'}</span>
+              ) : (
+                highlightedTokens.map((token, index) =>
+                  renderHighlightedToken(
+                    token,
+                    `${token.tone}-${index}-${token.text}`
+                  )
                 )
-            ) {
-              event.preventDefault();
-              const applied = insertIndentAtSelection({
-                selectionEnd: event.currentTarget.selectionEnd,
-                selectionStart: event.currentTarget.selectionStart,
-                value: event.currentTarget.value,
-              });
-              applyTextareaMutation(applied.value, applied.cursor);
-              return;
-            }
-
-            if (
-              mode === 'reaction-text' &&
-              event.key === 'Enter' &&
-              event.currentTarget.selectionStart ===
-                event.currentTarget.selectionEnd &&
-              suggestions.length === 0
-            ) {
-              const lineEnd = getLineEnd(
-                event.currentTarget.value,
-                event.currentTarget.selectionStart
-              );
-              const lineStart = getLineStart(
-                event.currentTarget.value,
-                event.currentTarget.selectionStart
-              );
-              const currentLine = event.currentTarget.value.slice(
-                lineStart,
-                lineEnd
-              );
-              const atLineEnd =
-                event.currentTarget.selectionStart === lineEnd &&
-                event.currentTarget.selectionEnd === lineEnd;
-              const isIndentedLine =
-                currentLine.startsWith('    ') || currentLine.startsWith('\t');
-              const isScriptBlockHeader =
-                !/^\s/.test(currentLine) && currentLine.trimEnd().endsWith(':');
-
-              if (atLineEnd && (isIndentedLine || isScriptBlockHeader)) {
-                const committedElementName =
-                  getCommittedReactionScriptAutocompleteElement({
-                    cursor: event.currentTarget.selectionStart,
-                    mode,
-                    triggerKey: event.key,
-                    value: event.currentTarget.value,
-                  });
-                if (committedElementName) {
-                  onElementCommitted?.(committedElementName);
-                }
-
-                event.preventDefault();
-                const applied = insertIndentedNewlineAtSelection({
-                  selectionEnd: event.currentTarget.selectionEnd,
-                  selectionStart: event.currentTarget.selectionStart,
-                  value: event.currentTarget.value,
-                });
-                applyTextareaMutation(applied.value, applied.cursor);
-                return;
-              }
-            }
-
-            if (suggestions.length > 0) {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                setSelectedSuggestionIndex((current) =>
-                  current + 1 >= suggestions.length ? 0 : current + 1
-                );
-                return;
-              }
-
-              if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                setSelectedSuggestionIndex((current) =>
-                  current === 0 ? suggestions.length - 1 : current - 1
-                );
-                return;
-              }
-
-              if (event.key === 'Enter' || event.key === 'Tab') {
-                const suggestion = suggestions[selectedSuggestionIndex];
-                if (!suggestion) {
-                  return;
-                }
-
-                event.preventDefault();
-                acceptSuggestion(suggestion);
-                return;
-              }
-            }
-
-            if (event.key === 'Escape') {
-              setIsAutocompleteEnabled(false);
-              settleEditing();
-              return;
-            }
-
-            if (event.key === ',' || event.key === '+' || event.key === 'Enter') {
-              const committedElementName =
-                getCommittedReactionScriptAutocompleteElement({
-                  cursor: event.currentTarget.selectionStart,
-                  mode,
-                  triggerKey: event.key,
-                  value: event.currentTarget.value,
-                });
-              if (committedElementName) {
-                onElementCommitted?.(committedElementName);
-              }
-            }
-
-            shouldEnableAutocompleteOnChangeRef.current =
-              shouldTriggerAutocompleteFromKey(event);
-          }}
-          rows={rows}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          placeholder={placeholder}
-          className={`custom-scrollbar col-start-1 row-start-1 w-full overflow-auto border-0 bg-transparent text-transparent caret-[color:var(--catalog-ink)] outline-none selection:bg-sky-500/25 placeholder:text-[color:var(--catalog-input-placeholder)] ${
-            textareaClassName ?? 'resize-none'
-          }`}
-          style={{
-            font: 'inherit',
-            lineHeight: 'inherit',
-            tabSize: 'inherit',
-          }}
-        />
+              )}
+            </pre>
+            {renderTextarea('col-start-1 row-start-1')}
+          </div>
+        )}
       </div>
 
       {suggestions.length > 0 &&

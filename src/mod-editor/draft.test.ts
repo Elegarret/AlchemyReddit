@@ -10,6 +10,11 @@ import {
 
 describe('applyReactionTextToDraft', () => {
   const declarationBlock = 'starters: Air, Fire, Earth, Water\n\n';
+  const createDraftWithElements = (...names: string[]) =>
+    names.reduce(
+      (draft, name) => ensureElementInDraft(draft, name).draft,
+      createEmptyDraft()
+    );
 
   it('accepts script blocks introduced by a colon', () => {
     const draft = applyReactionTextToDraft(
@@ -29,7 +34,7 @@ describe('applyReactionTextToDraft', () => {
 
   it('preserves standalone and header comments through text parsing and formatting', () => {
     const draft = applyReactionTextToDraft(
-      createEmptyDraft(),
+      createDraftWithElements('Steam'),
       [
         'starters: Air, Fire, Earth, Water',
         '',
@@ -94,7 +99,7 @@ describe('applyReactionTextToDraft', () => {
 
   it('round-trips declarations into canonical text', () => {
     const result = parseReactionTextToDraft(
-      createEmptyDraft(),
+      createDraftWithElements('Health', 'Heat', 'Furnace', 'Catalyst', 'Steam'),
       [
         'starters: Air, Fire',
         'counters: Health max=999 initial=25, Heat initial=0 min=-5',
@@ -121,9 +126,31 @@ describe('applyReactionTextToDraft', () => {
     );
   });
 
+  it('accepts reactions immediately after declarations without a blank line', () => {
+    const result = parseReactionTextToDraft(
+      createDraftWithElements('Health', 'Steam'),
+      ['starters: Air, Fire', 'counters: Health initial=1', 'Air+Fire=Steam'].join(
+        '\n'
+      )
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.draft.reactions).toEqual([
+      {
+        leftId: 'air',
+        rightId: 'fire',
+        outputIds: ['steam'],
+      },
+    ]);
+  });
+
   it('reports malformed declaration lines instead of silently dropping them', () => {
     const result = parseReactionTextToDraft(
-      createEmptyDraft(),
+      createDraftWithElements('Steam'),
       ['starters Air, Fire', '', 'Air+Fire=Steam'].join('\n')
     );
 
@@ -139,7 +166,7 @@ describe('applyReactionTextToDraft', () => {
 
   it('rejects declaration lines after the first blank line', () => {
     const result = parseReactionTextToDraft(
-      createEmptyDraft(),
+      createDraftWithElements('Steam', 'Health'),
       [
         'starters: Air, Fire',
         '',
@@ -158,7 +185,7 @@ describe('applyReactionTextToDraft', () => {
     ]);
   });
 
-  it('auto-creates declaration elements and removes counters from starters', () => {
+  it('reports missing declaration elements instead of auto-creating them', () => {
     const result = parseReactionTextToDraft(
       createEmptyDraft(),
       [
@@ -169,22 +196,95 @@ describe('applyReactionTextToDraft', () => {
       ].join('\n')
     );
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    expect(result.draft.startingElementIds).toEqual(['air', 'fire']);
-    expect(result.draft.counters).toEqual([
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([
       {
-        elementId: 'health',
-        initial: 10,
+        line: 1,
+        message: 'Unknown element "Health".',
+        missingElementName: 'Health',
+      },
+      {
+        line: 2,
+        message: 'Unknown element "Health".',
+        missingElementName: 'Health',
+      },
+      {
+        line: 3,
+        message: 'Unknown element "Catalyst".',
+        missingElementName: 'Catalyst',
       },
     ]);
     expect(
-      result.draft.elements.find((element) => element.id === 'catalyst')
-        ?.nonConsumable
-    ).toBe(true);
+      result.draft.elements.some(
+        (element) =>
+          element.name === 'Health' || element.name === 'Catalyst'
+      )
+    ).toBe(false);
+  });
+
+  it('keeps known reaction links while reporting unknown text-editor names', () => {
+    const result = parseReactionTextToDraft(
+      createDraftWithElements('Steam'),
+      ['starters: Air, Fire', '', 'Air+Fire=Steam, Mystery'].join('\n')
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([
+      {
+        line: 3,
+        message: 'Unknown element "Mystery".',
+        missingElementName: 'Mystery',
+      },
+    ]);
+    expect(result.draft.reactions).toEqual([
+      {
+        leftId: 'air',
+        rightId: 'fire',
+        outputIds: ['steam'],
+      },
+    ]);
+  });
+
+  it('reports every missing element on the same reaction-text line', () => {
+    const result = parseReactionTextToDraft(
+      createEmptyDraft(),
+      ['starters: Air, Fire', '', '111+222=333'].join('\n')
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([
+      {
+        line: 3,
+        message: 'Unknown element "111".',
+        missingElementName: '111',
+      },
+      {
+        line: 3,
+        message: 'Unknown element "222".',
+        missingElementName: '222',
+      },
+      {
+        line: 3,
+        message: 'Unknown element "333".',
+        missingElementName: '333',
+      },
+    ]);
+  });
+
+  it('reports unknown script element names with absolute reaction-text lines', () => {
+    const result = parseReactionTextToDraft(
+      createEmptyDraft(),
+      ['starters: Air, Fire', '', 'Air+Fire:', '    add Mystery'].join('\n')
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([
+      {
+        line: 4,
+        message: 'Unknown element "Mystery".',
+        missingElementName: 'Mystery',
+      },
+    ]);
   });
 
   it('sanitizes reserved syntax characters before creating new elements', () => {

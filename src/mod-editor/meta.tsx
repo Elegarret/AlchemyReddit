@@ -1,37 +1,94 @@
 import { type ReactNode, useId } from 'react';
 import { type ValidationResult } from '../modding/types';
-import { formatReactionTextIssue } from './draft';
-
-type ReactionTextIssue = {
-  line: number;
-  message: string;
-};
+import {
+  formatReactionTextIssue,
+  type ReactionTextIssue,
+} from './draft';
 
 export type EditorMetaTab = 'starters' | 'advanced';
 
 export type EditorValidationItem = {
+  actionLabel?: string;
+  actionOnClick?: () => void;
   id: string;
   kind: 'blocking' | 'warning';
   message: string;
 };
 
+const getUnknownElementName = (message: string) =>
+  message.match(/Unknown element "(.+)"\./)?.[1] ?? null;
+
+const getUnreachableElementNames = (message: string) => {
+  if (!message.startsWith('Unreachable elements: ')) {
+    return [];
+  }
+
+  return message
+    .slice('Unreachable elements: '.length)
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+};
+
 export const getBlockingValidationItems = ({
+  onAddMissingElement,
+  onRemoveUnreachableElements,
   reactionTextIssues,
   validation,
 }: {
+  onAddMissingElement?: (name: string) => void;
+  onRemoveUnreachableElements?: (names: string[]) => void;
   reactionTextIssues: ReactionTextIssue[];
   validation: Pick<ValidationResult, 'errors' | 'scriptErrors'>;
 }): EditorValidationItem[] =>
   [
-    ...reactionTextIssues.map((issue) => formatReactionTextIssue(issue)),
+    ...reactionTextIssues.map((issue) => {
+      const missingElementName = issue.missingElementName;
+
+      return {
+        ...(missingElementName && onAddMissingElement
+          ? {
+              actionLabel: `Add ${missingElementName}`,
+              actionOnClick: () => onAddMissingElement(missingElementName),
+            }
+          : {}),
+        message: formatReactionTextIssue(issue),
+      };
+    }),
     ...validation.errors,
     ...validation.scriptErrors,
   ]
-    .map((message, index) => ({
-      id: `blocking-${index}-${message}`,
-      kind: 'blocking' as const,
-      message,
-    }))
+    .map((item, index) => {
+      if (typeof item !== 'string') {
+        return {
+          id: `blocking-${index}-${item.message}`,
+          kind: 'blocking' as const,
+          ...item,
+        };
+      }
+
+      const unknownElementName = getUnknownElementName(item);
+      const unreachableElementNames = getUnreachableElementNames(item);
+
+      return {
+        ...(unknownElementName && onAddMissingElement
+          ? {
+              actionLabel: `Add ${unknownElementName}`,
+              actionOnClick: () => onAddMissingElement(unknownElementName),
+            }
+          : {}),
+        ...(unreachableElementNames.length > 0 && onRemoveUnreachableElements
+          ? {
+              actionLabel: 'Remove all',
+              actionOnClick: () =>
+                onRemoveUnreachableElements(unreachableElementNames),
+            }
+          : {}),
+        id: `blocking-${index}-${item}`,
+        kind: 'blocking' as const,
+        message: item,
+      };
+    })
     .reverse();
 
 export const getWarningValidationItems = (
@@ -70,7 +127,9 @@ export const EditorValidationPlank = ({
       : null;
   const summaryText = hasBlockingItems
     ? `Validation: ${blockingItems[0]?.message ?? ''}`
-    : 'Validation: all good';
+    : hasWarnings
+      ? `Validation warning: ${warningItems[0]?.message ?? ''}`
+      : 'Validation: all good';
 
   return (
     <div
@@ -108,9 +167,21 @@ export const EditorValidationPlank = ({
           {blockingItems.map((item) => (
             <div
               key={item.id}
-              className="editor-validation-error rounded-xl px-3 py-2 text-sm"
+              className="editor-validation-error flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm"
             >
-              {item.message}
+              <span>{item.message}</span>
+              {item.actionLabel && item.actionOnClick && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    item.actionOnClick?.();
+                  }}
+                  className="realm-button-accent shrink-0 cursor-pointer rounded-full px-2 py-1 text-[10px] font-bold"
+                >
+                  {item.actionLabel}
+                </button>
+              )}
             </div>
           ))}
 

@@ -2,6 +2,7 @@ import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReactionScriptAutocompleteTextarea } from './ReactionScriptAutocompleteTextarea';
+import { createEmptyDraft } from './draft';
 
 const elementNames = [
   'Amber',
@@ -15,6 +16,19 @@ const elementNames = [
   'Apex',
   'Apple',
 ];
+
+const dispatchPasteEvent = (target: HTMLTextAreaElement, text: string) => {
+  const pasteEvent = new Event('paste', {
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(pasteEvent, 'clipboardData', {
+    value: {
+      getData: () => text,
+    },
+  });
+  target.dispatchEvent(pasteEvent);
+};
 
 describe('ReactionScriptAutocompleteTextarea', () => {
   afterEach(() => {
@@ -216,13 +230,13 @@ describe('ReactionScriptAutocompleteTextarea', () => {
     });
   });
 
-  it('preserves a trailing blank line in the highlight layer', async () => {
+  it('renders line numbers for logical reaction-text lines including blanks and a trailing blank line', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
     const root = createRoot(container);
-    const value = 'starters: Air, Fire\n';
+    const value = 'starters: Air, Fire\n\nAir+Fire=Steam\n';
 
     await act(async () => {
       root.render(
@@ -239,8 +253,96 @@ describe('ReactionScriptAutocompleteTextarea', () => {
       );
     });
 
-    const pre = container.querySelector('pre');
-    expect(pre?.textContent).toBe(`${value}\u200b`);
+    expect(
+      Array.from(container.querySelectorAll('.editor-code-line-number')).map(
+        (node) => node.textContent
+      )
+    ).toEqual(['1', '2', '3', '4']);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('marks unknown reaction-text elements with the underline class on the matching line', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="reaction-text"
+          onChange={() => undefined}
+          placeholder="Type reactions"
+          reactionTextIssues={[
+            {
+              line: 3,
+              message: 'Unknown element "Mystery".',
+              missingElementName: 'Mystery',
+            },
+          ]}
+          rows={6}
+          value={'starters: Air, Fire\n\nAir+Fire=Mystery'}
+        />
+      );
+    });
+
+    const unknownTokens = Array.from(
+      container.querySelectorAll('.editor-code-token-unknown')
+    );
+    expect(unknownTokens.map((node) => node.textContent)).toContain('Mystery');
+
+    const mysteryToken = unknownTokens.find(
+      (node) => node.textContent === 'Mystery'
+    );
+    expect(
+      mysteryToken?.closest('.editor-code-line')?.querySelector(
+        '.editor-code-line-number'
+      )?.textContent
+    ).toBe('3');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('renders one line-number entry per logical line even when a line is long', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const longLine =
+      'starters: Air, Fire, Earth, Water, Amber, Amethyst, Ammonia, Anchor, Anemone, Angel';
+
+    await act(async () => {
+      root.render(
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="reaction-text"
+          onChange={() => undefined}
+          placeholder="Type reactions"
+          rows={6}
+          value={`${longLine}\nAir+Fire=Steam`}
+        />
+      );
+    });
+
+    expect(container.querySelectorAll('.editor-code-line-number')).toHaveLength(2);
+    expect(
+      container.querySelectorAll('.editor-code-line-number[data-line-number="1"]')
+    ).toHaveLength(1);
+    expect(
+      container.querySelectorAll('.editor-code-line-number[data-line-number="2"]')
+    ).toHaveLength(1);
 
     await act(async () => {
       root.unmount();
@@ -288,6 +390,134 @@ describe('ReactionScriptAutocompleteTextarea', () => {
       .filter((label) => elementNames.includes(label));
 
     expect(suggestionLabels).toEqual([]);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('does not auto-commit elements on +, comma, or plain Enter', async () => {
+    const onElementCommitted = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="script"
+          onChange={() => undefined}
+          onElementCommitted={onElementCommitted}
+          placeholder="Type a script"
+          rows={4}
+          value="add Mystery"
+        />
+      );
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    await act(async () => {
+      textarea!.focus();
+      textarea!.setSelectionRange(11, 11);
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: '+' })
+      );
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: ',' })
+      );
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })
+      );
+    });
+
+    expect(onElementCommitted).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('reports deduped missing element names on script paste', async () => {
+    const onPasteMissingElements = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={['Amber']}
+          mode="script"
+          onChange={() => undefined}
+          onPasteMissingElements={onPasteMissingElements}
+          placeholder="Type a script"
+          rows={4}
+          value="add "
+        />
+      );
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    await act(async () => {
+      textarea!.setSelectionRange(4, 4);
+      dispatchPasteEvent(textarea as HTMLTextAreaElement, 'Mystery, Mystery');
+    });
+
+    expect(onPasteMissingElements).toHaveBeenCalledWith(['Mystery']);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('reports deduped missing element names on reaction-text paste', async () => {
+    const onPasteMissingElements = vi.fn();
+    const value = 'starters: Air, Fire\n\n';
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={['Air', 'Fire', 'Earth', 'Water']}
+          mode="reaction-text"
+          onChange={() => undefined}
+          onPasteMissingElements={onPasteMissingElements}
+          placeholder="Type reactions"
+          reactionTextDraft={createEmptyDraft()}
+          rows={6}
+          value={value}
+        />
+      );
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    await act(async () => {
+      textarea!.setSelectionRange(value.length, value.length);
+      dispatchPasteEvent(textarea as HTMLTextAreaElement, '111+222=333');
+    });
+
+    expect(onPasteMissingElements).toHaveBeenCalledWith(['111', '222', '333']);
 
     await act(async () => {
       root.unmount();

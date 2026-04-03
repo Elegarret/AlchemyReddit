@@ -360,3 +360,36 @@ test('draft save and load preserve editor-only reaction comments', async ({
     trailingComments: [' trailing note'],
   });
 });
+
+test('saving allows oversized output lists but publishing blocks on the warning', async ({
+  userId,
+  username,
+}) => {
+  const saved = await saveDraftForUser(userId, username, {
+    title: 'Overflow Lab',
+    summary: 'Draft saves should allow more than eight outputs.',
+    intro: '',
+    startingElementIds: ['air', 'fire'],
+    counters: [],
+    showPalette: true,
+    elements: [
+      makeElement('air', 'Air'),
+      makeElement('fire', 'Fire'),
+      ...Array.from({ length: 9 }, (_, index) =>
+        makeElement(`out-${index + 1}`, `Out ${index + 1}`)
+      ),
+    ],
+    reactions: [
+      {
+        leftId: 'air',
+        rightId: 'fire',
+        outputIds: Array.from({ length: 9 }, (_, index) => `out-${index + 1}`),
+      },
+    ],
+  });
+
+  expect(saved.reactions[0]?.outputIds).toHaveLength(9);
+  await expect(publishDraftForUser(userId, saved.id)).rejects.toThrow(
+    'Reaction Air + Fire has too many outputs. Max output length must be 8 elements.'
+  );
+});

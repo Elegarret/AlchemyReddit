@@ -345,10 +345,11 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
     reactions: draft.reactions,
   });
 
-  if (!validation.isValid) {
+  if (!validation.isValid || validation.warnings.length > 0) {
     throw new Error(
       validation.errors[0] ??
         validation.scriptErrors[0] ??
+        validation.warnings[0] ??
         'Draft validation failed.'
     );
   }

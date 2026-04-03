@@ -136,9 +136,11 @@ export type ReactionScriptExecutionResult =
       result: {
         counterValues: Record<string, number>;
         emittedElementIds: string[];
+        hiddenCounterNames: string[];
         messages: string[];
         popupEvents: ReactionScriptPopupEvent[];
         removedTableElementIds: string[];
+        shownCounterNames: string[];
         stopped: boolean;
       };
     };
@@ -879,6 +881,18 @@ const createCounterResolver = (counterNames: string[]) => {
     byName.get(normalizeLookupKey(counterName)) ?? null;
 };
 
+const createElementNameResolver = (context: ReactionScriptValidationContext) => {
+  const byId = new Map<string, string>();
+
+  for (const element of context.elements) {
+    if (element.name) {
+      byId.set(normalizeLookupKey(element.id), element.name);
+    }
+  }
+
+  return (elementId: string) => byId.get(normalizeLookupKey(elementId)) ?? null;
+};
+
 const createNonGameplayElementSet = (nonGameplayElementIds: string[] = []) =>
   new Set(nonGameplayElementIds.map((elementId) => normalizeLookupKey(elementId)));
 
@@ -946,6 +960,15 @@ const validateGameplayElementRef = (
   }
 
   return result;
+};
+
+const getCounterNameForElementId = (params: {
+  elementId: string;
+  resolveCounterName: (counterName: string) => string | null;
+  resolveElementName: (elementId: string) => string | null;
+}) => {
+  const elementName = params.resolveElementName(params.elementId);
+  return elementName ? params.resolveCounterName(elementName) ?? elementName : null;
 };
 
 const evaluateCondition = (
@@ -1161,6 +1184,7 @@ export const validateReactionScript = (
 
   const resolveElementId = createElementResolver(context);
   const resolveCounterName = createCounterResolver(context.counterNames);
+  const resolveElementName = createElementNameResolver(context);
   const nonGameplayElements = createNonGameplayElementSet(
     context.nonGameplayElementIds
   );
@@ -1229,11 +1253,10 @@ export const validateReactionScript = (
 
     if (statement.action.kind === 'add') {
       statement.action.elementRefs.forEach((elementRef) => {
-        const result = validateGameplayElementRef(
+        const result = validateElementRef(
           elementRef,
           statement.line,
-          resolveElementId,
-          nonGameplayElements
+          resolveElementId
         );
         if (result.error) {
           errors.push(result.error);
@@ -1241,6 +1264,18 @@ export const validateReactionScript = (
         }
 
         if (result.elementId !== null) {
+          if (nonGameplayElements.has(normalizeLookupKey(result.elementId))) {
+            const counterName = getCounterNameForElementId({
+              elementId: result.elementId,
+              resolveCounterName,
+              resolveElementName,
+            });
+            if (counterName) {
+              referencedCounterNames.add(counterName);
+            }
+            return;
+          }
+
           emittedElementIds.add(result.elementId);
         }
       });
@@ -1248,14 +1283,28 @@ export const validateReactionScript = (
     }
 
     if (statement.action.kind === 'remove') {
-      const result = validateGameplayElementRef(
+      const result = validateElementRef(
         statement.action.elementRef,
         statement.line,
-        resolveElementId,
-        nonGameplayElements
+        resolveElementId
       );
       if (result.error) {
         errors.push(result.error);
+        continue;
+      }
+
+      if (
+        result.elementId !== null &&
+        nonGameplayElements.has(normalizeLookupKey(result.elementId))
+      ) {
+        const counterName = getCounterNameForElementId({
+          elementId: result.elementId,
+          resolveCounterName,
+          resolveElementName,
+        });
+        if (counterName) {
+          referencedCounterNames.add(counterName);
+        }
       }
       continue;
     }
@@ -1265,14 +1314,24 @@ export const validateReactionScript = (
         continue;
       }
 
-      const result = validateGameplayElementRef(
+      const result = validateElementRef(
         statement.action.elementRef,
         statement.line,
-        resolveElementId,
-        nonGameplayElements
+        resolveElementId
       );
       if (result.error) {
         errors.push(result.error);
+        continue;
+      }
+
+      if (
+        result.elementId !== null &&
+        nonGameplayElements.has(normalizeLookupKey(result.elementId))
+      ) {
+        errors.push({
+          line: statement.line,
+          message: `Counter "${statement.action.elementRef}" cannot be targeted by remove_all. Use remove counterName instead.`,
+        });
       }
     }
   }
@@ -1306,6 +1365,10 @@ export const executeReactionScript = (
 
   const resolveElementId = createElementResolver(context);
   const resolveCounterName = createCounterResolver(context.counterNames);
+  const resolveElementName = createElementNameResolver(context);
+  const nonGameplayElements = createNonGameplayElementSet(
+    context.nonGameplayElementIds
+  );
   const discoveredElementIds = new Set(context.discoveredElementIds);
   const tableElements = [...context.tableElements];
   const counterValues = { ...context.counters };
@@ -1316,9 +1379,11 @@ export const executeReactionScript = (
     ])
   );
   const emittedElementIds: string[] = [];
+  const hiddenCounterNames = new Set<string>();
   const removedTableElementIds: string[] = [];
   const messages: string[] = [];
   const popupEvents: ReactionScriptPopupEvent[] = [];
+  const shownCounterNames = new Set<string>();
   let stopped = false;
 
   for (const statement of parsed.ast.statements) {
@@ -1340,6 +1405,19 @@ export const executeReactionScript = (
       statement.action.elementRefs.forEach((elementRef) => {
         const elementId = resolveElementId(elementRef);
         if (elementId) {
+          if (nonGameplayElements.has(normalizeLookupKey(elementId))) {
+            const counterName = getCounterNameForElementId({
+              elementId,
+              resolveCounterName,
+              resolveElementName,
+            });
+            if (counterName) {
+              shownCounterNames.add(counterName);
+              hiddenCounterNames.delete(counterName);
+            }
+            return;
+          }
+
           emittedElementIds.push(elementId);
         }
       });
@@ -1369,6 +1447,19 @@ export const executeReactionScript = (
     if (statement.action.kind === 'remove') {
       const elementId = resolveElementId(statement.action.elementRef);
       if (!elementId) {
+        continue;
+      }
+
+      if (nonGameplayElements.has(normalizeLookupKey(elementId))) {
+        const counterName = getCounterNameForElementId({
+          elementId,
+          resolveCounterName,
+          resolveElementName,
+        });
+        if (counterName) {
+          hiddenCounterNames.add(counterName);
+          shownCounterNames.delete(counterName);
+        }
         continue;
       }
 
@@ -1450,9 +1541,11 @@ export const executeReactionScript = (
     result: {
       counterValues,
       emittedElementIds,
+      hiddenCounterNames: Array.from(hiddenCounterNames),
       messages,
       popupEvents,
       removedTableElementIds,
+      shownCounterNames: Array.from(shownCounterNames),
       stopped,
     },
   };

@@ -1,6 +1,7 @@
 import { context, showToast } from '@devvit/web/client';
 import {
 	useEffect,
+	useLayoutEffect,
 	useRef,
 	useState,
 	type CSSProperties,
@@ -19,6 +20,7 @@ import {
   getProgressScope,
   getRecipesForElementInRuleset,
   getRulesetCounterValues,
+  getRulesetStartingCounterNames,
   getValidDiscoveredItems,
   hasReactionForRuleset,
   PLAYTEST_RULESET_STORAGE_KEY,
@@ -27,12 +29,14 @@ import {
 import {
   LEGACY_ELEMENT_EFFECTS,
   type ActiveRuleset,
+  type ElementIconValue,
   type ModElementEffect,
 } from '../modding/types';
 import type { ReactionScriptPopupEvent } from '../modding/reaction-script';
 import { trpc } from '../trpc';
 import { openEntry, setEditorTargetModId } from '../webview-navigation';
 import { readPlaytestRuleset } from './playtest';
+import { getReactionClusterPositions } from './reaction-cluster';
 import { type Element, type ElementIcon, type SnowBackdropFlakeStyle } from './types';
 import { createSnowBackdropFlakes, createSnowPaletteHills } from './visuals';
 
@@ -45,7 +49,9 @@ type GameSessionProps = {
   isPlaytest: boolean;
 };
 
-type ModalElementCardSize = 'compact' | 'hero';
+type ElementPreviewIconSize = 'chip' | 'compact' | 'hero';
+
+type ModalElementCardSize = Exclude<ElementPreviewIconSize, 'chip'>;
 
 type CounterChipDelta = {
 	counterName: string;
@@ -60,28 +66,257 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const STARTER_ELEMENT_SIZE = 80;
 const STARTER_ELEMENT_GAP = 28;
 const STARTER_EDGE_MARGIN = 56;
-const REACTION_CLUSTER_RADIUS = 50;
+const HIDDEN_PLAYTEST_COUNTER_HINT =
+	'This counter is hidden, you can see it only in the playtest mode';
 
-const getReactionClusterPositions = (
-	centerX: number,
-	centerY: number,
-	count: number
+type ElementTileSize = 'small' | 'large';
+
+type ElementLabelMode = 'default' | 'expanded' | 'compact';
+
+type ElementLabelLayout = {
+	iconPaddingClass: string;
+	labelClassName: string;
+	labelOverflowClassName: string;
+};
+
+const normalizeCounterKey = (value: string) =>
+	value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const ELEMENT_LABEL_LAYOUTS: Record<
+	ElementTileSize,
+	Record<ElementLabelMode, ElementLabelLayout>
+> = {
+	small: {
+		default: {
+			iconPaddingClass: 'pb-3',
+			labelClassName: 'py-0.5 text-[10px] leading-tight',
+			labelOverflowClassName: 'truncate',
+		},
+		expanded: {
+			iconPaddingClass: 'pb-5',
+			labelClassName:
+				'min-h-[1.95rem] px-1 py-0.5 text-[10px] leading-[1.05]',
+			labelOverflowClassName: 'line-clamp-2 [overflow-wrap:anywhere]',
+		},
+		compact: {
+			iconPaddingClass: 'pb-5',
+			labelClassName:
+				'min-h-[1.9rem] px-1 py-0.5 text-[9px] font-semibold leading-[1.05]',
+			labelOverflowClassName: 'line-clamp-2 [overflow-wrap:anywhere]',
+		},
+	},
+	large: {
+		default: {
+			iconPaddingClass: 'pb-5',
+			labelClassName: 'py-0.5 text-[11px] font-bold leading-tight',
+			labelOverflowClassName: 'truncate',
+		},
+		expanded: {
+			iconPaddingClass: 'pb-7',
+			labelClassName:
+				'min-h-[2.2rem] px-1 py-1 text-[11px] font-bold leading-[1.05]',
+			labelOverflowClassName: 'line-clamp-2 [overflow-wrap:anywhere]',
+		},
+		compact: {
+			iconPaddingClass: 'pb-7',
+			labelClassName:
+				'min-h-[2.1rem] px-1 py-1 text-[10px] font-bold leading-[1.05]',
+			labelOverflowClassName: 'line-clamp-2 [overflow-wrap:anywhere]',
+		},
+	},
+};
+
+const getElementLabelLayout = (
+	size: ElementTileSize,
+	mode: ElementLabelMode
+) => ELEMENT_LABEL_LAYOUTS[size][mode];
+
+const isLabelOverflowing = (node: HTMLElement) =>
+	node.scrollWidth - node.clientWidth > 1 ||
+	node.scrollHeight - node.clientHeight > 1;
+
+type ElementTileProps = {
+	colorClass: string;
+	displayName: string;
+	icon: ElementIconValue | null;
+	lightGlow: string;
+	reactiveClasses: string;
+	size: ElementTileSize;
+	showOverlay: boolean;
+	style: CSSProperties;
+	weight: number;
+};
+
+export const GameElementTile = ({
+	colorClass,
+	displayName,
+	icon,
+	lightGlow,
+	reactiveClasses,
+	size,
+	showOverlay,
+	style,
+	weight,
+}: ElementTileProps) => {
+	const [labelMode, setLabelMode] = useState<ElementLabelMode>('default');
+	const [isTruncated, setIsTruncated] = useState(false);
+	const labelRef = useRef<HTMLSpanElement>(null);
+	const labelLayout = getElementLabelLayout(size, labelMode);
+	const isLarge = size === 'large';
+
+	useLayoutEffect(() => {
+		const labelNode = labelRef.current;
+		if (!labelNode) {
+			return;
+		}
+
+		const overflowed = isLabelOverflowing(labelNode);
+
+		if (labelMode === 'default') {
+			if (overflowed) {
+				setLabelMode('expanded');
+			}
+			return;
+		}
+
+		if (labelMode === 'expanded') {
+			if (overflowed) {
+				setLabelMode('compact');
+				return;
+			}
+
+			if (isTruncated) {
+				setIsTruncated(false);
+			}
+			return;
+		}
+
+		if (isTruncated !== overflowed) {
+			setIsTruncated(overflowed);
+		}
+	}, [isTruncated, labelMode]);
+
+	return (
+		<div
+			className={`relative flex flex-col items-center justify-end select-none overflow-hidden ${
+				isLarge ? 'h-full w-full rounded-xl border-2' : 'h-full w-full rounded-lg border-2'
+			} ${colorClass} ${reactiveClasses} ${lightGlow}`}
+			style={style}
+			title={isTruncated ? displayName : undefined}
+		>
+			{showOverlay && (
+				<div
+					className="absolute inset-0 pointer-events-none"
+					style={{ backgroundColor: 'var(--element-overlay)' }}
+				/>
+			)}
+			{icon && (
+				<div
+					data-element-icon="true"
+					className={`absolute inset-0 z-[1] flex items-center justify-center pointer-events-none ${labelLayout.iconPaddingClass}`}
+				>
+					{(() => {
+						const displayIcon = Array.isArray(icon) ? icon[0] : icon;
+						if (typeof displayIcon === 'string') {
+							if (
+								displayIcon.startsWith('/') ||
+								displayIcon.startsWith('http')
+							) {
+								return (
+									<img
+										src={displayIcon}
+										alt=""
+										className={`${
+											size === 'small' ? 'h-9 w-9' : 'h-14 w-14'
+										} object-contain drop-shadow-md`}
+									/>
+								);
+							}
+							return (
+								<span
+									className={`${
+										size === 'small' ? 'text-[34px]' : 'text-[52px]'
+									} leading-none drop-shadow-md`}
+								>
+									{displayIcon}
+								</span>
+							);
+						}
+						const IconComponent = displayIcon;
+						if (!IconComponent) {
+							return null;
+						}
+						return (
+							<div
+								className={`${
+									weight < 500 ? 'text-black/50' : 'text-white/50'
+								}`}
+							>
+								<IconComponent size={size === 'small' ? 30 : 44} />
+							</div>
+						);
+					})()}
+				</div>
+			)}
+			<span
+				ref={labelRef}
+				data-element-label="true"
+				data-element-label-mode={labelMode}
+				className={`relative z-10 flex w-full items-center justify-center overflow-hidden bg-black/40 text-center text-white/95 backdrop-blur-sm ${labelLayout.labelOverflowClassName} ${labelLayout.labelClassName} ${
+					isLarge ? 'border-t border-white/5' : ''
+				}`}
+			>
+				{displayName}
+			</span>
+		</div>
+	);
+};
+
+const getDefaultVisibleCounterNames = (ruleset: ActiveRuleset) =>
+	getRulesetStartingCounterNames(ruleset);
+
+const getPersistedVisibleCounterNames = (
+	ruleset: ActiveRuleset,
+	value: unknown
 ) => {
-	if (count <= 0) {
-		return [];
+	if (!Array.isArray(value)) {
+		return getDefaultVisibleCounterNames(ruleset);
 	}
 
-	if (count === 1) {
-		return [{ x: centerX, y: centerY }];
-	}
+	const byKey = new Map(
+		ruleset.counterDefinitions.map((counter) => [
+			normalizeCounterKey(counter.name),
+			counter.name,
+		])
+	);
 
-	return Array.from({ length: count }, (_, index) => {
-		const angle = -Math.PI / 2 + (index / count) * Math.PI * 2;
-		return {
-			x: centerX + Math.cos(angle) * REACTION_CLUSTER_RADIUS,
-			y: centerY + Math.sin(angle) * REACTION_CLUSTER_RADIUS,
-		};
+	return Array.from(
+		new Set(
+			value.flatMap((entry) => {
+				if (typeof entry !== 'string') {
+					return [];
+				}
+
+				const canonicalName = byKey.get(normalizeCounterKey(entry));
+				return canonicalName ? [canonicalName] : [];
+			})
+		)
+	);
+};
+
+const applyCounterVisibilityChanges = (params: {
+	currentVisibleCounterNames: string[];
+	hiddenCounterNames: string[];
+	shownCounterNames: string[];
+}) => {
+	const visibleCounterNames = new Set(params.currentVisibleCounterNames);
+	params.hiddenCounterNames.forEach((counterName) => {
+		visibleCounterNames.delete(counterName);
 	});
+	params.shownCounterNames.forEach((counterName) => {
+		visibleCounterNames.add(counterName);
+	});
+	return Array.from(visibleCounterNames);
 };
 
 const getStarterElementIcon = (ruleset: ActiveRuleset, elementId: string) => {
@@ -210,6 +445,19 @@ const GameSession = ({
 			return getRulesetCounterValues(ruleset);
 		}
 	});
+	const [visibleCounterNames, setVisibleCounterNames] = useState<string[]>(() => {
+		try {
+			const saved = localStorage.getItem(storageKeys.counterVisibility);
+			if (!saved) {
+				return getDefaultVisibleCounterNames(ruleset);
+			}
+
+			return getPersistedVisibleCounterNames(ruleset, JSON.parse(saved));
+		} catch (error) {
+			console.error('Failed to load counter visibility', error);
+			return getDefaultVisibleCounterNames(ruleset);
+		}
+	});
 	const [pulsingCounterTokens, setPulsingCounterTokens] = useState<
 		Record<string, number>
 	>({});
@@ -294,7 +542,7 @@ const GameSession = ({
 
 	const renderElementPreviewIcon = (
 		elementId: string,
-		size: ModalElementCardSize = 'compact'
+		size: ElementPreviewIconSize = 'compact'
 	) => {
 		const rawIcon = ruleset.elementIcons[elementId];
 		const icon = Array.isArray(rawIcon) ? rawIcon[0] : rawIcon;
@@ -302,27 +550,26 @@ const GameSession = ({
 			ruleset.elementStyles[elementId] ?? 'bg-gray-300 border-gray-500';
 		const weightMatch = colorClass.match(/-(\d{3})/);
 		const weight = weightMatch ? parseInt(weightMatch[1] || '500') : 500;
+		const imageClassName =
+			size === 'hero'
+				? 'h-20 w-20 object-contain'
+				: size === 'chip'
+					? 'h-4 w-4 object-contain'
+					: 'h-12 w-12 object-contain';
+		const emojiClassName =
+			size === 'hero'
+				? 'text-7xl leading-none drop-shadow-2xl'
+				: size === 'chip'
+					? 'text-lg leading-none drop-shadow-sm'
+					: 'text-4xl leading-none drop-shadow-lg';
+		const iconSize = size === 'hero' ? 80 : size === 'chip' ? 16 : 40;
 
 		if (typeof icon === 'string') {
 			if (icon.startsWith('/') || icon.startsWith('http')) {
-				return (
-					<img
-						src={icon}
-						alt=""
-						className={
-							size === 'hero'
-								? 'h-20 w-20 object-contain'
-								: 'h-12 w-12 object-contain'
-						}
-					/>
-				);
+				return <img src={icon} alt="" className={imageClassName} />;
 			}
 
-			return (
-				<span className={size === 'hero' ? 'text-7xl leading-none drop-shadow-2xl' : 'text-4xl leading-none drop-shadow-lg'}>
-					{icon}
-				</span>
-			);
+			return <span className={emojiClassName}>{icon}</span>;
 		}
 
 		if (!icon) {
@@ -332,7 +579,7 @@ const GameSession = ({
 		const IconComponent = icon;
 		return (
 			<div className={weight < 500 ? 'text-black/50' : 'text-white/50'}>
-				<IconComponent size={size === 'hero' ? 80 : 40} />
+				<IconComponent size={iconSize} />
 			</div>
 		);
 	};
@@ -400,10 +647,15 @@ const GameSession = ({
 
 	const itemsPerPage = layoutCols * 3;
 	const hasStorm = elements.some(el => hasElementEffect(el.name, 'storm'));
+	const visibleCounterNameSet = new Set(visibleCounterNames);
 	const activeCounters = ruleset.counterDefinitions.map((counter) => ({
 		...counter,
+		isVisible: visibleCounterNameSet.has(counter.name),
 		value: counterValues[counter.name] ?? counter.initial,
 	}));
+	const renderedCounters = isPlaytest
+		? activeCounters
+		: activeCounters.filter((counter) => counter.isVisible);
 	const counterChipDeltasByName = counterChipDeltas.reduce<Record<string, CounterChipDelta[]>>(
 		(grouped, delta) => {
 			if (!grouped[delta.counterName]) {
@@ -462,6 +714,13 @@ const GameSession = ({
 	useEffect(() => {
 		localStorage.setItem(storageKeys.counters, JSON.stringify(counterValues));
 	}, [counterValues, storageKeys.counters]);
+
+	useEffect(() => {
+		localStorage.setItem(
+			storageKeys.counterVisibility,
+			JSON.stringify(visibleCounterNames)
+		);
+	}, [storageKeys.counterVisibility, visibleCounterNames]);
 
 	useEffect(() => {
 		const currentCounterValues = Object.fromEntries(
@@ -749,6 +1008,7 @@ const GameSession = ({
 			? []
 			: createStarterTableElements(ruleset);
 		const resetCounters = getRulesetCounterValues(ruleset);
+		const resetVisibleCounterNames = getDefaultVisibleCounterNames(ruleset);
 		Object.values(counterPulseTimeouts.current).forEach((timeoutId) => {
 			window.clearTimeout(timeoutId);
 		});
@@ -761,6 +1021,7 @@ const GameSession = ({
 		setDiscovered(basic);
 		setElements(resetElements);
 		setCounterValues(resetCounters);
+		setVisibleCounterNames(resetVisibleCounterNames);
 		setPulsingCounterTokens({});
 		setCounterChipDeltas([]);
 		setCurrentPage(0);
@@ -778,6 +1039,10 @@ const GameSession = ({
 		localStorage.setItem(storageKeys.discovered, JSON.stringify(basic));
 		localStorage.setItem(storageKeys.elements, JSON.stringify(resetElements));
 		localStorage.setItem(storageKeys.counters, JSON.stringify(resetCounters));
+		localStorage.setItem(
+			storageKeys.counterVisibility,
+			JSON.stringify(resetVisibleCounterNames)
+		);
 		localStorage.setItem(storageKeys.page, '0');
 		localStorage.removeItem(introStorageKey);
 		setShowRealmIntro(Boolean(ruleset.intro.trim()));
@@ -874,7 +1139,7 @@ const GameSession = ({
 
 	const renderElementWidget = (
 		name: string,
-		size: 'small' | 'large' = 'small',
+		size: ElementTileSize = 'small',
 		isHidden: boolean = false,
 		isReactive: boolean = false,
 		iconOverride?: ElementIcon,
@@ -893,42 +1158,22 @@ const GameSession = ({
 		const Icon = isHidden ? null : (iconOverride ?? ruleset.elementIcons[name]);
 		const displayName = isHidden ? '???' : getElementDisplayName(name);
 
-		const sizeClasses = size === 'small'
-			? 'h-full w-full rounded-lg border-2 text-[10px] pb-0'
-			: 'h-full w-full rounded-xl border-2 text-[11px] pb-0';
-
 		const reactiveClasses = isReactive ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse' : '';
 		const lightGlow = hasElementEffect(name, 'light') && !isHidden ? 'shadow-[0_0_40px_15px_rgba(255,255,150,0.8)] z-20' : '';
 
 		return (
-			<div className={`relative flex flex-col items-center justify-end select-none overflow-hidden ${sizeClasses} ${colorClass} ${reactiveClasses} ${lightGlow}`} style={style}>
-				{!isHidden && <div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: 'var(--element-overlay)' }} />}
-				{Icon && (
-					<div className={`absolute inset-0 flex items-center justify-center pointer-events-none z-[1] ${size === 'small' ? 'pb-3' : 'pb-5'}`}>
-						{(() => {
-							const displayIcon = Array.isArray(Icon) ? Icon[0] : Icon;
-							if (typeof displayIcon === 'string') {
-								if (displayIcon.startsWith('/') || displayIcon.startsWith('http')) {
-									return <img src={displayIcon} alt="" className={`${size === 'small' ? 'w-9 h-9' : 'w-14 h-14'} object-contain drop-shadow-md`} />;
-								}
-								return <span className={`${size === 'small' ? 'text-[34px]' : 'text-[52px]'} leading-none drop-shadow-md`}>{displayIcon}</span>;
-							}
-							const IconComp = displayIcon;
-							if (!IconComp) {
-								return null;
-							}
-							return (
-								<div className={`${weight < 500 ? 'text-black/50' : 'text-white/50'}`}>
-									<IconComp size={size === 'small' ? 30 : 44} />
-								</div>
-							);
-						})()}
-					</div>
-				)}
-				<span className={`relative z-10 text-center truncate w-full bg-black/40 py-0.5 backdrop-blur-sm text-white/95 leading-tight ${size === 'small' ? 'text-[10px]' : 'text-[11px] font-bold border-t border-white/5'}`}>
-					{displayName}
-				</span>
-			</div>
+			<GameElementTile
+				key={`${name}:${displayName}:${size}:${isHidden ? 'hidden' : 'shown'}`}
+				colorClass={colorClass}
+				displayName={displayName}
+				icon={Icon ?? null}
+				lightGlow={lightGlow}
+				reactiveClasses={reactiveClasses}
+				size={size}
+				showOverlay={!isHidden}
+				style={style}
+				weight={weight}
+			/>
 		);
 	};
 
@@ -1175,6 +1420,13 @@ const GameSession = ({
 					])
 				);
 				setCounterValues(result.counterValues);
+				setVisibleCounterNames((current) =>
+					applyCounterVisibilityChanges({
+						currentVisibleCounterNames: current,
+						hiddenCounterNames: result.hiddenCounterNames,
+						shownCounterNames: result.shownCounterNames,
+					})
+				);
 				setReactionMessage(nextReactionMessage.length > 0 ? nextReactionMessage : null);
 				if (result.popupEvents.length > 0) {
 					setScriptedPopupQueue((current) => [
@@ -1389,19 +1641,24 @@ const GameSession = ({
 	const hasStar = elements.some(el => el.name === 'star');
 	const hasSnow = elements.some(el => el.name === 'snow');
 	const counterBar =
-		activeCounters.length > 0 ? (
+		renderedCounters.length > 0 ? (
 			<div className="flex flex-wrap items-center justify-center gap-2 px-4 py-2">
-				{activeCounters.map((counter) => (
+				{renderedCounters.map((counter) => (
 					<div
 						key={`counter-chip-${counter.elementId}`}
+						title={
+							isPlaytest && !counter.isVisible
+								? HIDDEN_PLAYTEST_COUNTER_HINT
+								: undefined
+						}
 						className={`game-counter-chip relative flex items-center gap-1.5 rounded-full border border-white/12 bg-slate-950/55 px-2.5 py-1 text-xs font-bold text-white shadow-[0_8px_24px_rgba(15,23,42,0.28)] backdrop-blur-md ${
 							pulsingCounterTokens[counter.name] !== undefined
 								? 'animate-counter-chip-pulse'
 								: ''
-						}`}
+						} ${isPlaytest && !counter.isVisible ? 'opacity-50' : ''}`}
 					>
-						<div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full bg-white/10">
-							{renderElementPreviewIcon(counter.elementId)}
+						<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/10">
+							{renderElementPreviewIcon(counter.elementId, 'chip')}
 						</div>
 						<span>{`${counter.name}(${counter.value})`}</span>
 						{(counterChipDeltasByName[counter.name] ?? []).map((delta) => (
@@ -1523,7 +1780,11 @@ const GameSession = ({
 					) : null}
 				</div>
 				{!ruleset.showPalette && counterBar && (
-					<div className="pointer-events-none absolute inset-x-0 bottom-4 z-30">
+					<div
+						className={`absolute inset-x-0 bottom-4 z-30 ${
+							isPlaytest ? 'pointer-events-auto' : 'pointer-events-none'
+						}`}
+					>
 						{counterBar}
 					</div>
 				)}

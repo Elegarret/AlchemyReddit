@@ -345,8 +345,19 @@ describe('validateReactionScript', () => {
     ]);
   });
 
-  it('rejects counters when they are used as normal elements', () => {
+  it('allows add and remove actions to target counters as visibility changes', () => {
     const validation = validateReactionScript('add health', {
+      counterNames: ['health'],
+      elements: [...elementRefs, { id: 'health', name: 'Health' }],
+      nonGameplayElementIds: ['health'],
+    });
+
+    expect(validation.ok).toBe(true);
+    expect(validation.emittedElementIds).toEqual([]);
+  });
+
+  it('rejects remove_all when targeting a counter', () => {
+    const validation = validateReactionScript('remove_all Health', {
       counterNames: ['health'],
       elements: [...elementRefs, { id: 'health', name: 'Health' }],
       nonGameplayElementIds: ['health'],
@@ -357,7 +368,7 @@ describe('validateReactionScript', () => {
       {
         line: 1,
         message:
-          'Counter "health" cannot act as a normal element here. Use count(...) or set counterName += 1 instead.',
+          'Counter "Health" cannot be targeted by remove_all. Use remove counterName instead.',
       },
     ]);
   });
@@ -413,9 +424,11 @@ describe('executeReactionScript', () => {
         money: 1,
       },
       emittedElementIds: ['bandage', 'key'],
+      hiddenCounterNames: [],
       messages: ['It is locked.'],
       popupEvents: [],
       removedTableElementIds: ['table-1', 'table-2', 'table-3'],
+      shownCounterNames: [],
       stopped: false,
     });
   });
@@ -443,6 +456,7 @@ describe('executeReactionScript', () => {
     }
 
     expect(execution.result.emittedElementIds).toEqual([]);
+    expect(execution.result.hiddenCounterNames).toEqual([]);
     expect(execution.result.popupEvents).toEqual([
       {
         iconElementId: 'dust',
@@ -460,6 +474,7 @@ describe('executeReactionScript', () => {
         text: 'You escaped.',
       },
     ]);
+    expect(execution.result.shownCounterNames).toEqual([]);
     expect(execution.result.stopped).toBe(true);
   });
 
@@ -479,8 +494,36 @@ describe('executeReactionScript', () => {
     }
 
     expect(execution.result.emittedElementIds).toEqual(['dust']);
+    expect(execution.result.hiddenCounterNames).toEqual([]);
     expect(execution.result.popupEvents).toEqual([]);
+    expect(execution.result.shownCounterNames).toEqual([]);
     expect(execution.result.stopped).toBe(true);
+  });
+
+  it('tracks counter visibility separately from counter values', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Health'],
+      counters: {
+        Health: 3,
+      },
+      discoveredElementIds: [],
+      elements: [...elementRefs, { id: 'health', name: 'Health' }],
+      nonGameplayElementIds: ['health'],
+      script: ['add Health', 'set Health += 2', 'remove Health'].join('\n'),
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.counterValues).toEqual({
+      Health: 5,
+    });
+    expect(execution.result.emittedElementIds).toEqual([]);
+    expect(execution.result.hiddenCounterNames).toEqual(['Health']);
+    expect(execution.result.shownCounterNames).toEqual([]);
   });
 
   it('rejects add statements with empty list items', () => {
@@ -526,6 +569,8 @@ describe('executeReactionScript', () => {
     expect(execution.result.counterValues).toEqual({
       Health: 0,
     });
+    expect(execution.result.hiddenCounterNames).toEqual([]);
+    expect(execution.result.shownCounterNames).toEqual([]);
   });
 
   it('supports optional one-sided counter bounds', () => {
@@ -554,6 +599,8 @@ describe('executeReactionScript', () => {
     expect(execution.result.counterValues).toEqual({
       Health: 0,
     });
+    expect(execution.result.hiddenCounterNames).toEqual([]);
+    expect(execution.result.shownCounterNames).toEqual([]);
   });
 
   it('leaves counters unbounded when no authored bounds exist', () => {
@@ -581,6 +628,8 @@ describe('executeReactionScript', () => {
     expect(execution.result.counterValues).toEqual({
       Health: -81,
     });
+    expect(execution.result.hiddenCounterNames).toEqual([]);
+    expect(execution.result.shownCounterNames).toEqual([]);
   });
 
   it('clears the full table for bare remove_all', () => {
@@ -607,5 +656,7 @@ describe('executeReactionScript', () => {
       'table-2',
       'table-3',
     ]);
+    expect(execution.result.hiddenCounterNames).toEqual([]);
+    expect(execution.result.shownCounterNames).toEqual([]);
   });
 });
