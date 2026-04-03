@@ -650,6 +650,12 @@ export const ReactionScriptAutocompleteTextarea = ({
         : [],
     [mode, reactionTextIssues, value]
   );
+  const reactionTextGutterClassName =
+    highlightedLines.length >= 1000
+      ? 'editor-code-layout-gutter-4'
+      : highlightedLines.length >= 100
+        ? 'editor-code-layout-gutter-3'
+        : 'editor-code-layout-gutter-default';
 
   const suggestions = useMemo(() => {
     if (!isFocused || !isAutocompleteEnabled) {
@@ -1051,7 +1057,9 @@ export const ReactionScriptAutocompleteTextarea = ({
     <>
       <div className={`${className} ${mode === 'reaction-text' ? 'min-h-0' : ''}`}>
         {mode === 'reaction-text' ? (
-          <div className="editor-code-layout relative grid h-full min-h-0 overflow-hidden">
+          <div
+            className={`editor-code-layout ${reactionTextGutterClassName} relative grid h-full min-h-0 overflow-hidden`}
+          >
             <div
               ref={(node) => {
                 highlightRef.current = node;

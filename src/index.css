@@ -970,6 +970,18 @@
 	min-height: 100%;
 }
 
+.editor-code-layout-gutter-default {
+	--editor-code-gutter-width: 2.75ch;
+}
+
+.editor-code-layout-gutter-3 {
+	--editor-code-gutter-width: 3.75ch;
+}
+
+.editor-code-layout-gutter-4 {
+	--editor-code-gutter-width: 4.75ch;
+}
+
 .editor-code-line {
 	display: grid;
 	grid-template-columns: var(--editor-code-gutter-width) minmax(0, 1fr);
@@ -982,6 +994,8 @@
 	padding-right: 0.25rem;
 	text-align: right;
 	color: color-mix(in srgb, var(--catalog-muted) 78%, transparent);
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
 	user-select: none;
 }
 
