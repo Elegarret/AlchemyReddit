@@ -39,6 +39,7 @@ import {
 import {
   ELEMENT_DATALIST_ID,
   ELEMENT_EFFECT_OPTIONS,
+  normalizeEditorElementEffect,
   type ReactionWidgetProps,
 } from './constants';
 import { ReactionScriptAutocompleteTextarea } from './ReactionScriptAutocompleteTextarea';
@@ -477,7 +478,7 @@ export const ElementAdvancedButton = ({
   const [isOpen, setIsOpen] = useState(false);
   const [messageDraft, setMessageDraft] = useState(element.message);
   const [effectDraft, setEffectDraft] = useState<ModElementEffect>(
-    element.effect
+    normalizeEditorElementEffect(element.effect)
   );
   const [isCounterDraft, setIsCounterDraft] = useState(
     counterDefinition !== null
@@ -501,7 +502,7 @@ export const ElementAdvancedButton = ({
         title={`Advanced settings for ${element.name}`}
         onClick={() => {
           setMessageDraft(element.message);
-          setEffectDraft(element.effect);
+          setEffectDraft(normalizeEditorElementEffect(element.effect));
           setIsCounterDraft(counterDefinition !== null);
           setIsStartingDraft(isStarting);
           setIsNonConsumableDraft(element.nonConsumable);

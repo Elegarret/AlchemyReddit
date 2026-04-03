@@ -41,33 +41,32 @@ export const ELEMENT_EFFECT_OPTIONS: Array<{
     description: 'No special runtime behavior.',
   },
   {
-    value: 'explode',
-    label: 'Explode',
-    description: 'Triggers the existing explosion table effect.',
+    value: 'hint',
+    label: 'Hint (show hint)',
+    description: 'Shows the existing discovery hint bubble.',
   },
   {
-    value: 'hint',
-    label: 'Hint',
-    description: 'Shows the existing discovery hint bubble.',
+    value: 'earthquake',
+    label: 'Quake (shake screen)',
+    description: 'Shakes the screen when this element appears.',
+  },
+  {
+    value: 'explode',
+    label: 'Explode (clear screen)',
+    description: 'Clears the current table with the existing explosion effect.',
   },
   {
     value: 'light',
     label: 'Light',
     description: 'Applies the existing glow effect on the table.',
   },
-  {
-    value: 'computer',
-    label: 'Computer',
-    description: 'Opens the reaction database popup on contact.',
-  },
-  {
-    value: 'earthquake',
-    label: 'Earthquake',
-    description: 'Triggers the existing quake effect when created.',
-  },
-  {
-    value: 'storm',
-    label: 'Storm',
-    description: 'Enables the existing ambient storm flashes.',
-  },
 ];
+
+const EDITOR_ELEMENT_EFFECT_VALUES = new Set(
+  ELEMENT_EFFECT_OPTIONS.map((option) => option.value)
+);
+
+export const normalizeEditorElementEffect = (
+  effect: ModElementEffect
+): ModElementEffect =>
+  EDITOR_ELEMENT_EFFECT_VALUES.has(effect) ? effect : 'none';

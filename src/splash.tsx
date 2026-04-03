@@ -116,7 +116,7 @@ export const Splash = () => {
 
 	return (
 		<div className="realm-page flex h-screen flex-col items-center justify-center gap-5 overflow-hidden px-4 py-4">
-			<div className="relative w-48 h-48 mt-4 flex items-center justify-center">
+			<div className="splash-orbit-compact relative mt-4 flex h-48 w-48 items-center justify-center">
 				{/* Orbiting elements */}
 				<div className="absolute flex flex-col items-center animate-orbit" style={{ animationDelay: '0s' }}>
 					<div className="w-14 h-14 rounded-xl bg-blue-400 border-2 border-blue-600 flex items-center justify-center text-3xl shadow-lg ring-4 ring-[var(--ring-offset)]/50">☁️</div>
@@ -139,8 +139,12 @@ export const Splash = () => {
 			</div>
 
 			<div className="flex flex-col items-center gap-2 mt-4 text-center">
-				<h1 className="catalog-title-font text-4xl font-black text-primary tracking-tight drop-shadow-md">Alchemy</h1>
-				<p className="text-secondary font-medium px-4">Combine elements to discover the world!</p>
+				<div className="realm-title-backdrop rounded-full px-5 py-2">
+					<h1 className="catalog-title-font text-4xl font-black text-primary tracking-tight drop-shadow-md">Alchemy</h1>
+				</div>
+				<p className="catalog-body-font realm-text-soft px-4 text-base font-medium leading-relaxed">
+					Combine elements to discover the world!
+				</p>
 				{progress && (
 					<div className="realm-panel-soft mt-2 rounded-full px-4 py-1.5 backdrop-blur-sm">
 						<span className="catalog-title-font text-sm font-bold realm-text-ink">Progress: {progress.discovered}/{progress.total}</span>
@@ -150,7 +154,7 @@ export const Splash = () => {
 
 			<div className="mt-4 flex w-full max-w-sm flex-col gap-3">
 				<button
-					className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-10 py-4 text-lg font-bold shadow-xl transition-all hover:scale-105 active:scale-95 animate-pulsate"
+					className="realm-button-accent catalog-title-font flex min-h-16 w-full items-center justify-center whitespace-nowrap rounded-full px-8 py-4 text-base font-bold shadow-xl transition-all hover:scale-105 active:scale-95 sm:text-lg animate-pulsate"
 					onClick={(e) => {
 						localStorage.removeItem('override-mod-id');
 						localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
@@ -171,7 +175,7 @@ export const Splash = () => {
 				</button>
 			</div>
 
-			<div className="realm-text-muted absolute bottom-4 right-4 text-[10px] font-mono select-none tracking-wider uppercase">
+			<div className="realm-text-muted pointer-events-none absolute bottom-0 right-3 text-[8px] leading-none font-mono select-none tracking-[0.2em] uppercase">
 				Build {__BUILD_NUMBER__}
 			</div>
 		</div>

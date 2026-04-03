@@ -131,11 +131,11 @@
 
 	@keyframes orbit {
 		from {
-			transform: rotate(0deg) translateX(100px) rotate(0deg);
+			transform: rotate(0deg) translateX(var(--orbit-radius, 100px)) rotate(0deg);
 		}
 
 		to {
-			transform: rotate(360deg) translateX(100px) rotate(-360deg);
+			transform: rotate(360deg) translateX(var(--orbit-radius, 100px)) rotate(-360deg);
 		}
 	}
 
@@ -773,6 +773,22 @@
 	border: 1px solid var(--catalog-soft-border);
 	background: color-mix(in srgb, var(--catalog-header-fill) 92%, transparent);
 	color: var(--catalog-ink);
+}
+
+.realm-title-backdrop {
+	background: radial-gradient(
+		circle,
+		color-mix(in srgb, var(--catalog-page-bg) 32%, transparent) 0%,
+		color-mix(in srgb, var(--catalog-header-fill) 88%, transparent) 45%,
+		transparent 100%
+	);
+	box-shadow:
+		0 12px 28px color-mix(in srgb, var(--catalog-page-shadow) 24%, transparent),
+		0 0 36px color-mix(in srgb, var(--catalog-header-fill) 85%, transparent);
+}
+
+.splash-orbit-compact {
+	--orbit-radius: 72px;
 }
 
 .realm-input {
