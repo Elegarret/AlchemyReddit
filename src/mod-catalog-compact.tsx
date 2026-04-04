@@ -162,16 +162,9 @@ export const CompactCatalog = () => {
     <div className="catalog-parchment catalog-side-ornament relative flex h-screen w-full flex-col items-center overflow-hidden px-2 py-3 sm:px-3">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute top-0 left-1/2 h-[250px] w-screen -translate-x-1/2 bg-top bg-cover opacity-38"
-        style={{
-          backgroundImage: 'url(/alchemy_bg.jpg)',
-          maskImage:
-            'linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.92) 45%, rgba(0, 0, 0, 0.36) 78%, transparent 100%)',
-          WebkitMaskImage:
-            'linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.92) 45%, rgba(0, 0, 0, 0.36) 78%, transparent 100%)',
-        }}
+        className="catalog-top-art pointer-events-none absolute top-0 left-1/2 h-[250px] w-screen -translate-x-1/2 bg-top bg-cover"
       />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[250px] bg-[linear-gradient(180deg,rgba(16,8,28,0.3),rgba(16,8,28,0.55),rgba(16,8,28,0)_100%)]" />
+      <div className="catalog-top-art-overlay pointer-events-none absolute inset-x-0 top-0 h-[250px]" />
 
       <div className="relative z-10 flex h-full w-full max-w-5xl flex-col gap-3 sm:gap-4 sm:px-2">
         <div className="relative flex min-h-[48px] items-center justify-center px-24">
