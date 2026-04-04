@@ -161,7 +161,12 @@ describe('CompactCatalog', () => {
     listCatalogQueryMock.mockImplementation(() => new Promise(() => {}));
 
     await import('./mod-catalog-compact');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(
+      () =>
+        getPageText().includes('User Realms') &&
+        getPageText().includes('Realm 2') &&
+        !getPageText().includes('Loading realms...')
+    );
 
     expect(getPageText()).toContain('User Realms');
     expect(getPageText()).toContain('Realm 2');
