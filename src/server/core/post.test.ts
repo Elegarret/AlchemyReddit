@@ -1,7 +1,12 @@
 import { expect, vi } from 'vitest';
 import { reddit, settings } from '@devvit/web/server';
 import { test } from '../test';
-import { createCatalogPost, createPost, getPostUrl } from './post';
+import {
+  createCatalogPost,
+  createCompactCatalogPost,
+  createPost,
+  getPostUrl,
+} from './post';
 
 test('getPostUrl normalizes bare and prefixed post ids', () => {
   expect(getPostUrl('t3_abc123', 'alchemygame')).toBe(
@@ -43,4 +48,23 @@ test('createCatalogPost submits the catalog entrypoint', async () => {
     entry: 'mod-catalog',
   });
   expect(post.url).toBe('https://www.reddit.com/r/testsub/comments/catalogpost/');
+});
+
+test('createCompactCatalogPost submits the compact catalog entrypoint', async () => {
+  const submitCustomPostSpy = vi
+    .spyOn(reddit, 'submitCustomPost')
+    .mockResolvedValue({
+      id: 't3_compactcatalogpost',
+      title: 'Alchemy Mods Catalog Compact',
+    } as never);
+
+  const post = await createCompactCatalogPost();
+
+  expect(submitCustomPostSpy).toHaveBeenCalledWith({
+    title: 'Alchemy Mods Catalog Compact',
+    entry: 'mod-catalog-compact',
+  });
+  expect(post.url).toBe(
+    'https://www.reddit.com/r/testsub/comments/compactcatalogpost/'
+  );
 });

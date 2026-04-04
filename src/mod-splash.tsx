@@ -10,6 +10,7 @@ import {
   IoAlbumsSharp,
   IoCreateOutline,
   IoEyeSharp,
+  IoLayersSharp,
   IoThumbsUpSharp,
 } from 'react-icons/io5';
 import {
@@ -18,6 +19,11 @@ import {
   readInlineViewCache,
   writeInlineViewCache,
 } from './inline-view-cache';
+import {
+  getRealmSizeLabel,
+  getRealmSizeTooltip,
+  isEmptyRealmSizeLabel,
+} from './mod-size';
 import { trpc } from './trpc';
 import { openEntry, setEditorTargetModId, setLastPlayedRealm } from './webview-navigation';
 
@@ -32,6 +38,7 @@ type ModSplashRulesetPreview = {
 type ModSplashListingPreview = {
   ownerUsername: string | null;
   playerCount: number;
+  reactionCount?: number;
   upvotes: number;
 };
 
@@ -85,7 +92,9 @@ const isModSplashListingPreview = (
   return (
     isStringOrNull(Reflect.get(value, 'ownerUsername')) &&
     isNumber(Reflect.get(value, 'upvotes')) &&
-    isNumber(Reflect.get(value, 'playerCount'))
+    isNumber(Reflect.get(value, 'playerCount')) &&
+    (Reflect.get(value, 'reactionCount') === undefined ||
+      isNumber(Reflect.get(value, 'reactionCount')))
   );
 };
 
@@ -148,6 +157,7 @@ const toModListingPreview = (
   return {
     ownerUsername: modListing.ownerUsername,
     playerCount: modListing.playerCount ?? 0,
+    reactionCount: modListing.reactionCount,
     upvotes: modListing.upvotes ?? 0,
   };
 };
@@ -314,6 +324,12 @@ export const ModSplash = () => {
     !!state.ruleset.sourceModId &&
     (state.isModerator ||
       (!!state.username && state.username === state.ruleset.ownerUsername));
+  const reactionCount = state.modListing?.reactionCount ?? 0;
+  const realmSizeLabel = getRealmSizeLabel(reactionCount);
+  const realmSizeTooltip = getRealmSizeTooltip(reactionCount);
+  const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
+    ? 'text-[color:var(--realm-size-empty-text)]'
+    : 'realm-text-soft';
 
   return (
     <div className="realm-page relative flex h-screen flex-col items-center justify-center gap-4 overflow-hidden px-4 py-4">
@@ -336,7 +352,7 @@ export const ModSplash = () => {
         )}
 
         <div className="realm-panel mb-2 flex w-full max-w-[320px] flex-col items-center gap-1 rounded-2xl px-6 py-4 shadow-xl backdrop-blur-md">
-          <div className="flex items-center gap-4 text-sm font-bold">
+          <div className="catalog-body-font flex items-center gap-4 text-sm font-semibold">
             <div className="realm-text-ink flex items-center gap-1">
               <IoThumbsUpSharp className="text-[14px]" />
               <span>{state.modListing?.upvotes || 0}</span>
@@ -344,6 +360,13 @@ export const ModSplash = () => {
             <div className="realm-text-soft flex items-center gap-1">
               <IoEyeSharp className="text-[14px]" />
               <span>{state.modListing?.playerCount || 0}</span>
+            </div>
+            <div
+              className={`${realmSizeClassName} flex items-center gap-1`}
+              title={realmSizeTooltip}
+            >
+              <IoLayersSharp className="text-[14px]" />
+              <span>{realmSizeLabel}</span>
             </div>
           </div>
           <span className="catalog-body-font realm-text-soft text-sm font-medium">
@@ -358,7 +381,7 @@ export const ModSplash = () => {
               u/{authorUsername}
             </button>
           </span>
-          <span className="realm-text-muted mt-1 text-xs font-medium">
+          <span className="catalog-body-font realm-text-muted mt-1 text-xs font-medium italic">
             {createdDate}
           </span>
         </div>

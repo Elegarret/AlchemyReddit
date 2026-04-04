@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 import type { UiResponse } from '@devvit/web/shared';
-import { createCatalogPost, createPost } from '../core/post';
+import {
+  createCatalogPost,
+  createCompactCatalogPost,
+  createPost,
+} from '../core/post';
 
 export const menu = new Hono();
 
@@ -40,6 +44,27 @@ menu.post('/catalog-create', async (c) => {
     return c.json<UiResponse>(
       {
         showToast: 'Failed to create catalog post',
+      },
+      400
+    );
+  }
+});
+
+menu.post('/catalog-compact-create', async (c) => {
+  try {
+    const post = await createCompactCatalogPost();
+
+    return c.json<UiResponse>(
+      {
+        navigateTo: post.url,
+      },
+      200
+    );
+  } catch (error) {
+    console.error(`Error creating compact catalog post: ${error}`);
+    return c.json<UiResponse>(
+      {
+        showToast: 'Failed to create compact catalog post',
       },
       400
     );

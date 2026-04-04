@@ -12,12 +12,18 @@ import { createRoot } from 'react-dom/client';
 import {
   IoCreateOutline,
   IoEyeSharp,
+  IoLayersSharp,
   IoPlaySharp,
   IoThumbsUpSharp,
 } from 'react-icons/io5';
+import type { ModListItem } from './modding/types';
 import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
-import type { ModListItem } from './modding/types';
+import {
+  getRealmSizeLabel,
+  getRealmSizeTooltip,
+  isEmptyRealmSizeLabel,
+} from './mod-size';
 import {
   getLastPlayedRealm,
   openEntry,
@@ -50,10 +56,10 @@ export const Catalog = () => {
           trpc.mods.listCatalog.query(),
           trpc.mods.listMine.query(),
         ]);
-        setMods(catalogMods);
-        setMyMods(ownMods);
-      } catch (e) {
-        console.error('Failed to load mods catalog', e);
+        setMods(Array.isArray(catalogMods) ? catalogMods : []);
+        setMyMods(Array.isArray(ownMods) ? ownMods : []);
+      } catch (error) {
+        console.error('Failed to load mods catalog', error);
       } finally {
         setLoading(false);
       }
@@ -136,6 +142,11 @@ export const Catalog = () => {
 
   const renderCatalogWidget = (mod: ModListItem) => {
     const url = getSharePostUrl(mod);
+    const realmSizeLabel = getRealmSizeLabel(mod.reactionCount);
+    const realmSizeTooltip = getRealmSizeTooltip(mod.reactionCount);
+    const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
+      ? 'text-[color:var(--realm-size-empty-text)]'
+      : '';
 
     return (
       <div
@@ -171,6 +182,13 @@ export const Catalog = () => {
                 <IoEyeSharp className="text-[11px]" />
                 <span>{mod.playerCount || 0}</span>
               </div>
+              <div
+                className={`flex items-center gap-1 ${realmSizeClassName}`}
+                title={realmSizeTooltip}
+              >
+                <IoLayersSharp className="text-[11px]" />
+                <span>{realmSizeLabel}</span>
+              </div>
             </div>
           </div>
 
@@ -190,6 +208,11 @@ export const Catalog = () => {
   const renderMyModWidget = (mod: ModListItem) => {
     const shareUrl = getSharePostUrl(mod);
     const isPublished = mod.status === 'published';
+    const realmSizeLabel = getRealmSizeLabel(mod.reactionCount);
+    const realmSizeTooltip = getRealmSizeTooltip(mod.reactionCount);
+    const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
+      ? 'text-[color:var(--realm-size-empty-text)]'
+      : '';
 
     return (
       <div
@@ -237,6 +260,13 @@ export const Catalog = () => {
               <IoEyeSharp className="text-[11px]" />
               <span>{mod.playerCount || 0}</span>
             </div>
+            <div
+              className={`flex items-center gap-1 ${realmSizeClassName}`}
+              title={realmSizeTooltip}
+            >
+              <IoLayersSharp className="text-[11px]" />
+              <span>{realmSizeLabel}</span>
+            </div>
           </div>
           <div className="flex gap-2">
             <button
@@ -264,9 +294,22 @@ export const Catalog = () => {
 
   return (
     <div className="catalog-parchment catalog-side-ornament relative flex min-h-screen w-full flex-col items-center overflow-y-auto py-4 sm:px-3">
-      <div className="mb-4 flex w-full max-w-5xl flex-col items-center gap-1 text-center sm:px-2">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute top-0 left-1/2 h-[250px] w-screen -translate-x-1/2 bg-top bg-cover opacity-38"
+        style={{
+          backgroundImage: 'url(/alchemy_bg.jpg)',
+          maskImage:
+            'linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.92) 45%, rgba(0, 0, 0, 0.36) 78%, transparent 100%)',
+          WebkitMaskImage:
+            'linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.92) 45%, rgba(0, 0, 0, 0.36) 78%, transparent 100%)',
+        }}
+      />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[250px] bg-[linear-gradient(180deg,rgba(16,8,28,0.3),rgba(16,8,28,0.55),rgba(16,8,28,0)_100%)]" />
+
+      <div className="relative z-10 mb-4 flex w-full max-w-5xl flex-col items-center gap-1 text-center sm:px-2">
         <h1 className="catalog-title-font catalog-text-ink text-xl font-bold tracking-[0.18em] uppercase sm:text-2xl">
-          Users Realms
+          User Realms
         </h1>
         <div
           className={`mt-2 grid w-full max-w-xl gap-2 ${
@@ -304,7 +347,7 @@ export const Catalog = () => {
         </div>
       </div>
 
-      <div className="flex w-full max-w-5xl flex-col gap-5 pb-8 sm:px-2">
+      <div className="relative z-10 flex w-full max-w-5xl flex-col gap-5 pb-8 sm:px-2">
         {loading ? (
           <div className="catalog-title-font catalog-text-muted animate-pulse py-8 text-center text-sm font-bold tracking-[0.08em] uppercase">
             Loading realms...

@@ -18,6 +18,10 @@
         "inline": true,
         "entry": "src/mod-catalog.html"
       },
+      "mod-catalog-compact": {
+        "inline": true,
+        "entry": "src/mod-catalog-compact.html"
+      },
       "mod-splash": {
         "inline": true,
         "entry": "src/mod-splash.html"
@@ -41,11 +45,18 @@
         "endpoint": "/internal/menu/post-create"
       },
       {
-        "label": "Create catalog post",
-        "description": "Creates a post listing all published user mods",
+        "label": "Create full catalog post",
+        "description": "Creates a full catalog post listing all published user mods",
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/catalog-create"
+      },
+      {
+        "label": "Create compact catalog post",
+        "description": "Creates a compact catalog post with tabbed best and new realms",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/catalog-compact-create"
       }
     ]
   },

@@ -1,31 +1,69 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { GameElementTile } from './GameApp';
+import { BASE_RULESET } from '../modding/base-ruleset';
+import type { ActiveRuleset } from '../modding/types';
+import { GameElementTile, GameRoot } from './GameApp';
 import { getReactionClusterPositions } from './reaction-cluster';
 
+const {
+	clientContextMock,
+	getPublishedQueryMock,
+	initGetQueryMock,
+	navigateToMock,
+	openEntryMock,
+	progressSaveMutateMock,
+	readPlaytestRulesetMock,
+	setEditorTargetModIdMock,
+	showToastMock,
+} = vi.hoisted(() => ({
+	clientContextMock: {
+		postId: 't3_currentpost',
+		username: null as string | null,
+	},
+	getPublishedQueryMock: vi.fn(),
+	initGetQueryMock: vi.fn(),
+	navigateToMock: vi.fn(),
+	openEntryMock: vi.fn(),
+	progressSaveMutateMock: vi.fn(),
+	readPlaytestRulesetMock: vi.fn(),
+	setEditorTargetModIdMock: vi.fn(),
+	showToastMock: vi.fn(),
+}));
+
 vi.mock('@devvit/web/client', () => ({
-	context: { username: null },
-	showToast: vi.fn(),
+	context: clientContextMock,
+	navigateTo: navigateToMock,
+	showToast: showToastMock,
 }));
 
 vi.mock('../trpc', () => ({
 	trpc: {
 		init: {
 			get: {
-				query: vi.fn(),
+				query: initGetQueryMock,
+			},
+		},
+		mods: {
+			getPublished: {
+				query: getPublishedQueryMock,
+			},
+		},
+		progress: {
+			save: {
+				mutate: progressSaveMutateMock,
 			},
 		},
 	},
 }));
 
 vi.mock('../webview-navigation', () => ({
-	openEntry: vi.fn(),
-	setEditorTargetModId: vi.fn(),
+	openEntry: openEntryMock,
+	setEditorTargetModId: setEditorTargetModIdMock,
 }));
 
 vi.mock('./playtest', () => ({
-	readPlaytestRuleset: vi.fn(),
+	readPlaytestRuleset: readPlaytestRulesetMock,
 }));
 
 const getLabelMetrics = (node: HTMLElement) => {
@@ -62,34 +100,34 @@ const getLabelMetrics = (node: HTMLElement) => {
 	};
 };
 
-const originalClientWidth = Object.getOwnPropertyDescriptor(
-	HTMLElement.prototype,
-	'clientWidth'
-);
-const originalScrollWidth = Object.getOwnPropertyDescriptor(
-	HTMLElement.prototype,
-	'scrollWidth'
-);
-const originalClientHeight = Object.getOwnPropertyDescriptor(
-	HTMLElement.prototype,
-	'clientHeight'
-);
-const originalScrollHeight = Object.getOwnPropertyDescriptor(
-	HTMLElement.prototype,
-	'scrollHeight'
-);
+const createModRuleset = (): ActiveRuleset => ({
+	...BASE_RULESET,
+	kind: 'mod',
+	rulesetId: 'mod-1',
+	title: 'Storm Lab',
+	summary: 'A custom realm.',
+	storageScope: 'mod:mod-1',
+	sourceModId: 'mod-1',
+	ownerUsername: 'realmowner',
+	publishedAt: '2026-03-01T00:00:00.000Z',
+});
 
-const restoreProperty = (
-	name: 'clientWidth' | 'scrollWidth' | 'clientHeight' | 'scrollHeight',
-	descriptor: PropertyDescriptor | undefined
-) => {
-	if (descriptor) {
-		Object.defineProperty(HTMLElement.prototype, name, descriptor);
-		return;
-	}
+const createInitResponse = (overrides?: Record<string, unknown>) => ({
+	activeModListing: null,
+	activeRuleset: BASE_RULESET,
+	isModerator: false,
+	postId: clientContextMock.postId,
+	progressScope: BASE_RULESET.storageScope,
+	redditDiscovered: [],
+	rulesetUnavailableReason: null,
+	username: null,
+	...overrides,
+});
 
-	delete HTMLElement.prototype[name];
-};
+getPublishedQueryMock.mockResolvedValue(null);
+initGetQueryMock.mockResolvedValue(createInitResponse());
+progressSaveMutateMock.mockResolvedValue({ success: true });
+readPlaytestRulesetMock.mockReturnValue(null);
 
 const getRequiredElement = (parent: ParentNode, selector: string) => {
 	const node = parent.querySelector(selector);
@@ -97,6 +135,23 @@ const getRequiredElement = (parent: ParentNode, selector: string) => {
 		throw new Error(`Expected element for selector ${selector}`);
 	}
 	return node;
+};
+
+const getButtonByText = (parent: ParentNode, label: string) =>
+	Array.from(parent.querySelectorAll('button')).find(
+		(button) => button.textContent?.trim() === label
+	) ?? null;
+
+const clickElement = async (element: HTMLElement) => {
+	await act(async () => {
+		element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	});
+};
+
+const focusElement = async (element: HTMLElement) => {
+	await act(async () => {
+		element.focus();
+	});
 };
 
 const renderTile = async (props: {
@@ -139,6 +194,62 @@ const renderTile = async (props: {
 			});
 		},
 	};
+};
+
+const renderGameRoot = async () => {
+	const container = document.createElement('div');
+	document.body.appendChild(container);
+	Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+	const root = createRoot(container);
+
+	await act(async () => {
+		root.render(<GameRoot />);
+	});
+
+	await act(async () => {
+		await Promise.resolve();
+		await Promise.resolve();
+	});
+
+	return {
+		container,
+		unmount: async () => {
+			await act(async () => {
+				root.unmount();
+			});
+		},
+	};
+};
+
+const originalClientWidth = Object.getOwnPropertyDescriptor(
+	HTMLElement.prototype,
+	'clientWidth'
+);
+const originalScrollWidth = Object.getOwnPropertyDescriptor(
+	HTMLElement.prototype,
+	'scrollWidth'
+);
+const originalClientHeight = Object.getOwnPropertyDescriptor(
+	HTMLElement.prototype,
+	'clientHeight'
+);
+const originalScrollHeight = Object.getOwnPropertyDescriptor(
+	HTMLElement.prototype,
+	'scrollHeight'
+);
+const originalMatchMedia = window.matchMedia;
+let hoverMatches = true;
+
+const restoreProperty = (
+	name: 'clientWidth' | 'scrollWidth' | 'clientHeight' | 'scrollHeight',
+	descriptor: PropertyDescriptor | undefined
+) => {
+	if (descriptor) {
+		Object.defineProperty(HTMLElement.prototype, name, descriptor);
+		return;
+	}
+
+	delete HTMLElement.prototype[name];
 };
 
 beforeAll(() => {
@@ -185,6 +296,21 @@ beforeAll(() => {
 			return originalScrollHeight?.get?.call(this) ?? 0;
 		},
 	});
+
+	Object.defineProperty(window, 'matchMedia', {
+		configurable: true,
+		writable: true,
+		value: vi.fn((query: string) => ({
+			matches: query === '(hover: hover)' ? hoverMatches : false,
+			media: query,
+			onchange: null,
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			dispatchEvent: vi.fn(),
+		})),
+	});
 });
 
 afterAll(() => {
@@ -192,11 +318,43 @@ afterAll(() => {
 	restoreProperty('scrollWidth', originalScrollWidth);
 	restoreProperty('clientHeight', originalClientHeight);
 	restoreProperty('scrollHeight', originalScrollHeight);
+
+	if (originalMatchMedia) {
+		Object.defineProperty(window, 'matchMedia', {
+			configurable: true,
+			writable: true,
+			value: originalMatchMedia,
+		});
+		return;
+	}
+
+	Object.defineProperty(window, 'matchMedia', {
+		configurable: true,
+		writable: true,
+		value: undefined,
+	});
 });
 
 afterEach(() => {
 	document.body.innerHTML = '';
 	Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: false });
+	clientContextMock.postId = 't3_currentpost';
+	clientContextMock.username = null;
+	hoverMatches = true;
+	getPublishedQueryMock.mockReset();
+	getPublishedQueryMock.mockResolvedValue(null);
+	initGetQueryMock.mockReset();
+	initGetQueryMock.mockResolvedValue(createInitResponse());
+	navigateToMock.mockReset();
+	openEntryMock.mockReset();
+	progressSaveMutateMock.mockReset();
+	progressSaveMutateMock.mockResolvedValue({ success: true });
+	readPlaytestRulesetMock.mockReset();
+	readPlaytestRulesetMock.mockReturnValue(null);
+	setEditorTargetModIdMock.mockReset();
+	showToastMock.mockReset();
+	localStorage.clear();
+	sessionStorage.clear();
 });
 
 describe('GameElementTile', () => {
@@ -279,6 +437,185 @@ describe('GameElementTile', () => {
 		expect(tile.root.getAttribute('title')).toBe(displayName);
 
 		await tile.unmount();
+	});
+});
+
+describe('GameRoot realm menu', () => {
+	it('renders the Mercury trigger, opens the menu, and offsets the glyph upward', async () => {
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		expect(trigger.textContent).toContain('☿');
+		expect(trigger.querySelector('span')?.className).toContain('-top-[4px]');
+
+		await focusElement(trigger);
+
+		expect(getButtonByText(game.container, 'Alchemy Hub')).toBeTruthy();
+		expect(getButtonByText(game.container, 'Create my Alchemy!')).toBeTruthy();
+
+		await game.unmount();
+	});
+
+	it('shows legacy Comments for the base game and opens the hardcoded post', async () => {
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+
+		const commentsButton = getButtonByText(game.container, 'Comments');
+		expect(commentsButton).toBeTruthy();
+
+		await clickElement(commentsButton!);
+
+		expect(navigateToMock).toHaveBeenCalledWith(
+			'https://www.reddit.com/r/AlchemyGame/comments/1qwhma7/alchemygame/'
+		);
+
+		await game.unmount();
+	});
+
+	it('shows Comments for a published mod realm and uses its share post id', async () => {
+		initGetQueryMock.mockResolvedValue(
+			createInitResponse({
+				activeModListing: { sharePostId: 't3_sharepost' },
+				activeRuleset: createModRuleset(),
+			})
+		);
+
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+		await clickElement(getButtonByText(game.container, 'Comments')!);
+
+		expect(navigateToMock).toHaveBeenCalledWith(
+			'https://www.reddit.com/comments/sharepost/'
+		);
+
+		await game.unmount();
+	});
+
+	it('hides Comments when the current post is already the target share post', async () => {
+		clientContextMock.postId = 't3_sharepost';
+		initGetQueryMock.mockResolvedValue(
+			createInitResponse({
+				activeModListing: { sharePostId: 't3_sharepost' },
+				activeRuleset: createModRuleset(),
+				postId: 't3_sharepost',
+			})
+		);
+
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+
+		expect(getButtonByText(game.container, 'Comments')).toBeNull();
+
+		await game.unmount();
+	});
+
+	it('hides Comments for a mod realm without a share post', async () => {
+		initGetQueryMock.mockResolvedValue(
+			createInitResponse({
+				activeRuleset: createModRuleset(),
+			})
+		);
+
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+
+		expect(getButtonByText(game.container, 'Comments')).toBeNull();
+
+		await game.unmount();
+	});
+
+	it('hides Comments in playtest mode', async () => {
+		readPlaytestRulesetMock.mockReturnValue(createModRuleset());
+
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+
+		expect(getButtonByText(game.container, 'Comments')).toBeNull();
+
+		await game.unmount();
+	});
+
+	it('opens the catalog from Alchemy Hub and clears the editor target', async () => {
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+		await clickElement(getButtonByText(game.container, 'Alchemy Hub')!);
+
+		expect(setEditorTargetModIdMock).toHaveBeenCalledWith(null);
+		expect(openEntryMock).toHaveBeenCalledWith(expect.any(MouseEvent), 'mod-catalog');
+
+		await game.unmount();
+	});
+
+	it('opens the editor from Create my Alchemy! and clears the editor target', async () => {
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+		await clickElement(getButtonByText(game.container, 'Create my Alchemy!')!);
+
+		expect(setEditorTargetModIdMock).toHaveBeenCalledWith(null);
+		expect(openEntryMock).toHaveBeenCalledWith(expect.any(MouseEvent), 'mod-editor');
+
+		await game.unmount();
+	});
+
+	it('toggles the menu on touch devices and closes it after a selection', async () => {
+		hoverMatches = false;
+
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+		expect(getButtonByText(game.container, 'Alchemy Hub')).toBeTruthy();
+
+		await clickElement(trigger);
+		expect(getButtonByText(game.container, 'Alchemy Hub')).toBeNull();
+
+		await clickElement(trigger);
+		await clickElement(getButtonByText(game.container, 'Create my Alchemy!')!);
+
+		expect(getButtonByText(game.container, 'Alchemy Hub')).toBeNull();
+
+		await game.unmount();
 	});
 });
 

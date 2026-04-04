@@ -35,3 +35,15 @@ export const createCatalogPost = async () => {
     url: getPostUrl(post.id, context.subredditName),
   };
 };
+
+export const createCompactCatalogPost = async () => {
+  const post = await reddit.submitCustomPost({
+    title: 'Alchemy Mods Catalog Compact',
+    entry: 'mod-catalog-compact',
+  });
+
+  return {
+    ...post,
+    url: getPostUrl(post.id, context.subredditName),
+  };
+};

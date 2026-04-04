@@ -594,6 +594,7 @@
 	--catalog-draft-border: rgba(120, 53, 15, 0.25);
 	--catalog-draft-fill: rgba(120, 53, 15, 0.08);
 	--catalog-draft-text: #92400e;
+	--realm-size-empty-text: #9f1239;
 	--editor-starter-border: rgba(6, 95, 70, 0.28);
 	--editor-starter-fill: rgba(16, 185, 129, 0.14);
 	--editor-starter-text: #065f46;
@@ -1120,6 +1121,7 @@
 		--catalog-draft-border: rgba(253, 186, 116, 0.35);
 		--catalog-draft-fill: rgba(120, 53, 15, 0.22);
 		--catalog-draft-text: #fdba74;
+		--realm-size-empty-text: #fda4af;
 		--editor-starter-border: rgba(110, 231, 183, 0.35);
 		--editor-starter-fill: rgba(16, 185, 129, 0.18);
 		--editor-starter-text: #d1fae5;

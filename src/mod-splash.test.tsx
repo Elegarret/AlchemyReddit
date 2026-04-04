@@ -79,6 +79,7 @@ describe('ModSplash', () => {
         modListing: {
           ownerUsername: 'realm-author',
           playerCount: 17,
+          reactionCount: 220,
           upvotes: 9,
         },
         username: 'realm-author',
@@ -92,6 +93,17 @@ describe('ModSplash', () => {
 
     expect(document.body.textContent).toContain('Cached Realm');
     expect(document.body.textContent).toContain('Cached realm summary');
+    expect(document.body.textContent).toContain('mega');
+    expect(
+      document.querySelector('[title="Realm size: 220 reactions"]')
+    ).toBeTruthy();
+    expect(
+      Array.from(document.querySelectorAll('span')).some(
+        (element) =>
+          element.className.includes('realm-text-muted') &&
+          element.className.includes('catalog-body-font')
+      )
+    ).toBe(true);
     expect(document.body.textContent).not.toContain('Summoning Realm...');
   });
 });

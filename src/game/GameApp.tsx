@@ -1,4 +1,4 @@
-import { context, showToast } from '@devvit/web/client';
+import { context, navigateTo, showToast } from '@devvit/web/client';
 import {
 	useEffect,
 	useLayoutEffect,
@@ -47,6 +47,8 @@ type GameSessionProps = {
   initialDiscovered: string[];
   progressScope: string;
   isPlaytest: boolean;
+  currentPostId: string | null;
+  currentSharePostId: string | null;
 };
 
 type ElementPreviewIconSize = 'chip' | 'compact' | 'hero';
@@ -68,6 +70,9 @@ const STARTER_ELEMENT_GAP = 28;
 const STARTER_EDGE_MARGIN = 56;
 const HIDDEN_PLAYTEST_COUNTER_HINT =
 	'This counter is hidden, you can see it only in the playtest mode';
+const LEGACY_COMMENTS_POST_ID = '1qwhma7';
+const LEGACY_COMMENTS_URL =
+	'https://www.reddit.com/r/AlchemyGame/comments/1qwhma7/alchemygame/';
 
 type ElementTileSize = 'small' | 'large';
 
@@ -81,6 +86,16 @@ type ElementLabelLayout = {
 
 const normalizeCounterKey = (value: string) =>
 	value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const normalizeRedditPostId = (postId: string) => postId.replace(/^t3_/, '');
+
+const supportsHoverInput = () => {
+	if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+		return true;
+	}
+
+	return window.matchMedia('(hover: hover)').matches;
+};
 
 const ELEMENT_LABEL_LAYOUTS: Record<
 	ElementTileSize,
@@ -389,9 +404,12 @@ const GameSession = ({
 	initialDiscovered,
 	progressScope,
 	isPlaytest,
+	currentPostId,
+	currentSharePostId,
 }: GameSessionProps) => {
 	const storageKeys = getLocalStorageKeys(ruleset);
 	const introStorageKey = `${storageKeys.discovered}-intro-dismissed`;
+	const realmMenuRef = useRef<HTMLDivElement>(null);
 	const [discovered, setDiscovered] = useState<string[]>(() => {
 		try {
 			const saved = localStorage.getItem(storageKeys.discovered);
@@ -508,6 +526,8 @@ const GameSession = ({
 	const [showMobileFilter, setShowMobileFilter] = useState(false);
 	const [isQuaking, setIsQuaking] = useState(false);
 	const [stormFlashVisible, setStormFlashVisible] = useState(false);
+	const [showRealmMenu, setShowRealmMenu] = useState(false);
+	const [hoverSupported, setHoverSupported] = useState(supportsHoverInput);
 	const [showRealmIntro, setShowRealmIntro] = useState(() => {
 		if (!ruleset.intro.trim()) {
 			return false;
@@ -519,6 +539,60 @@ const GameSession = ({
 			return true;
 		}
 	});
+
+	useEffect(() => {
+		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+			return;
+		}
+
+		const mediaQuery = window.matchMedia('(hover: hover)');
+		const updateHoverSupport = (matches: boolean) => {
+			setHoverSupported(matches);
+		};
+		updateHoverSupport(mediaQuery.matches);
+
+		const handleChange = (event: MediaQueryListEvent) => {
+			updateHoverSupport(event.matches);
+		};
+
+		if (typeof mediaQuery.addEventListener === 'function') {
+			mediaQuery.addEventListener('change', handleChange);
+			return () => {
+				mediaQuery.removeEventListener('change', handleChange);
+			};
+		}
+
+		if (typeof mediaQuery.addListener === 'function') {
+			mediaQuery.addListener(handleChange);
+			return () => {
+				mediaQuery.removeListener(handleChange);
+			};
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!showRealmMenu) {
+			return;
+		}
+
+		const handlePointerDown = (event: PointerEvent) => {
+			const target = event.target;
+			if (!(target instanceof Node)) {
+				return;
+			}
+
+			if (realmMenuRef.current?.contains(target)) {
+				return;
+			}
+
+			setShowRealmMenu(false);
+		};
+
+		document.addEventListener('pointerdown', handlePointerDown);
+		return () => {
+			document.removeEventListener('pointerdown', handlePointerDown);
+		};
+	}, [showRealmMenu]);
 
 	const getElementDisplayName = (elementId: string) =>
 		ruleset.elementNames?.[elementId] ?? elementId;
@@ -539,6 +613,12 @@ const GameSession = ({
 	const hasBlockingScriptedPopup = scriptedPopupQueue.length > 0;
 	const areBoardInteractionsLocked =
 		hasBlockingScriptedPopup || hasLegacyOverlayPopup;
+
+	useEffect(() => {
+		if (hasBlockingScriptedPopup) {
+			setShowRealmMenu(false);
+		}
+	}, [hasBlockingScriptedPopup]);
 
 	const renderElementPreviewIcon = (
 		elementId: string,
@@ -1058,13 +1138,18 @@ const GameSession = ({
 		setScriptedPopupQueue((current) => current.slice(1));
 	};
 
-	const navigateBackToRealmsList = (
-		event: ReactMouseEvent<HTMLButtonElement>
-	) => {
+	const prepareToLeaveRealm = () => {
 		setReactionMessage(null);
 		setScriptedPopupQueue([]);
 		setShowOptions(false);
+		setShowRealmMenu(false);
 		localStorage.removeItem('override-mod-id');
+	};
+
+	const navigateBackToRealmsList = (
+		event: ReactMouseEvent<HTMLButtonElement>
+	) => {
+		prepareToLeaveRealm();
 
 		if (isPlaytest) {
 			localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
@@ -1076,6 +1161,20 @@ const GameSession = ({
 		}
 
 		openEntry(event.nativeEvent, 'mod-catalog');
+	};
+
+	const openAlchemyHub = (event: ReactMouseEvent<HTMLButtonElement>) => {
+		prepareToLeaveRealm();
+		localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+		setEditorTargetModId(null);
+		openEntry(event.nativeEvent, 'mod-catalog');
+	};
+
+	const openCreateMyAlchemy = (event: ReactMouseEvent<HTMLButtonElement>) => {
+		prepareToLeaveRealm();
+		localStorage.removeItem(PLAYTEST_RULESET_STORAGE_KEY);
+		setEditorTargetModId(null);
+		openEntry(event.nativeEvent, 'mod-editor');
 	};
 
 	const copyModData = async () => {
@@ -1676,6 +1775,46 @@ const GameSession = ({
 			</div>
 		) : null;
 
+	const normalizedCurrentPostId = currentPostId
+		? normalizeRedditPostId(currentPostId)
+		: null;
+	const commentsTarget = (() => {
+		if (isPlaytest) {
+			return null;
+		}
+
+		if (ruleset.kind === 'base') {
+			return {
+				postId: LEGACY_COMMENTS_POST_ID,
+				url: LEGACY_COMMENTS_URL,
+			};
+		}
+
+		if (!currentSharePostId) {
+			return null;
+		}
+
+		const sharePostId = normalizeRedditPostId(currentSharePostId);
+		return {
+			postId: sharePostId,
+			url: `https://www.reddit.com/comments/${sharePostId}/`,
+		};
+	})();
+	const commentsTargetUrl =
+		commentsTarget &&
+		commentsTarget.postId !== normalizedCurrentPostId
+			? commentsTarget.url
+			: null;
+
+	const handleOpenComments = () => {
+		if (!commentsTargetUrl) {
+			return;
+		}
+
+		setShowRealmMenu(false);
+		navigateTo(commentsTargetUrl);
+	};
+
 	return (
 		<div
 			className="realm-page-plain flex h-screen w-screen flex-col overflow-hidden bg-main text-primary font-sans select-none touch-none"
@@ -1790,7 +1929,7 @@ const GameSession = ({
 				)}
 				{reactionMessage && (
 					<div
-						className={`pointer-events-none absolute inset-x-0 z-[120] flex justify-center px-3 pr-14 ${
+						className={`pointer-events-none absolute inset-x-0 z-[120] flex justify-center pl-14 pr-14 ${
 							isPlaytest ? 'top-10' : 'top-2'
 						}`}
 					>
@@ -1806,6 +1945,95 @@ const GameSession = ({
 					</div>
 				)}
 
+				<div
+					ref={realmMenuRef}
+					className="absolute left-2 top-2 z-40 pb-2"
+					onPointerEnter={() => {
+						if (!hoverSupported || hasBlockingScriptedPopup) {
+							return;
+						}
+						setShowRealmMenu(true);
+					}}
+					onPointerLeave={() => {
+						if (!hoverSupported) {
+							return;
+						}
+						setShowRealmMenu(false);
+					}}
+					onFocusCapture={() => {
+						if (hasBlockingScriptedPopup) {
+							return;
+						}
+						setShowRealmMenu(true);
+					}}
+					onBlurCapture={(event) => {
+						const nextTarget = event.relatedTarget;
+						if (
+							nextTarget instanceof Node &&
+							realmMenuRef.current?.contains(nextTarget)
+						) {
+							return;
+						}
+						setShowRealmMenu(false);
+					}}
+				>
+					<button
+						type="button"
+						onClick={() => {
+							if (hasBlockingScriptedPopup) {
+								return;
+							}
+
+							if (!hoverSupported) {
+								setShowRealmMenu((current) => !current);
+								return;
+							}
+
+							setShowRealmMenu(true);
+						}}
+						className="realm-button-muted flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-colors shadow-lg backdrop-blur-sm disabled:cursor-default disabled:opacity-50"
+						title="Realm Menu"
+						aria-label="Open realm menu"
+						aria-expanded={showRealmMenu}
+						disabled={hasBlockingScriptedPopup}
+					>
+						<span
+							aria-hidden="true"
+							className="relative -top-[4px] text-[1.35rem] leading-none"
+						>
+							☿
+						</span>
+					</button>
+
+					{showRealmMenu && (
+						<div className="realm-panel-soft absolute left-0 top-full flex min-w-[13.5rem] flex-col gap-1 rounded-2xl border border-cyan-200/18 bg-slate-950/92 p-2 text-left shadow-[0_18px_40px_rgba(2,6,23,0.5)] backdrop-blur-xl">
+							{commentsTargetUrl && (
+								<button
+									type="button"
+									onClick={handleOpenComments}
+									className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
+								>
+									Comments
+								</button>
+							)}
+							<button
+								type="button"
+								onClick={openAlchemyHub}
+								className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
+							>
+								Alchemy Hub
+							</button>
+							<button
+								type="button"
+								onClick={openCreateMyAlchemy}
+								className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
+							>
+								Create my Alchemy!
+							</button>
+						</div>
+					)}
+				</div>
+
 				<button
 					onClick={() => {
 						if (hasBlockingScriptedPopup) {
@@ -1813,7 +2041,7 @@ const GameSession = ({
 						}
 						setShowOptions(true);
 					}}
-					className="realm-button-muted absolute right-2 top-2 z-30 cursor-pointer rounded-full p-2 transition-colors shadow-lg backdrop-blur-sm disabled:cursor-default disabled:opacity-50"
+					className="realm-button-muted absolute right-2 top-2 z-30 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-colors shadow-lg backdrop-blur-sm disabled:cursor-default disabled:opacity-50"
 					title="Options"
 					disabled={hasBlockingScriptedPopup}
 				>
@@ -2053,7 +2281,7 @@ const GameSession = ({
 								<span className="text-sm font-medium text-secondary">Author</span>
 								<span className="text-lg font-bold text-primary">{authorUsername}</span>
 							</div>
-							<a href="https://www.flaticon.com/free-icons/sand" title="sand icons">Sand icons created by Freepik - Flaticon</a>
+							<a href="https://www.flaticon.com/free-icons/sand" title="icons">Some icons were created by Freepik - Flaticon</a>
 
 							<div className="h-px bg-white/10" />
 
@@ -2431,6 +2659,8 @@ export const GameRoot = () => {
 				redditDiscovered: string[];
 				progressScope: string;
 				isPlaytest: boolean;
+				currentPostId: string | null;
+				currentSharePostId: string | null;
 		  }
 	>({ status: 'loading' });
 
@@ -2445,6 +2675,8 @@ export const GameRoot = () => {
 				redditDiscovered: [],
 				progressScope: getProgressScope(playtestRuleset),
 				isPlaytest: true,
+				currentPostId: context.postId ?? null,
+				currentSharePostId: null,
 			});
 			return;
 		}
@@ -2478,6 +2710,8 @@ export const GameRoot = () => {
 					redditDiscovered: response.redditDiscovered ?? [],
 					progressScope: response.progressScope,
 					isPlaytest: false,
+					currentPostId: response.postId ?? context.postId ?? null,
+					currentSharePostId: response.activeModListing?.sharePostId ?? null,
 				});
 			})
 			.catch((error) => {
@@ -2490,6 +2724,8 @@ export const GameRoot = () => {
 					redditDiscovered: [],
 					progressScope: 'base',
 					isPlaytest: false,
+					currentPostId: context.postId ?? null,
+					currentSharePostId: null,
 				});
 			});
 	}, []);
@@ -2526,6 +2762,8 @@ export const GameRoot = () => {
 			initialDiscovered={state.redditDiscovered}
 			progressScope={state.progressScope}
 			isPlaytest={state.isPlaytest}
+			currentPostId={state.currentPostId}
+			currentSharePostId={state.currentSharePostId}
 		/>
 	);
 };

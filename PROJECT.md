@@ -19,7 +19,8 @@ Keep this file updated when architecture, major flows, or important project conv
 - `src/splash.tsx`: inline/feed entry view
 - `src/game.tsx`: expanded gameplay entrypoint
 - `src/mod-editor.tsx`: realm editor entrypoint
-- `src/mod-catalog.tsx`: realm catalog/mod listing view
+- `src/mod-catalog.tsx`: full realm catalog/mod listing view
+- `src/mod-catalog-compact.tsx`: compact fixed-layout realm catalog view
 
 ## Frontend Structure
 
@@ -46,6 +47,7 @@ Keep this file updated when architecture, major flows, or important project conv
 
 - Game progress is stored locally per ruleset and synced to Reddit progress for non-playtest sessions.
 - Programmatic post creation is Devvit Web-only: new `reddit.submitCustomPost()` flows must target named `devvit.json` entrypoints (`default`, `game`, `mod-catalog`, `mod-splash`, etc.) and must not reintroduce Blocks-era APIs, config, or splash fields.
+- Moderator subreddit menu actions can now create either the full `mod-catalog` post or the compact `mod-catalog-compact` post, so catalog UX variants stay separate.
 - Mod realms now expose authored counters with min/max/initial values in both the editor and the game. Counter values persist locally per ruleset, reset to authored initial values, clamp during scripted updates, and now persist a separate shown/hidden panel state per ruleset.
 - Playtest sessions use `PLAYTEST_RULESET_STORAGE_KEY` in local storage and bypass Reddit progress syncing.
 - Editor saves persist draft data through tRPC, then publish/share actions operate on the saved draft id.
@@ -54,6 +56,7 @@ Keep this file updated when architecture, major flows, or important project conv
 - Published realm player counts only increment when the expanded `game` view loads a published realm; opening inline splash views reads the current count without recording a player.
 - Inline splash entrypoints cache their last rendered state in session storage and revalidate on `window.focus`, which keeps return-from-game popup closes from falling back to a visibly cold inline reload.
 - The inline splash now routes its secondary CTA to the realm catalog (`Alchemy Hub`) instead of opening a fresh editor directly.
+- The compact realm catalog is a fixed single-view screen with a `Best` / `New` tab switcher, capped to 8 realms per tab in a 2x4 grid, and keeps realm creation as a compact header action instead of a separate section.
 - The shared realm splash swaps its secondary CTA to `Edit Realm` for the realm author or moderators/admins and preloads that realm into the editor; other viewers still get `Create My Realm`.
 - Mod reactions can optionally carry per-reaction script text. Non-empty scripts override `outputIds` at runtime, and the editor validates script lines inline plus during overall draft validation.
 - Reaction script syntax now canonically uses `add`, bracket-less action forms such as `set health += 1`, `message "..."`, `popup "..."`, `win "..."`, and `lose "..."`, plus condition predicates like `not_discovered(...)` and `count(...)` comparisons. The per-reaction textarea exposes lightweight local autocomplete for those token families, while the full text editor serializes valid scripts back out in canonical form.
