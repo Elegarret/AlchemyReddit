@@ -67,6 +67,16 @@
         "label": "Game Post Title",
         "defaultValue": "Play Alchemy Game"
       },
+      "catalogPostTitle": {
+        "type": "string",
+        "label": "Catalog Post Title",
+        "defaultValue": "Alchemy Hub"
+      },
+      "compactCatalogPostTitle": {
+        "type": "string",
+        "label": "Compact Catalog Post Title",
+        "defaultValue": "Alchemic Creations"
+      },
       "authorsHelpPage": {
         "type": "string",
         "label": "Authors Help Page URL",

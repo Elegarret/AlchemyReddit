@@ -147,6 +147,8 @@ export const Catalog = () => {
     const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
       ? 'text-[color:var(--realm-size-empty-text)]'
       : '';
+    const upvotesTooltip = `Upvotes: ${mod.upvotes || 0}`;
+    const playerCountTooltip = `Users played: ${mod.playerCount || 0}`;
 
     return (
       <div
@@ -174,11 +176,11 @@ export const Catalog = () => {
               {mod.summary || 'No description provided.'}
             </p>
             <div className="catalog-stat-text mt-1 flex items-center gap-3 text-[10px] font-semibold">
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" title={upvotesTooltip}>
                 <IoThumbsUpSharp className="text-[11px]" />
                 <span>{mod.upvotes || 0}</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" title={playerCountTooltip}>
                 <IoEyeSharp className="text-[11px]" />
                 <span>{mod.playerCount || 0}</span>
               </div>
@@ -213,6 +215,8 @@ export const Catalog = () => {
     const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
       ? 'text-[color:var(--realm-size-empty-text)]'
       : '';
+    const upvotesTooltip = `Upvotes: ${mod.upvotes || 0}`;
+    const playerCountTooltip = `Users played: ${mod.playerCount || 0}`;
 
     return (
       <div
@@ -252,11 +256,11 @@ export const Catalog = () => {
             {mod.summary || 'No description provided.'}
           </div>
           <div className="catalog-body-font catalog-stat-text mb-3 flex items-center gap-3 text-[11px] font-semibold">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1" title={upvotesTooltip}>
               <IoThumbsUpSharp className="text-[11px]" />
               <span>{mod.upvotes || 0}</span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1" title={playerCountTooltip}>
               <IoEyeSharp className="text-[11px]" />
               <span>{mod.playerCount || 0}</span>
             </div>

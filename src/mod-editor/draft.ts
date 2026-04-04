@@ -37,15 +37,47 @@ export const deriveElementGlyph = (name: string) => {
   return trimmed ? trimmed.charAt(0).toUpperCase() : '•';
 };
 
+const DEFAULT_STARTER_ELEMENTS = [
+  {
+    id: 'air',
+    name: 'Air',
+    emoji: '💨',
+    bgColorToken: '#60a5fa',
+    frameColorToken: '#2563eb',
+  },
+  {
+    id: 'fire',
+    name: 'Fire',
+    emoji: '🔥',
+    bgColorToken: '#fdba74',
+    frameColorToken: '#f97316',
+  },
+  {
+    id: 'earth',
+    name: 'Earth',
+    emoji: '⛰️',
+    bgColorToken: '#d97706',
+    frameColorToken: '#92400e',
+  },
+  {
+    id: 'water',
+    name: 'Water',
+    emoji: '💧',
+    bgColorToken: '#bae6fd',
+    frameColorToken: '#38bdf8',
+  },
+] as const;
+
 export const createStarterElement = (
   id: string,
   name: string,
   bgColorToken: string = DEFAULT_MOD_BG_COLOR_TOKEN,
-  frameColorToken: string = DEFAULT_MOD_FRAME_COLOR_TOKEN
+  frameColorToken: string = DEFAULT_MOD_FRAME_COLOR_TOKEN,
+  emoji: string = deriveElementGlyph(name)
 ): ModElement => ({
   id,
   name,
-  emoji: deriveElementGlyph(name),
+  emoji,
   bgColorToken,
   frameColorToken,
   message: '',
@@ -57,15 +89,18 @@ export const createEmptyDraft = (): SaveDraftInput => ({
   title: DEFAULT_MOD_TITLE,
   summary: '',
   intro: '',
-  startingElementIds: ['air', 'fire', 'earth', 'water'],
+  startingElementIds: DEFAULT_STARTER_ELEMENTS.map((element) => element.id),
   counters: [],
   showPalette: true,
-  elements: [
-    createStarterElement('air', 'Air', 'ice', 'ocean'),
-    createStarterElement('fire', 'Fire', 'sun', 'ember'),
-    createStarterElement('earth', 'Earth', 'sand', 'stone'),
-    createStarterElement('water', 'Water', 'ocean', 'royal'),
-  ],
+  elements: DEFAULT_STARTER_ELEMENTS.map((element) =>
+    createStarterElement(
+      element.id,
+      element.name,
+      element.bgColorToken,
+      element.frameColorToken,
+      element.emoji
+    )
+  ),
   reactions: [],
   reactionComments: {
     byReaction: [],

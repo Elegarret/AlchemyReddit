@@ -94,6 +94,8 @@ describe('ModSplash', () => {
     expect(document.body.textContent).toContain('Cached Realm');
     expect(document.body.textContent).toContain('Cached realm summary');
     expect(document.body.textContent).toContain('mega');
+    expect(document.querySelector('[title="Upvotes: 9"]')).toBeTruthy();
+    expect(document.querySelector('[title="Users played: 17"]')).toBeTruthy();
     expect(
       document.querySelector('[title="Realm size: 220 reactions"]')
     ).toBeTruthy();

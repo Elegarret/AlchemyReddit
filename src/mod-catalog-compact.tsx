@@ -10,7 +10,6 @@ import {
   IoPlaySharp,
   IoThumbsUpSharp,
 } from 'react-icons/io5';
-import type { ModListItem } from './modding/types';
 import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
 import {
@@ -18,11 +17,52 @@ import {
   getRealmSizeTooltip,
   isEmptyRealmSizeLabel,
 } from './mod-size';
+import {
+  getInlineViewCacheKey,
+  isUnknownRecord,
+  readInlineViewCache,
+  writeInlineViewCache,
+} from './inline-view-cache';
+import { modListItemSchema, type ModListItem } from './modding/types';
 import { openEntry, setEditorTargetModId, setLastPlayedRealm } from './webview-navigation';
 
 const CATALOG_TAB_LIMIT = 8;
 
 type CatalogTab = 'best' | 'new';
+type CompactCatalogCache = {
+  activeTab: CatalogTab;
+  mods: ModListItem[];
+};
+
+const isCatalogTab = (value: unknown): value is CatalogTab =>
+  value === 'best' || value === 'new';
+
+const isModListItem = (value: unknown): value is ModListItem =>
+  modListItemSchema.safeParse(value).success;
+
+const isCompactCatalogCache = (
+  value: unknown
+): value is CompactCatalogCache => {
+  if (!isUnknownRecord(value)) {
+    return false;
+  }
+
+  const mods = Reflect.get(value, 'mods');
+
+  return (
+    isCatalogTab(Reflect.get(value, 'activeTab')) &&
+    Array.isArray(mods) &&
+    mods.every(isModListItem)
+  );
+};
+
+const getCompactCatalogCacheKey = () =>
+  getInlineViewCacheKey('mod-catalog-compact');
+
+const readCachedCompactCatalog = () =>
+  readInlineViewCache(getCompactCatalogCacheKey(), (value) =>
+    isCompactCatalogCache(value) ? value : null
+  );
 
 const getSharePostUrl = (mod: ModListItem) => {
   if (!mod.sharePostId) {
@@ -33,24 +73,67 @@ const getSharePostUrl = (mod: ModListItem) => {
 };
 
 export const CompactCatalog = () => {
-  const [mods, setMods] = useState<ModListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<CatalogTab>('best');
+  const [initialCache] = useState<CompactCatalogCache | null>(() =>
+    readCachedCompactCatalog()
+  );
+  const [mods, setMods] = useState<ModListItem[]>(() => initialCache?.mods ?? []);
+  const [loading, setLoading] = useState(() => initialCache === null);
+  const [activeTab, setActiveTab] = useState<CatalogTab>(
+    () => initialCache?.activeTab ?? 'best'
+  );
 
   useEffect(() => {
+    let isDisposed = false;
+    let isLoadInFlight = false;
+
     const fetchMods = async () => {
+      if (isLoadInFlight) {
+        return;
+      }
+
+      isLoadInFlight = true;
+
       try {
         const catalogMods = await trpc.mods.listCatalog.query();
-        setMods(Array.isArray(catalogMods) ? catalogMods : []);
+        if (isDisposed) {
+          return;
+        }
+
+        const nextMods = Array.isArray(catalogMods) ? catalogMods : [];
+        setMods(nextMods);
       } catch (error) {
         console.error('Failed to load compact mods catalog', error);
       } finally {
-        setLoading(false);
+        if (!isDisposed) {
+          setLoading(false);
+        }
+        isLoadInFlight = false;
       }
     };
 
+    const handleFocus = () => {
+      void fetchMods();
+    };
+
     void fetchMods();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      isDisposed = true;
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    writeInlineViewCache(getCompactCatalogCacheKey(), {
+      activeTab,
+      mods,
+    });
+  }, [activeTab, loading, mods]);
 
   const bestMods = useMemo(
     () =>

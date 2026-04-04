@@ -25,8 +25,10 @@ export const createPost = async () => {
 };
 
 export const createCatalogPost = async () => {
+  const postTitle =
+    (await settings.get<string>('catalogPostTitle')) || 'Alchemy Hub';
   const post = await reddit.submitCustomPost({
-    title: 'Alchemy Mods Catalog',
+    title: postTitle,
     entry: 'mod-catalog',
   });
 
@@ -37,8 +39,11 @@ export const createCatalogPost = async () => {
 };
 
 export const createCompactCatalogPost = async () => {
+  const postTitle =
+    (await settings.get<string>('compactCatalogPostTitle')) ||
+    'Alchemic Creations';
   const post = await reddit.submitCustomPost({
-    title: 'Alchemy Mods Catalog Compact',
+    title: postTitle,
     entry: 'mod-catalog-compact',
   });
 

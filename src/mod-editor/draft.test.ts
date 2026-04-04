@@ -16,6 +16,39 @@ describe('applyReactionTextToDraft', () => {
       createEmptyDraft()
     );
 
+  it('seeds the editor with styled starter elements', () => {
+    expect(createEmptyDraft().elements.slice(0, 4)).toEqual([
+      expect.objectContaining({
+        id: 'air',
+        name: 'Air',
+        emoji: '💨',
+        bgColorToken: '#60a5fa',
+        frameColorToken: '#2563eb',
+      }),
+      expect.objectContaining({
+        id: 'fire',
+        name: 'Fire',
+        emoji: '🔥',
+        bgColorToken: '#fdba74',
+        frameColorToken: '#f97316',
+      }),
+      expect.objectContaining({
+        id: 'earth',
+        name: 'Earth',
+        emoji: '⛰️',
+        bgColorToken: '#d97706',
+        frameColorToken: '#92400e',
+      }),
+      expect.objectContaining({
+        id: 'water',
+        name: 'Water',
+        emoji: '💧',
+        bgColorToken: '#bae6fd',
+        frameColorToken: '#38bdf8',
+      }),
+    ]);
+  });
+
   it('accepts script blocks introduced by a colon', () => {
     const draft = applyReactionTextToDraft(
       createEmptyDraft(),

@@ -34,34 +34,36 @@ test('createPost submits the default Devvit Web entrypoint', async () => {
 });
 
 test('createCatalogPost submits the catalog entrypoint', async () => {
+  vi.spyOn(settings, 'get').mockResolvedValue('Alchemy Hub');
   const submitCustomPostSpy = vi
     .spyOn(reddit, 'submitCustomPost')
     .mockResolvedValue({
       id: 't3_catalogpost',
-      title: 'Alchemy Mods Catalog',
+      title: 'Alchemy Hub',
     } as never);
 
   const post = await createCatalogPost();
 
   expect(submitCustomPostSpy).toHaveBeenCalledWith({
-    title: 'Alchemy Mods Catalog',
+    title: 'Alchemy Hub',
     entry: 'mod-catalog',
   });
   expect(post.url).toBe('https://www.reddit.com/r/testsub/comments/catalogpost/');
 });
 
 test('createCompactCatalogPost submits the compact catalog entrypoint', async () => {
+  vi.spyOn(settings, 'get').mockResolvedValue('Alchemic Creations');
   const submitCustomPostSpy = vi
     .spyOn(reddit, 'submitCustomPost')
     .mockResolvedValue({
       id: 't3_compactcatalogpost',
-      title: 'Alchemy Mods Catalog Compact',
+      title: 'Alchemic Creations',
     } as never);
 
   const post = await createCompactCatalogPost();
 
   expect(submitCustomPostSpy).toHaveBeenCalledWith({
-    title: 'Alchemy Mods Catalog Compact',
+    title: 'Alchemic Creations',
     entry: 'mod-catalog-compact',
   });
   expect(post.url).toBe(

@@ -71,6 +71,8 @@ afterEach(() => {
   setEditorTargetModIdMock.mockReset();
   setLastPlayedRealmMock.mockReset();
   window.localStorage.clear();
+  window.sessionStorage.clear();
+  window.history.replaceState({}, '', '/src/mod-catalog-compact.html');
   document.body.innerHTML = '';
   vi.resetModules();
 });
@@ -144,5 +146,25 @@ describe('CompactCatalog', () => {
     expect(setEditorTargetModIdMock).toHaveBeenCalledWith(null);
     expect(openEntryMock).toHaveBeenCalledTimes(1);
     expect(openEntryMock.mock.calls[0]?.[1]).toBe('mod-editor');
+  });
+
+  it('restores the cached compact catalog before the fresh load completes', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    window.history.replaceState({}, '', '/src/mod-catalog-compact.html?token=compact');
+    window.sessionStorage.setItem(
+      'alchemy:inline-view:mod-catalog-compact:/src/mod-catalog-compact.html?token=compact',
+      JSON.stringify({
+        activeTab: 'new',
+        mods: [buildMod(1), buildMod(2)],
+      })
+    );
+    listCatalogQueryMock.mockImplementation(() => new Promise(() => {}));
+
+    await import('./mod-catalog-compact');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getPageText()).toContain('User Realms');
+    expect(getPageText()).toContain('Realm 2');
+    expect(getPageText()).not.toContain('Loading realms...');
   });
 });

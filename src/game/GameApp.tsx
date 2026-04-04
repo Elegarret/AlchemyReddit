@@ -385,7 +385,7 @@ const createStarterTableElements = (ruleset: ActiveRuleset): Element[] => {
 	const radius = Math.min(desiredRadius, maxRadius);
 
 	return ruleset.startingElements.map((elementId, index) => {
-		const angle = -Math.PI / 2 + (index / starterCount) * Math.PI * 2;
+		const angle = (index / starterCount) * Math.PI * 2;
 		const icon = getStarterElementIcon(ruleset, elementId);
 		return {
 			id: createElementId(),

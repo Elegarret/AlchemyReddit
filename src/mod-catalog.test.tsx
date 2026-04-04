@@ -85,5 +85,7 @@ describe('Catalog', () => {
     expect(tooltipNode?.className).toContain(
       'text-[color:var(--realm-size-empty-text)]'
     );
+    expect(document.querySelector('[title="Upvotes: 3"]')).toBeTruthy();
+    expect(document.querySelector('[title="Users played: 12"]')).toBeTruthy();
   });
 });

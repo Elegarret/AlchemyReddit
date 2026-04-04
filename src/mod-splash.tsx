@@ -330,6 +330,8 @@ export const ModSplash = () => {
   const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
     ? 'text-[color:var(--realm-size-empty-text)]'
     : 'realm-text-soft';
+  const upvotesTooltip = `Upvotes: ${state.modListing?.upvotes || 0}`;
+  const playerCountTooltip = `Users played: ${state.modListing?.playerCount || 0}`;
 
   return (
     <div className="realm-page relative flex h-screen flex-col items-center justify-center gap-4 overflow-hidden px-4 py-4">
@@ -353,11 +355,17 @@ export const ModSplash = () => {
 
         <div className="realm-panel mb-2 flex w-full max-w-[320px] flex-col items-center gap-1 rounded-2xl px-6 py-4 shadow-xl backdrop-blur-md">
           <div className="catalog-body-font flex items-center gap-4 text-sm font-semibold">
-            <div className="realm-text-ink flex items-center gap-1">
+            <div
+              className="realm-text-ink flex items-center gap-1"
+              title={upvotesTooltip}
+            >
               <IoThumbsUpSharp className="text-[14px]" />
               <span>{state.modListing?.upvotes || 0}</span>
             </div>
-            <div className="realm-text-soft flex items-center gap-1">
+            <div
+              className="realm-text-soft flex items-center gap-1"
+              title={playerCountTooltip}
+            >
               <IoEyeSharp className="text-[14px]" />
               <span>{state.modListing?.playerCount || 0}</span>
             </div>
