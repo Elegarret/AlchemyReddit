@@ -7,6 +7,7 @@ import {
   validateModDraft,
 } from '../../modding/runtime';
 import {
+  type AdminModListItem,
   modDocSchema,
   modListItemSchema,
   saveDraftInputSchema,
@@ -21,15 +22,18 @@ import {
 import { getPostUrl } from './post';
 
 const catalogKey = 'mods:catalog';
+const allModsKey = 'mods:all';
 
 const getLatestKey = (modId: string) => `mod:${modId}:latest`;
 const getMetaKey = (modId: string) => `mod:${modId}:meta`;
 const getDraftKey = (userId: string, modId: string) =>
   `mod:${modId}:draft:${userId}`;
+const getDraftOwnersKey = (modId: string) => `mod:${modId}:draft-owners`;
 const getOwnerKey = (userId: string) => `mods:owner:${userId}`;
 const getPlayerKey = (modId: string) => `mod:${modId}:players`;
 const normalizeRedditPostId = (postId: string) =>
   postId.startsWith('t3_') ? postId : `t3_${postId}`;
+const getUpdatedAtScore = (updatedAt: string) => -(Date.parse(updatedAt) || Date.now());
 
 const parseMod = (value: string | undefined) => {
   if (!value) {
@@ -85,20 +89,51 @@ const saveMeta = async (mod: ModDoc) => {
 };
 
 const indexModForOwner = async (mod: ModDoc) => {
-  const updatedAt = Date.parse(mod.updatedAt) || Date.now();
   await redis.zAdd(getOwnerKey(mod.ownerUserId), {
     member: mod.id,
-    score: -updatedAt,
+    score: getUpdatedAtScore(mod.updatedAt),
   });
 };
 
 const indexPublishedMod = async (mod: ModDoc) => {
-  const updatedAt = Date.parse(mod.updatedAt) || Date.now();
-  await redis.zAdd(catalogKey, { member: mod.id, score: -updatedAt });
+  await redis.zAdd(catalogKey, {
+    member: mod.id,
+    score: getUpdatedAtScore(mod.updatedAt),
+  });
+};
+
+const indexModGlobally = async (mod: Pick<ModDoc, 'id' | 'updatedAt'>) => {
+  await redis.zAdd(allModsKey, {
+    member: mod.id,
+    score: getUpdatedAtScore(mod.updatedAt),
+  });
+};
+
+const indexDraftOwnerForMod = async (
+  mod: Pick<ModDoc, 'id' | 'ownerUserId' | 'updatedAt'>
+) => {
+  await redis.zAdd(getDraftOwnersKey(mod.id), {
+    member: mod.ownerUserId,
+    score: getUpdatedAtScore(mod.updatedAt),
+  });
 };
 
 const loadLatestMod = async (modId: string) =>
   parseMod(await redis.get(getLatestKey(modId)));
+
+const loadMostRecentDraftForMod = async (modId: string) => {
+  const ownerEntries = await redis.zRange(getDraftOwnersKey(modId), 0, 9);
+  for (const { member } of ownerEntries) {
+    const draft = parseMod(await redis.get(getDraftKey(member, modId)));
+    if (draft) {
+      return draft;
+    }
+
+    await redis.zRem(getDraftOwnersKey(modId), [member]);
+  }
+
+  return null;
+};
 
 const stripPublishedFields = (mod: ModDoc): ModDoc => {
   const { publishedAt, publishedHash, sharePostId, ...draftState } = mod;
@@ -165,6 +200,21 @@ export const recordUniqueModPlayer = async (modId: string, userId: string) => {
 };
 
 const enrichListItem = async (item: ModListItem): Promise<ModListItem> => {
+  const [upvotes, playerCount] = await Promise.all([
+    getModUpvotes(item),
+    getModPlayerCount(item.id),
+  ]);
+
+  return {
+    ...item,
+    upvotes,
+    playerCount,
+  };
+};
+
+const enrichAdminListItem = async (
+  item: AdminModListItem
+): Promise<AdminModListItem> => {
   const [upvotes, playerCount] = await Promise.all([
     getModUpvotes(item),
     getModPlayerCount(item.id),
@@ -245,6 +295,51 @@ export const listModsForUser = async (userId: string) => {
   );
 };
 
+export const listAllAdminMods = async (): Promise<AdminModListItem[]> => {
+  const [allEntries, catalogEntries] = await Promise.all([
+    redis.zRange(allModsKey, 0, 199),
+    redis.zRange(catalogKey, 0, 199),
+  ]);
+  const modIds = Array.from(
+    new Set(
+      [...allEntries, ...catalogEntries].map(({ member }) => member)
+    )
+  );
+  const items = await Promise.all(
+    modIds.map(async (modId) => {
+      const [latest, draft] = await Promise.all([
+        loadLatestMod(modId),
+        loadMostRecentDraftForMod(modId),
+      ]);
+      const source = draft ?? latest;
+
+      if (!source) {
+        return null;
+      }
+
+      return {
+        ...serializeListItem(source, {
+          hasDraftVersion: draft !== null,
+          hasPublishedVersion: latest?.status === 'published',
+        }),
+        ...(draft
+          ? {
+              draftOwnerUsername: draft.ownerUsername,
+              draftUpdatedAt: draft.updatedAt,
+            }
+          : {}),
+        latestVersionStatus: latest?.status ?? null,
+      };
+    })
+  );
+
+  return await Promise.all(
+    items
+      .filter((item): item is AdminModListItem => item !== null)
+      .map(enrichAdminListItem)
+  );
+};
+
 export const getEditableModForUser = async (
   userId: string,
   username: string | undefined,
@@ -322,6 +417,8 @@ export const saveDraftForUser = async (
     existingPublished?.status === 'published' ? existingPublished : draft
   );
   await indexModForOwner(draft);
+  await indexModGlobally(draft);
+  await indexDraftOwnerForMod(draft);
   return draft;
 };
 
@@ -373,6 +470,8 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
   );
   await saveMeta(published);
   await indexModForOwner(published);
+  await indexModGlobally(published);
+  await indexDraftOwnerForMod(published);
   await indexPublishedMod(published);
   const sharePost = await createSharePostForMod(userId, modId);
   return {
@@ -435,6 +534,7 @@ export const hidePublishedMod = async (
 
   await redis.set(getLatestKey(modId), JSON.stringify(hidden));
   await redis.set(getMetaKey(modId), JSON.stringify(serializeListItem(hidden)));
+  await indexModGlobally(hidden);
   await redis.zRem(catalogKey, [modId]);
   return hidden;
 };
@@ -490,7 +590,8 @@ export const removeModForUser = async (
       .map((ownerId) => getDraftKey(ownerId, modId)),
     getLatestKey(modId),
     getMetaKey(modId),
-    getPlayerKey(modId)
+    getPlayerKey(modId),
+    getDraftOwnersKey(modId)
   );
   await Promise.all(
     Array.from(ownerIds).map(async (ownerId) =>
@@ -498,6 +599,7 @@ export const removeModForUser = async (
     )
   );
   await redis.zRem(catalogKey, [modId]);
+  await redis.zRem(allModsKey, [modId]);
 
   return { success: true };
 };
@@ -587,6 +689,8 @@ export const unpublishModForUser = async (
   await redis.set(getDraftKey(userId, modId), JSON.stringify(unpublished));
   await saveMeta(unpublished);
   await indexModForOwner(unpublished);
+  await indexModGlobally(unpublished);
+  await indexDraftOwnerForMod(unpublished);
   await redis.zRem(catalogKey, [modId]);
 
   return unpublished;

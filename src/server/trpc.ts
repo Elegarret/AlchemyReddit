@@ -18,6 +18,7 @@ import {
   getPublishedModListItem,
   hidePublishedMod,
   listCatalogMods,
+  listAllAdminMods,
   listModsForUser,
   publishDraftForUser,
   recordUniqueModPlayer,
@@ -121,6 +122,17 @@ export const appRouter = t.router({
   }),
   mods: t.router({
     listCatalog: publicProcedure.query(async () => await listCatalogMods()),
+    listAllAdmin: publicProcedure.query(async () => {
+      const username = context.userId
+        ? await reddit.getCurrentUsername().catch(() => undefined)
+        : undefined;
+
+      if (!(await isCurrentUserModerator(username))) {
+        throw new Error('You are not allowed to view all realms.');
+      }
+
+      return await listAllAdminMods();
+    }),
     listMine: publicProcedure.query(async () => {
       if (!context.userId) {
         return [];

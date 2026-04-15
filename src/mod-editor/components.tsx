@@ -560,7 +560,7 @@ export const ElementAdvancedButton = ({
                   }
                   rows={5}
                   maxLength={MAX_ELEMENT_MESSAGE_LENGTH}
-                  placeholder="Shown in the in-game discovery popup for this element."
+                  placeholder="Shown in the in-game discovery popup for this element. (Markdown allowed)"
                   className="realm-input custom-scrollbar w-full rounded-2xl border px-4 py-3 text-sm outline-none"
                 />
                 <div className="realm-text-muted mt-1 text-right text-xs">
@@ -1297,7 +1297,7 @@ export const ReactionWidget = ({
                 onUpdateScript(index, nextValue);
               }}
               onEditingSettled={() => setShouldShowScriptValidation(true)}
-              placeholder={`add dust\npopup "The cupboard is locked.", key\nif (count(health) < 10) win "You survived."`}
+              placeholder={`add dust\npopup "The cupboard is locked. (Markdown allowed)", key\nif (count(health) < 10) win "You survived. (Markdown allowed)"`}
             />
 
             {scriptIssues.length > 0 && (

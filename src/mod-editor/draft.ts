@@ -14,6 +14,7 @@ import {
 } from '../modding/reaction-script';
 import {
   MAX_REALM_SUMMARY_LENGTH,
+  modDocSchema,
   normalizeModCounterDefinition,
   type ReactionCommentBlock,
   type ReactionComments,
@@ -21,6 +22,7 @@ import {
   type ModElement,
   type ModListItem,
   type SaveDraftInput,
+  saveDraftInputSchema,
 } from '../modding/types';
 import { DEFAULT_ELEMENT_NAME_PREFIX } from './constants';
 
@@ -110,6 +112,56 @@ export const createEmptyDraft = (): SaveDraftInput => ({
 
 export const clampRealmSummary = (summary: string) =>
   summary.slice(0, MAX_REALM_SUMMARY_LENGTH);
+
+const toImportedDraft = (
+  draft:
+    | ReturnType<typeof saveDraftInputSchema.parse>
+    | ReturnType<typeof modDocSchema.parse>
+): SaveDraftInput => ({
+  title: draft.title,
+  summary: clampRealmSummary(draft.summary),
+  intro: draft.intro,
+  startingElementIds: draft.startingElementIds,
+  counters: draft.counters,
+  showPalette: draft.showPalette,
+  elements: draft.elements,
+  reactions: draft.reactions,
+  reactionComments: normalizeReactionComments(draft),
+});
+
+export const serializeDraftForExport = (draft: SaveDraftInput) =>
+  JSON.stringify(
+    {
+      ...draft,
+      reactionComments: normalizeReactionComments(draft),
+    },
+    null,
+    2
+  );
+
+export const parseImportedDraftText = (text: string): SaveDraftInput => {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('Import failed: invalid JSON.');
+  }
+
+  const importedDraft = saveDraftInputSchema.safeParse(parsed);
+  if (importedDraft.success) {
+    return toImportedDraft(importedDraft.data);
+  }
+
+  const importedMod = modDocSchema.safeParse(parsed);
+  if (importedMod.success) {
+    return toImportedDraft(importedMod.data);
+  }
+
+  throw new Error(
+    'Import failed: expected exported realm JSON or published mod JSON.'
+  );
+};
 
 export const formatDate = (value: string) =>
   new Intl.DateTimeFormat(undefined, {

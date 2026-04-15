@@ -24,6 +24,7 @@ import {
   getRealmSizeTooltip,
   isEmptyRealmSizeLabel,
 } from './mod-size';
+import { getLocalStorageKeys } from './modding/runtime';
 import { trpc } from './trpc';
 import { openEntry, setEditorTargetModId, setLastPlayedRealm } from './webview-navigation';
 
@@ -43,6 +44,7 @@ type ModSplashListingPreview = {
 };
 
 type ModSplashState = {
+  hasProgress: boolean;
   status: 'loading' | 'unavailable' | 'ready';
   message: string;
   ruleset: ModSplashRulesetPreview | null;
@@ -52,6 +54,7 @@ type ModSplashState = {
 };
 
 const DEFAULT_MOD_SPLASH_STATE: ModSplashState = {
+  hasProgress: false,
   status: 'loading',
   message: '',
   ruleset: null,
@@ -117,6 +120,8 @@ const isModSplashState = (value: unknown): value is ModSplashState => {
 
   return (
     typeof Reflect.get(value, 'message') === 'string' &&
+    (Reflect.get(value, 'hasProgress') === undefined ||
+      typeof Reflect.get(value, 'hasProgress') === 'boolean') &&
     isStringOrNull(Reflect.get(value, 'username')) &&
     typeof Reflect.get(value, 'isModerator') === 'boolean' &&
     (ruleset === null || isModSplashRulesetPreview(ruleset)) &&
@@ -127,9 +132,47 @@ const isModSplashState = (value: unknown): value is ModSplashState => {
 const getModSplashCacheKey = () => getInlineViewCacheKey('mod-splash');
 
 const readCachedModSplashState = () =>
-  readInlineViewCache(getModSplashCacheKey(), (value) =>
-    isModSplashState(value) ? value : null
+  readInlineViewCache(getModSplashCacheKey(), (value) => {
+    if (!isModSplashState(value)) {
+      return null;
+    }
+
+    return {
+      ...value,
+      hasProgress: value.hasProgress ?? false,
+    };
+  });
+
+const getLocalProgressCount = (
+  ruleset: Awaited<ReturnType<typeof trpc.init.get.query>>['activeRuleset']
+) => {
+  if (!ruleset) {
+    return 0;
+  }
+
+  try {
+    const saved = localStorage.getItem(getLocalStorageKeys(ruleset).discovered);
+    if (!saved) {
+      return 0;
+    }
+
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => typeof item === 'string').length
+      : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const resolveHasProgress = (
+  response: Awaited<ReturnType<typeof trpc.init.get.query>>
+) => {
+  const localProgressCount = getLocalProgressCount(response.activeRuleset);
+  return (
+    localProgressCount > 0 || (response.redditDiscovered?.length ?? 0) > 0
   );
+};
 
 const toRulesetPreview = (
   ruleset: Awaited<ReturnType<typeof trpc.init.get.query>>['activeRuleset']
@@ -169,6 +212,7 @@ const resolveModSplashState = (
 
   if (response.rulesetUnavailableReason || !ruleset) {
     return {
+      hasProgress: resolveHasProgress(response),
       status: 'unavailable',
       message:
         response.rulesetUnavailableReason ?? 'Failed to load the Realm.',
@@ -180,6 +224,7 @@ const resolveModSplashState = (
   }
 
   return {
+    hasProgress: resolveHasProgress(response),
     status: 'ready',
     message: '',
     ruleset,
@@ -400,7 +445,7 @@ export const ModSplash = () => {
           className="realm-button-accent catalog-title-font w-full cursor-pointer rounded-full px-8 py-4 text-lg font-black tracking-[0.1em] uppercase shadow-[0_0_40px_-10px_rgba(6,182,212,0.25)] transition-all hover:scale-105 active:scale-95 sm:text-xl"
           onClick={openGame}
         >
-          Enter The Realm
+          {state.hasProgress ? 'Continue...' : 'Enter The Realm'}
         </button>
         <div className="grid grid-cols-2 gap-3">
           <button

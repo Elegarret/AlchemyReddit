@@ -193,6 +193,14 @@ export const modListItemSchema = z.object({
 
 export type ModListItem = z.infer<typeof modListItemSchema>;
 
+export const adminModListItemSchema = modListItemSchema.extend({
+  draftOwnerUsername: z.string().min(1).max(64).optional(),
+  draftUpdatedAt: z.string().min(1).max(64).optional(),
+  latestVersionStatus: modStatusSchema.nullable().optional().default(null),
+});
+
+export type AdminModListItem = z.infer<typeof adminModListItemSchema>;
+
 export const sharePostDataSchema = z.object({
   modId: z.string().min(1).max(64),
   title: z.string().min(1).max(80),

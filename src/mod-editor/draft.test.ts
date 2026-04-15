@@ -6,6 +6,8 @@ import {
   formatReactionText,
   normalizeReactionComments,
   parseReactionTextToDraft,
+  parseImportedDraftText,
+  serializeDraftForExport,
 } from './draft';
 
 describe('applyReactionTextToDraft', () => {
@@ -337,6 +339,87 @@ describe('applyReactionTextToDraft', () => {
       resolved.draft.elements.find((element) => element.id === resolved.elementId)
     ).toMatchObject({
       name: 'stone',
+    });
+  });
+
+  it('exports and re-imports the full draft payload including comments', () => {
+    const draft = {
+      ...createDraftWithElements('Steam'),
+      id: 'mod-123',
+      title: 'Storm Lab',
+      summary: 'A custom realm.',
+      intro: 'Hello **realm**',
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: ['steam'],
+          script: 'popup "Found a clue."',
+        },
+      ],
+      reactionComments: {
+        byReaction: [
+          {
+            headerComment: ' header',
+            leadingComments: [' before'],
+          },
+        ],
+        trailingComments: [' after'],
+      },
+    };
+
+    expect(parseImportedDraftText(serializeDraftForExport(draft))).toEqual({
+      title: 'Storm Lab',
+      summary: 'A custom realm.',
+      intro: 'Hello **realm**',
+      startingElementIds: ['air', 'fire', 'earth', 'water'],
+      counters: [],
+      showPalette: true,
+      elements: draft.elements,
+      reactions: draft.reactions,
+      reactionComments: draft.reactionComments,
+    });
+  });
+
+  it('imports published mod JSON as a new draft without server-owned metadata', () => {
+    const imported = parseImportedDraftText(
+      JSON.stringify({
+        id: 'mod-999',
+        title: 'Imported Realm',
+        summary: 'Pulled from a published mod.',
+        intro: 'Welcome back',
+        ownerUserId: 't2_owner',
+        ownerUsername: 'realmowner',
+        startingElementIds: ['air', 'fire'],
+        counters: [],
+        showPalette: true,
+        elements: createEmptyDraft().elements,
+        reactions: [],
+        reactionComments: {
+          byReaction: [],
+          trailingComments: [],
+        },
+        status: 'published',
+        updatedAt: '2026-04-08T00:00:00.000Z',
+        publishedAt: '2026-04-08T00:00:00.000Z',
+        publishedHash: 'hash-1',
+        sharePostId: 't3_share',
+      })
+    );
+
+    expect(imported).toEqual({
+      title: 'Imported Realm',
+      summary: 'Pulled from a published mod.',
+      intro: 'Welcome back',
+      startingElementIds: ['air', 'fire'],
+      counters: [],
+      showPalette: true,
+      elements: createEmptyDraft().elements,
+      reactions: [],
+      reactionComments: {
+        byReaction: [],
+        trailingComments: [],
+      },
     });
   });
 });

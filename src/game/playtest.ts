@@ -1,4 +1,7 @@
-import { PLAYTEST_RULESET_STORAGE_KEY } from '../modding/runtime';
+import {
+  canonicalizeReactionMap,
+  PLAYTEST_RULESET_STORAGE_KEY,
+} from '../modding/runtime';
 import { type ActiveRuleset, type ModCounterDefinition } from '../modding/types';
 
 type PersistedRuleset = {
@@ -86,8 +89,8 @@ export const readPlaytestRuleset = (): ActiveRuleset | null => {
       storageScope: parsed.storageScope,
       startingElements: parsed.startingElements,
       startingCounterElementIds: parsed.startingCounterElementIds ?? [],
-      recipes: parsed.recipes,
-      reactionScripts: parsed.reactionScripts ?? {},
+      recipes: canonicalizeReactionMap(parsed.recipes),
+      reactionScripts: canonicalizeReactionMap(parsed.reactionScripts ?? {}),
       elementStyles: parsed.elementStyles,
       elementIcons: parsed.elementIcons,
       elementEffects: parsed.elementEffects ?? {},

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { BASE_RULESET } from './base-ruleset';
 import {
   buildRulesetFromDraft,
+  canonicalizeReactionMap,
   DEFAULT_MOD_TITLE,
   getAutoRemovedReactionElementIds,
   resolveReactionForRuleset,
@@ -754,5 +756,40 @@ describe('validateModDraft', () => {
     });
 
     expect(result.scriptErrors).toEqual([]);
+  });
+});
+
+describe('reaction map canonicalization', () => {
+  it('normalizes reversed recipe keys to the lookup order', () => {
+    expect(
+      resolveReactionForRuleset({
+        counterValues: {},
+        currentTableElements: [
+          { elementId: 'earth', id: 'table-1' },
+          { elementId: 'water', id: 'table-2' },
+        ],
+        discoveredElementIds: ['earth', 'water'],
+        leftId: 'earth',
+        rightId: 'water',
+        ruleset: BASE_RULESET,
+      })
+    ).toMatchObject({
+      ok: true,
+      result: {
+        emittedElementIds: ['mud'],
+        usedScript: false,
+      },
+    });
+  });
+
+  it('collapses reversed duplicate keys into one canonical entry', () => {
+    expect(
+      canonicalizeReactionMap({
+        'lizard+shells': ['turtle'],
+        'shells+lizard': ['turtle'],
+      })
+    ).toEqual({
+      'lizard+shells': ['turtle'],
+    });
   });
 });

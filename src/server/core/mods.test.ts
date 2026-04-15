@@ -1,5 +1,5 @@
 import { expect, vi } from 'vitest';
-import { reddit } from '@devvit/web/server';
+import { reddit, redis } from '@devvit/web/server';
 import { Context, runWithContext } from '@devvit/server';
 import { Header } from '@devvit/shared-types/Header.js';
 import { test } from '../test';
@@ -7,6 +7,8 @@ import type { ModElement } from '../../modding/types';
 import {
   getEditableModForUser,
   getPublishedMod,
+  hidePublishedMod,
+  listAllAdminMods,
   listCatalogMods,
   listModsForUser,
   publishDraftForUser,
@@ -14,6 +16,7 @@ import {
   saveDraftForUser,
   unpublishModForUser,
 } from './mods';
+import { appRouter } from '../trpc';
 
 const makeElement = (id: string, name: string): ModElement => ({
   id,
@@ -312,6 +315,124 @@ test("moderators can load and save another user's published realm", async ({
   expect(moderatorSaved.ownerUserId).toBe(userId);
   expect(moderatorSaved.ownerUsername).toBe(username);
   expect(moderatorSaved.summary).toBe('Moderator summary.');
+});
+
+test('admin listing includes draft-only, published, and hidden realms', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  const sharePostId = 't3_sharepost-admin';
+  mocks.reddit.linksAndComments.addPost({
+    id: sharePostId,
+    title: "Storm Lab (testuser's realm)",
+  });
+  const sharePost = await reddit.getPostById(sharePostId);
+  Object.defineProperty(sharePost, 'id', {
+    configurable: true,
+    value: 'sharepost-admin',
+    writable: true,
+  });
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(sharePost);
+
+  const draftOnly = await saveStormLabDraft(
+    userId,
+    username,
+    'Draft-only summary.'
+  );
+  const published = await saveStormLabDraft(
+    userId,
+    username,
+    'Published summary.'
+  );
+  await publishDraftForUser(userId, published.id);
+
+  const hidden = await saveStormLabDraft(userId, username, 'Hidden summary.');
+  await publishDraftForUser(userId, hidden.id);
+  await hidePublishedMod(userId, username, hidden.id);
+
+  const adminItems = await listAllAdminMods();
+
+  expect(adminItems.map((item) => item.id)).toEqual(
+    expect.arrayContaining([draftOnly.id, published.id, hidden.id])
+  );
+  expect(
+    adminItems.find((item) => item.id === draftOnly.id)
+  ).toMatchObject({
+    hasDraftVersion: true,
+    hasPublishedVersion: false,
+    latestVersionStatus: null,
+    status: 'draft',
+  });
+  expect(
+    adminItems.find((item) => item.id === published.id)
+  ).toMatchObject({
+    hasDraftVersion: true,
+    hasPublishedVersion: true,
+    latestVersionStatus: 'published',
+  });
+  expect(
+    adminItems.find((item) => item.id === hidden.id)
+  ).toMatchObject({
+    hasDraftVersion: true,
+    hasPublishedVersion: false,
+    latestVersionStatus: 'hidden',
+  });
+});
+
+test('admin listing still includes published realms that predate the global admin index', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  const sharePostId = 't3_sharepost-preindex';
+  mocks.reddit.linksAndComments.addPost({
+    id: sharePostId,
+    title: "Storm Lab (testuser's realm)",
+  });
+  const sharePost = await reddit.getPostById(sharePostId);
+  Object.defineProperty(sharePost, 'id', {
+    configurable: true,
+    value: 'sharepost-preindex',
+    writable: true,
+  });
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(sharePost);
+
+  const published = await saveStormLabDraft(
+    userId,
+    username,
+    'Published before admin indexing.'
+  );
+  await publishDraftForUser(userId, published.id);
+  await redis.zRem('mods:all', [published.id]);
+
+  const adminItems = await listAllAdminMods();
+
+  expect(adminItems.find((item) => item.id === published.id)).toMatchObject({
+    hasPublishedVersion: true,
+    id: published.id,
+    latestVersionStatus: 'published',
+  });
+});
+
+test('non-moderators cannot access the admin realm listing query', async ({
+  headers,
+  username,
+}) => {
+  const moderators = reddit.getModerators({
+    subredditName: 'testsub',
+    username,
+    limit: 1,
+  });
+  vi.spyOn(moderators, 'all').mockResolvedValue([]);
+  vi.spyOn(reddit, 'getModerators').mockReturnValue(moderators);
+
+  await expect(
+    runWithContext(Context(headers), async () => {
+      const caller = appRouter.createCaller({});
+      return await caller.mods.listAllAdmin();
+    })
+  ).rejects.toThrow('You are not allowed to view all realms.');
 });
 
 test('draft save and load preserve editor-only reaction comments', async ({

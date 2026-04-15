@@ -69,6 +69,14 @@ const normalizeName = (value: string) =>
 export const normalizeReactionKey = (leftId: string, rightId: string) =>
 	[leftId, rightId].sort((a, b) => a.localeCompare(b)).join('+');
 
+export const canonicalizeReactionMap = <TValue>(reactionMap: Record<string, TValue>) =>
+	Object.fromEntries(
+		Object.entries(reactionMap).map(([key, value]) => {
+			const [leftId = '', rightId = ''] = key.split('+');
+			return [normalizeReactionKey(leftId, rightId), value];
+		})
+	);
+
 export const sanitizeElementName = (name: string) =>
 	name.replace(RESERVED_ELEMENT_NAME_CHARACTER_PATTERN_GLOBAL, '');
 
@@ -752,28 +760,35 @@ export const validateModDraft = (draft: {
 };
 
 export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
-	const recipes = Object.fromEntries(
-		mod.reactions.map((reaction) => [normalizeReactionKey(reaction.leftId, reaction.rightId), reaction.outputIds])
+	const recipes = canonicalizeReactionMap(
+		Object.fromEntries(
+			mod.reactions.map((reaction) => [
+				normalizeReactionKey(reaction.leftId, reaction.rightId),
+				reaction.outputIds,
+			])
+		)
 	);
-  const reactionScripts = Object.fromEntries(
-    mod.reactions
-      .filter((reaction) => hasReactionScript(reaction.script))
-      .map((reaction) => [
-        normalizeReactionKey(reaction.leftId, reaction.rightId),
-        reaction.script?.trim() ?? '',
-      ])
-  );
-  const elementNames: Record<string, string> = {};
-  const elementStyles: Record<string, string> = {};
-  const elementIcons: Record<string, string> = {};
-  const elementEffects: ActiveRuleset['elementEffects'] = {};
-  const elementMessages: Record<string, string> = {};
-  const nonConsumableElementIds: string[] = [];
-  for (const element of mod.elements) {
-    elementNames[element.id] = element.name;
-    elementStyles[element.id] = getModElementClasses(
-      element.bgColorToken ?? DEFAULT_MOD_BG_COLOR_TOKEN,
-      element.frameColorToken ?? DEFAULT_MOD_FRAME_COLOR_TOKEN
+	const reactionScripts = canonicalizeReactionMap(
+		Object.fromEntries(
+			mod.reactions
+				.filter((reaction) => hasReactionScript(reaction.script))
+				.map((reaction) => [
+					normalizeReactionKey(reaction.leftId, reaction.rightId),
+					reaction.script?.trim() ?? '',
+				])
+		)
+	);
+	const elementNames: Record<string, string> = {};
+	const elementStyles: Record<string, string> = {};
+	const elementIcons: Record<string, string> = {};
+	const elementEffects: ActiveRuleset['elementEffects'] = {};
+	const elementMessages: Record<string, string> = {};
+	const nonConsumableElementIds: string[] = [];
+	for (const element of mod.elements) {
+		elementNames[element.id] = element.name;
+		elementStyles[element.id] = getModElementClasses(
+			element.bgColorToken ?? DEFAULT_MOD_BG_COLOR_TOKEN,
+			element.frameColorToken ?? DEFAULT_MOD_FRAME_COLOR_TOKEN
 		);
 		elementIcons[element.id] = element.emoji;
 		if (element.effect !== 'none') {
@@ -782,40 +797,40 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 		if (element.message) {
 			elementMessages[element.id] = element.message;
 		}
-    if (element.nonConsumable) {
-      nonConsumableElementIds.push(element.id);
-    }
+		if (element.nonConsumable) {
+			nonConsumableElementIds.push(element.id);
+		}
 	}
-  const counterDefinitions = buildCounterDefinitions(mod.counters, elementNames);
-  const counterElementIds = new Set(
-    counterDefinitions.map((counter) => counter.elementId)
-  );
-  const startingCounterElementIds = mod.startingElementIds.filter((elementId) =>
-    counterElementIds.has(elementId)
-  );
-  const startingElements = mod.startingElementIds.filter(
-    (elementId) => !counterElementIds.has(elementId)
-  );
+	const counterDefinitions = buildCounterDefinitions(mod.counters, elementNames);
+	const counterElementIds = new Set(
+		counterDefinitions.map((counter) => counter.elementId)
+	);
+	const startingCounterElementIds = mod.startingElementIds.filter((elementId) =>
+		counterElementIds.has(elementId)
+	);
+	const startingElements = mod.startingElementIds.filter(
+		(elementId) => !counterElementIds.has(elementId)
+	);
 
-  return {
-    kind: 'mod',
-    rulesetId: `mod:${mod.id}`,
-    title: mod.title,
-    summary: mod.summary,
-    intro: mod.intro,
-    storageScope: `mod:${mod.id}:${mod.publishedHash ?? createModFingerprint(mod)}`,
-    startingElements,
-    startingCounterElementIds,
-    recipes,
-    reactionScripts,
-    elementNames,
-    elementStyles,
-    elementIcons,
+	return {
+		kind: 'mod',
+		rulesetId: `mod:${mod.id}`,
+		title: mod.title,
+		summary: mod.summary,
+		intro: mod.intro,
+		storageScope: `mod:${mod.id}:${mod.publishedHash ?? createModFingerprint(mod)}`,
+		startingElements,
+		startingCounterElementIds,
+		recipes,
+		reactionScripts,
+		elementNames,
+		elementStyles,
+		elementIcons,
 		elementEffects,
 		keyItems: [],
 		keyItemData: {},
 		elementMessages,
-    nonConsumableElementIds,
+		nonConsumableElementIds,
 		counterDefinitions,
 		counterNames: counterDefinitions.map((counter) => counter.name),
 		showPalette: mod.showPalette,

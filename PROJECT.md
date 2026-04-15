@@ -28,6 +28,7 @@ Keep this file updated when architecture, major flows, or important project conv
 - `src/game/playtest.ts`: playtest ruleset loading from local storage
 - `src/game/types.ts`: gameplay UI types
 - `src/game/visuals.ts`: snow/background visual generators
+- `src/MarkdownBody.tsx`: shared markdown renderer for authored long-form UI copy
 - `src/mod-editor/ModEditorApp.tsx`: realm editor screen and save/publish/share flows
 - `src/mod-editor/components.tsx`: reusable editor controls/widgets
 - `src/mod-editor/constants.ts`: editor-local types and option lists
@@ -57,7 +58,11 @@ Keep this file updated when architecture, major flows, or important project conv
 - Inline splash entrypoints cache their last rendered state in session storage and revalidate on `window.focus`, which keeps return-from-game popup closes from falling back to a visibly cold inline reload.
 - The inline splash now routes its secondary CTA to the realm catalog (`Alchemy Hub`) instead of opening a fresh editor directly.
 - The compact realm catalog is a fixed single-view screen with a `Best` / `New` tab switcher, capped to 8 realms per tab in a 2x4 grid, and keeps realm creation as a compact header action instead of a separate section.
-- The shared realm splash swaps its secondary CTA to `Edit Realm` for the realm author or moderators/admins and preloads that realm into the editor; other viewers still get `Create My Realm`.
+- The shared realm splash swaps its secondary CTA to `Edit Realm` for the realm author or moderators/admins and preloads that realm into the editor; other viewers still get `Create My Realm`. Its primary CTA now changes to `Continue...` when that realm already has saved local or Reddit-backed progress for the active ruleset.
+- Authored intro text plus authored element-message and scripted `popup` / `win` / `lose` bodies now render through the shared markdown renderer with visible line breaks. Titles and short summaries/descriptions remain plain text only.
+- The mod editor now supports clipboard `Export JSON` and paste-based `Import JSON`, both tucked under the round three-dots realm action menu along with `Realm Page`. Export writes the full editor realm payload including reaction comments, while import accepts either that payload or published `ModDoc` JSON and always hydrates a new unsaved draft after stripping server-owned metadata.
+- The full catalog keeps `Best` and `New` published-only, while the `All` section switches to a moderator/admin dataset for moderator users. That admin dataset is backed by a global realm index plus the existing published catalog index, so it includes all published realms plus indexed draft/hidden realms; older draft-only or hidden realms appear after their next save-like action because no historical global index existed for them.
+- The `All` section admin edit action uses the same `alchemy-editor-target-mod-id` handoff and `getDraft` load path as the in-realm `Edit Realm` action.
 - Mod reactions can optionally carry per-reaction script text. Non-empty scripts override `outputIds` at runtime, and the editor validates script lines inline plus during overall draft validation.
 - Reaction script syntax now canonically uses `add`, bracket-less action forms such as `set health += 1`, `message "..."`, `popup "..."`, `win "..."`, and `lose "..."`, plus condition predicates like `not_discovered(...)` and `count(...)` comparisons. The per-reaction textarea exposes lightweight local autocomplete for those token families, while the full text editor serializes valid scripts back out in canonical form.
 - Reaction scripts and the full reaction-text editor now support `//` comments outside quoted strings. Script beautifying preserves comment lines and trailing comments, and comment-only script bodies do not count as active scripted overrides.
@@ -85,14 +90,23 @@ Keep this file updated when architecture, major flows, or important project conv
 - The mod editor emoji picker uses a self-hosted dataset at `public/emoji-data.json`, sourced from `emoji-picker-element-data/en/emojibase/data.json` via `npm run sync:emoji-data`.
 - The emoji picker follows `prefers-color-scheme` by default, so it renders in light or dark mode to match the rest of the app instead of forcing dark mode.
 
+## TODO
+- when admin opens the other's realm he has publish instead of publish update/ Investigate. Make sure that admin's edit does not create new entity instead of editing old one.
+- win/lose popup doesnt actually resets the progress, user has to do it manually from cog-meny. It just wipes the board and the palette, but the discovered list and probably other progress things remain unchanged.
+- invent something to sugar syntax to reduce the neccessety of writing counter checks in every reaction. Example: if we have a health param, then we must currently add a (if health > 0) check into every reaction, which is not convinient
+
+
 ## Future Plans
 
-- Add a user-facing tutorial, including guidance for reaction scripts and other modding flows where needed.
+- URGENT!!!  Add a user-facing tutorial, including guidance for reaction scripts and other modding flows where needed.
 - starred mods - >90% upvotes
 - featured mods, section on the main page, choose 5 random featured every time
 - Advanced realm settings: 
 - - inventory-style palette. Opened elements don't get there automatically, only by special script action. Same elememnts must stack there, i.e if stone was added twice, display as stone and (2) in the corner. Elements are not permamnet there, they being consumed when dragged out.
 - add user profiles
+- improved saves backward compatibility, do not wipe after every realm edit
+- plan: convert current hardcoded reactions set into the realm + replace all paths leading to old hardcoded game so the realm must open instead of hardcoded game. But that hardcoded realm must have no difference in expirience with the old one. It must also catch up saves from the hardcoded ga,e
+- allow several reactions with the same result, like A+B=,C+D= //results
 
 ## Commands
 
@@ -115,4 +129,5 @@ Keep this file updated when architecture, major flows, or important project conv
 - `npm run test -- draft` passes after adding reaction-text comment metadata round-tripping.
 - `npm run test -- runtime` passes after the single-copy non-consumable runtime filter.
 - `npm run test -- mods` passes after the share-post reuse-on-republish change.
-- The shared realm splash CTA change does not have dedicated automated coverage yet.
+- `npm run test -- mod-splash.test.tsx mod-catalog.test.tsx draft.test.ts ModEditorApp.test.tsx MarkdownBody.test.tsx src/server/core/mods.test.ts` passes after the realm resume CTA, markdown, import/export, and admin tooling updates.
+- `npm run test -- mod-catalog.test.tsx ModEditorApp.test.tsx src/server/core/mods.test.ts` passes after folding admin-visible realms into the `All` catalog section and moving utility actions under the round three-dots editor menu.

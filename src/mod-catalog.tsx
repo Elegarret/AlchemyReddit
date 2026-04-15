@@ -16,7 +16,7 @@ import {
   IoPlaySharp,
   IoThumbsUpSharp,
 } from 'react-icons/io5';
-import type { ModListItem } from './modding/types';
+import type { AdminModListItem, ModListItem } from './modding/types';
 import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
 import {
@@ -33,6 +33,13 @@ import {
 
 const ALL_PAGE_SIZE = 15;
 
+const formatDate = (value: string) =>
+  new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(value));
+
 const getSharePostUrl = (mod: ModListItem) => {
   if (!mod.sharePostId) {
     return null;
@@ -42,6 +49,8 @@ const getSharePostUrl = (mod: ModListItem) => {
 };
 
 export const Catalog = () => {
+  const [adminMods, setAdminMods] = useState<AdminModListItem[]>([]);
+  const [hasAdminTools, setHasAdminTools] = useState(false);
   const [mods, setMods] = useState<ModListItem[]>([]);
   const [myMods, setMyMods] = useState<ModListItem[]>([]);
   const [lastPlayedRealm, setLastPlayedRealmState] = useState(getLastPlayedRealm);
@@ -51,18 +60,35 @@ export const Catalog = () => {
 
   useEffect(() => {
     const fetchMods = async () => {
-      try {
-        const [catalogMods, ownMods] = await Promise.all([
-          trpc.mods.listCatalog.query(),
-          trpc.mods.listMine.query(),
-        ]);
-        setMods(Array.isArray(catalogMods) ? catalogMods : []);
-        setMyMods(Array.isArray(ownMods) ? ownMods : []);
-      } catch (error) {
-        console.error('Failed to load mods catalog', error);
-      } finally {
-        setLoading(false);
+      const [catalogResult, ownResult, adminResult] = await Promise.allSettled([
+        trpc.mods.listCatalog.query(),
+        trpc.mods.listMine.query(),
+        trpc.mods.listAllAdmin.query(),
+      ]);
+
+      if (catalogResult.status === 'fulfilled') {
+        setMods(Array.isArray(catalogResult.value) ? catalogResult.value : []);
+      } else {
+        console.error('Failed to load mods catalog', catalogResult.reason);
+        setMods([]);
       }
+
+      if (ownResult.status === 'fulfilled') {
+        setMyMods(Array.isArray(ownResult.value) ? ownResult.value : []);
+      } else {
+        console.error('Failed to load your realms', ownResult.reason);
+        setMyMods([]);
+      }
+
+      if (adminResult.status === 'fulfilled') {
+        setAdminMods(Array.isArray(adminResult.value) ? adminResult.value : []);
+        setHasAdminTools(true);
+      } else {
+        setAdminMods([]);
+        setHasAdminTools(false);
+      }
+
+      setLoading(false);
     };
 
     void fetchMods();
@@ -93,18 +119,31 @@ export const Catalog = () => {
     [myMods]
   );
 
+  const allModsSource = useMemo(
+    () =>
+      [...(hasAdminTools ? adminMods : mods)].sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      ),
+    [adminMods, hasAdminTools, mods]
+  );
+
   const allModsFiltered = useMemo(() => {
     if (!searchQuery) {
-      return mods;
+      return allModsSource;
     }
 
     const query = searchQuery.toLowerCase();
-    return mods.filter(
+    return allModsSource.filter(
       (mod) =>
         mod.title.toLowerCase().includes(query) ||
-        mod.ownerUsername.toLowerCase().includes(query)
+        mod.ownerUsername.toLowerCase().includes(query) ||
+        ('draftOwnerUsername' in mod &&
+          typeof mod.draftOwnerUsername === 'string' &&
+          mod.draftOwnerUsername.toLowerCase().includes(query)) ||
+        mod.status.toLowerCase().includes(query)
     );
-  }, [mods, searchQuery]);
+  }, [allModsSource, searchQuery]);
 
   const allModsPage = useMemo(
     () =>
@@ -116,6 +155,10 @@ export const Catalog = () => {
   );
 
   const totalPages = Math.ceil(allModsFiltered.length / ALL_PAGE_SIZE);
+
+  const allSearchPlaceholder = hasAdminTools
+    ? 'Search realms, drafts, or authors...'
+    : 'Search realms...';
 
   const openRealmPost = (url: string) => {
     navigateTo(url);
@@ -296,6 +339,101 @@ export const Catalog = () => {
     );
   };
 
+  const renderAdminWidget = (mod: AdminModListItem) => {
+    const shareUrl = getSharePostUrl(mod);
+    const upvotesTooltip = `Upvotes: ${mod.upvotes || 0}`;
+    const playerCountTooltip = `Users played: ${mod.playerCount || 0}`;
+    const latestStatusLabel =
+      mod.latestVersionStatus === null ? 'draft-only' : mod.latestVersionStatus;
+    const realmSizeLabel = getRealmSizeLabel(mod.reactionCount);
+    const realmSizeTooltip = getRealmSizeTooltip(mod.reactionCount);
+    const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
+      ? 'text-[color:var(--realm-size-empty-text)]'
+      : '';
+
+    return (
+      <div key={`admin-${mod.id}`} className="catalog-card overflow-hidden">
+        <span aria-hidden="true" className="catalog-corner-lily" />
+        <div className="catalog-header-strip flex items-start justify-between gap-3 px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="catalog-title-font catalog-text-ink truncate text-sm font-bold tracking-[0.08em] uppercase">
+              {mod.title}
+            </div>
+            <div className="catalog-body-font catalog-text-soft mt-1 text-[11px] italic">
+              By {mod.draftOwnerUsername ?? mod.ownerUsername}
+            </div>
+          </div>
+          <div className="flex flex-wrap justify-end gap-1">
+            {mod.hasDraftVersion && (
+              <span className="catalog-title-font catalog-status-draft rounded-full border px-2 py-0.5 text-[9px] font-bold tracking-[0.16em] uppercase">
+                Draft
+              </span>
+            )}
+            {mod.latestVersionStatus === 'published' && (
+              <span className="catalog-title-font catalog-status-published rounded-full border px-2 py-0.5 text-[9px] font-bold tracking-[0.16em] uppercase">
+                Published
+              </span>
+            )}
+            {mod.latestVersionStatus === 'hidden' && (
+              <span className="catalog-title-font rounded-full border border-slate-400/30 bg-slate-500/12 px-2 py-0.5 text-[9px] font-bold tracking-[0.16em] text-slate-200 uppercase">
+                Hidden
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="p-3">
+          <div className="catalog-body-font catalog-text-soft mb-3 text-[14px] leading-snug italic">
+            {mod.summary || 'No description provided.'}
+          </div>
+          <div className="catalog-body-font catalog-text-soft mb-3 space-y-1 text-[11px]">
+            <div>Latest saved status: {latestStatusLabel}</div>
+            {mod.draftUpdatedAt && (
+              <div>Latest draft: {formatDate(mod.draftUpdatedAt)}</div>
+            )}
+            <div>Latest update: {formatDate(mod.updatedAt)}</div>
+          </div>
+          <div className="catalog-body-font catalog-stat-text mb-3 flex items-center gap-3 text-[11px] font-semibold">
+            <div className="flex items-center gap-1" title={upvotesTooltip}>
+              <IoThumbsUpSharp className="text-[11px]" />
+              <span>{mod.upvotes || 0}</span>
+            </div>
+            <div className="flex items-center gap-1" title={playerCountTooltip}>
+              <IoEyeSharp className="text-[11px]" />
+              <span>{mod.playerCount || 0}</span>
+            </div>
+            <div
+              className={`flex items-center gap-1 ${realmSizeClassName}`}
+              title={realmSizeTooltip}
+            >
+              <IoLayersSharp className="text-[11px]" />
+              <span>{realmSizeLabel}</span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={(event) => openEditor(event, mod.id)}
+              className="catalog-title-font catalog-action-button flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold tracking-[0.08em] uppercase transition-colors"
+            >
+              <IoCreateOutline />
+              Edit
+            </button>
+            {shareUrl && (
+              <button
+                type="button"
+                onClick={() => openRealmPost(shareUrl)}
+                className="catalog-action-button catalog-action-invert flex cursor-pointer items-center justify-center rounded-full border px-3 py-1.5 text-[11px] transition-colors"
+                title="Open realm post"
+              >
+                <IoPlaySharp />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="catalog-parchment catalog-side-ornament relative flex min-h-screen w-full flex-col items-center overflow-y-auto py-4 sm:px-3">
       <div
@@ -349,12 +487,13 @@ export const Catalog = () => {
           <div className="catalog-title-font catalog-text-muted animate-pulse py-8 text-center text-sm font-bold tracking-[0.08em] uppercase">
             Loading realms...
           </div>
-        ) : mods.length === 0 ? (
-          <div className="catalog-card catalog-text-muted p-6 text-center text-sm">
-            No realms published yet.
-          </div>
         ) : (
           <>
+            {mods.length === 0 ? (
+              <div className="catalog-card catalog-text-muted p-6 text-center text-sm">
+                No realms published yet.
+              </div>
+            ) : (
             <div className="grid grid-cols-2 gap-2 sm:gap-4">
               {sortedByUpvotes.length > 0 && (
                 <div className="flex min-w-0 flex-col gap-3">
@@ -378,6 +517,7 @@ export const Catalog = () => {
                 </div>
               )}
             </div>
+            )}
 
             {sortedMyMods.length > 0 && (
               <div className="catalog-divider-line flex flex-col gap-3 border-t pt-5">
@@ -395,9 +535,15 @@ export const Catalog = () => {
                 <h2 className="catalog-title-font catalog-text-ink text-sm font-bold tracking-[0.22em] uppercase">
                   All
                 </h2>
+                {hasAdminTools && (
+                  <p className="catalog-body-font catalog-text-soft text-center text-xs italic">
+                    Includes published realms plus moderator-visible drafts and
+                    hidden realms that have been indexed.
+                  </p>
+                )}
                 <input
                   type="text"
-                  placeholder="Search realms..."
+                  placeholder={allSearchPlaceholder}
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
@@ -414,7 +560,13 @@ export const Catalog = () => {
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3">
-                    {allModsPage.map(renderCatalogWidget)}
+                    {hasAdminTools
+                      ? adminMods
+                          .filter((mod) => allModsPage.includes(mod))
+                          .map(renderAdminWidget)
+                      : mods
+                          .filter((mod) => allModsPage.includes(mod))
+                          .map(renderCatalogWidget)}
                   </div>
                   {totalPages > 1 && (
                     <div className="mt-4 flex items-center justify-center gap-4">

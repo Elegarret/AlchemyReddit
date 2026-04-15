@@ -7,6 +7,7 @@ import {
 	KEY_ITEMS_DATA,
 } from '../data/elements';
 import { RECIPES } from '../data/recipes';
+import { canonicalizeReactionMap } from './runtime';
 import type { ActiveRuleset } from './types';
 
 export const BASE_RULESET: ActiveRuleset = {
@@ -18,7 +19,7 @@ export const BASE_RULESET: ActiveRuleset = {
 	storageScope: 'base',
 	startingElements: ['air', 'fire', 'earth', 'water'],
 	startingCounterElementIds: [],
-	recipes: RECIPES,
+	recipes: canonicalizeReactionMap(RECIPES),
 	reactionScripts: {},
 	elementStyles: ELEMENT_COLORS,
 	elementIcons: ELEMENT_ICONS,

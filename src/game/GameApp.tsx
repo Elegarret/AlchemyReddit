@@ -14,6 +14,7 @@ import {
   IoSettingsSharp,
 } from 'react-icons/io5';
 import { BASE_RULESET } from '../modding/base-ruleset';
+import { MarkdownBody } from '../MarkdownBody';
 import {
   getAutoRemovedReactionElementIds,
   getLocalStorageKeys,
@@ -1895,9 +1896,10 @@ const GameSession = ({
 							<h1 className="mb-3 text-2xl font-black tracking-tight text-primary opacity-65">
 								{ruleset.title}
 							</h1>
-							<p className="text-base leading-relaxed text-slate-100/72 sm:text-xl">
-								{ruleset.intro}
-							</p>
+							<MarkdownBody
+								markdown={ruleset.intro}
+								className="text-base leading-relaxed text-slate-100/72 sm:text-xl"
+							/>
 						</div>
 					) : ruleset.kind === 'base' && discovered.length === 4 ? (
 						<h2 className="text-2xl font-black tracking-tight text-primary animate-bounce-subtle">
@@ -2566,15 +2568,14 @@ const GameSession = ({
 								</h3>
 							)}
 
-							<p
+							<MarkdownBody
+								markdown={activeScriptedPopup.text}
 								className={`mb-8 px-2 text-base leading-relaxed ${
 									activeScriptedPopup.kind === 'popup'
 										? 'text-slate-200'
 										: 'text-white/90'
 								}`}
-							>
-								{activeScriptedPopup.text}
-							</p>
+							/>
 
 							{activeScriptedPopup.kind === 'popup' ? (
 								<button
@@ -2624,9 +2625,10 @@ const GameSession = ({
 								{renderModalElementCard(infoPopup)}
 							</div>
 
-							<p className="text-sm text-slate-300 leading-relaxed mb-6 px-4">
-								{ruleset.elementMessages[infoPopup]}
-							</p>
+							<MarkdownBody
+								markdown={ruleset.elementMessages[infoPopup] ?? ''}
+								className="mb-6 px-4 text-sm leading-relaxed text-slate-300"
+							/>
 
 							<button
 								onClick={() => setInfoPopup(null)}

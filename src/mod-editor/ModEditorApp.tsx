@@ -9,8 +9,11 @@ import {
 } from 'react';
 import {
   IoAddSharp,
+  IoCloudUploadOutline,
   IoCloseSharp,
   IoCopyOutline,
+  IoDownloadOutline,
+  IoEllipsisHorizontal,
   IoPlaySharp,
   IoRocketSharp,
   IoSaveSharp,
@@ -68,7 +71,9 @@ import {
   getNextGeneratedElementName,
   getSharePostUrl,
   normalizeReactionComments,
+  parseImportedDraftText,
   parseReactionTextToDraft,
+  serializeDraftForExport,
 } from './draft';
 import {
   EditorMetaTabsPanel,
@@ -147,6 +152,10 @@ export const ModEditorApp = () => {
   const [pasteMissingElements, setPasteMissingElements] = useState<string[] | null>(
     null
   );
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importText, setImportText] = useState('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
   const [pendingRemoveModId, setPendingRemoveModId] = useState<string | null>(
     null
   );
@@ -166,6 +175,7 @@ export const ModEditorApp = () => {
   const elementNameInputRefs = useRef<Record<string, HTMLInputElement | null>>(
     {}
   );
+  const utilityMenuRef = useRef<HTMLDivElement | null>(null);
 
   const reactionTextParse = useMemo(
     () =>
@@ -358,6 +368,45 @@ export const ModEditorApp = () => {
     blinkValidation();
   };
 
+  const hydrateEditorDraft = (
+    nextDraft: SaveDraftInput,
+    nextLoadedDraftId: string | null
+  ) => {
+    setDraft(nextDraft);
+    setShouldShowValidationPlank(true);
+    setIsValidationExpanded(false);
+    setReactionText(formatReactionText(nextDraft));
+    setLoadedDraftId(nextLoadedDraftId);
+    setShareUrl(null);
+    setPendingRemoveModId(null);
+    setEditorTargetModId(null);
+    setTab('editor');
+  };
+
+  const resolveCurrentDraftForActions = () => {
+    if (reactionView === 'text' && reactionTextIssues.length > 0) {
+      const firstIssue = reactionTextIssues[0];
+      throw new Error(
+        firstIssue
+          ? formatReactionTextIssue(firstIssue)
+          : 'Fix text editor errors first'
+      );
+    }
+
+    const nextDraft = {
+      ...draftWithTextChanges,
+      summary: clampRealmSummary(draftWithTextChanges.summary),
+      intro: draftWithTextChanges.intro.trim(),
+      reactionComments: normalizeReactionComments(draftWithTextChanges),
+    };
+
+    if (reactionView === 'text') {
+      setDraft(nextDraft);
+    }
+
+    return nextDraft;
+  };
+
   const refreshLists = async () => {
     setMyMods(await trpc.mods.listMine.query());
   };
@@ -423,6 +472,30 @@ export const ModEditorApp = () => {
     target.setSelectionRange(cursor, cursor);
     setPendingElementFocusId(null);
   }, [draft.elements, pendingElementFocusId]);
+
+  useEffect(() => {
+    if (!isUtilityMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (utilityMenuRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsUtilityMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, [isUtilityMenuOpen]);
 
   const addElement = () => {
     updateDraft((current) => {
@@ -938,28 +1011,46 @@ export const ModEditorApp = () => {
   };
 
   const persistDraftSilently = async () => {
-    if (reactionView === 'text' && reactionTextIssues.length > 0) {
-      const firstIssue = reactionTextIssues[0];
-      throw new Error(
-        firstIssue
-          ? formatReactionTextIssue(firstIssue)
-          : 'Fix text editor errors first'
-      );
-    }
-
-    const nextDraft = draftWithTextChanges;
-    if (reactionView === 'text') {
-      setDraft(nextDraft);
-    }
+    const nextDraft = resolveCurrentDraftForActions();
 
     const saved = await trpc.mods.saveDraft.mutate({
       ...nextDraft,
-      summary: clampRealmSummary(nextDraft.summary),
-      intro: nextDraft.intro.trim(),
       ...(loadedDraftId ? { id: loadedDraftId } : {}),
     });
     setLoadedDraftId(saved.id);
     return saved.id;
+  };
+
+  const exportDraft = async () => {
+    try {
+      const nextDraft = resolveCurrentDraftForActions();
+      await navigator.clipboard.writeText(serializeDraftForExport(nextDraft));
+      showToast('Realm JSON copied');
+    } catch (error) {
+      console.error(error);
+      showToast(
+        error instanceof Error ? error.message : 'Failed to export realm JSON'
+      );
+    }
+  };
+
+  const closeImportModal = () => {
+    setImportError(null);
+    setImportText('');
+    setIsImportModalOpen(false);
+  };
+
+  const importDraft = () => {
+    try {
+      const importedDraft = parseImportedDraftText(importText);
+      hydrateEditorDraft(importedDraft, null);
+      closeImportModal();
+      showToast('Realm JSON imported as a new draft');
+    } catch (error) {
+      setImportError(
+        error instanceof Error ? error.message : 'Failed to import realm JSON'
+      );
+    }
   };
 
   const saveDraft = async () => {
@@ -1118,22 +1209,8 @@ export const ModEditorApp = () => {
         return;
       }
 
-      setDraft({
-        id: loaded.id,
-        title: loaded.title,
-        summary: clampRealmSummary(loaded.summary),
-        intro: loaded.intro,
-        startingElementIds: loaded.startingElementIds,
-        counters: loaded.counters,
-        showPalette: loaded.showPalette,
-        elements: loaded.elements,
-        reactions: loaded.reactions,
-        reactionComments: loaded.reactionComments,
-      });
-      setShouldShowValidationPlank(true);
-      setIsValidationExpanded(false);
-      setReactionText(
-        formatReactionText({
+      hydrateEditorDraft(
+        {
           id: loaded.id,
           title: loaded.title,
           summary: clampRealmSummary(loaded.summary),
@@ -1144,13 +1221,9 @@ export const ModEditorApp = () => {
           elements: loaded.elements,
           reactions: loaded.reactions,
           reactionComments: loaded.reactionComments,
-        })
+        },
+        loaded.id
       );
-      setLoadedDraftId(loaded.id);
-      setShareUrl(null);
-      setPendingRemoveModId(null);
-      setEditorTargetModId(null);
-      setTab('editor');
     } catch (error) {
       console.error(error);
       showToast(
@@ -1507,7 +1580,7 @@ export const ModEditorApp = () => {
                         }))
                       }
                       maxLength={MAX_REALM_INTRO_LENGTH}
-                      placeholder="Intro shown when players open this realm. It disappears after the first reaction."
+                      placeholder="Intro shown when players open this realm. It disappears after the first reaction. (Markdown allowed)"
                       rows={6}
                       className="realm-input catalog-body-font w-full rounded-2xl border px-4 pt-3 pr-[4.5rem] pb-8 text-sm outline-none"
                     />
@@ -1600,34 +1673,80 @@ export const ModEditorApp = () => {
                       <IoShareOutline />
                       Share
                     </button>
-                    <button
-                      type="button"
-                      aria-disabled={isBusy || !!realmPageBlockedReason}
-                      title={
-                        realmPageBlockedReason || 'Open the published realm page.'
-                      }
-                      onClick={() => {
-                        if (isBusy) {
-                          return;
-                        }
+                    <div ref={utilityMenuRef} className="relative">
+                      <button
+                        type="button"
+                        aria-label="More realm actions"
+                        onClick={() => {
+                          if (isBusy) {
+                            return;
+                          }
+                          setIsUtilityMenuOpen((current) => !current);
+                        }}
+                        title="More realm actions"
+                        className={`${editorActionButtonClass} editor-action-button-secondary ${
+                          isBusy ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                        } flex h-9 w-9 items-center justify-center rounded-full px-0 py-0`}
+                      >
+                        <IoEllipsisHorizontal />
+                      </button>
+                      {isUtilityMenuOpen && (
+                        <div className="realm-panel-soft absolute top-full right-0 z-20 mt-2 flex min-w-[13rem] flex-col rounded-2xl border p-2 shadow-2xl backdrop-blur-xl">
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => {
+                              setIsUtilityMenuOpen(false);
+                              void exportDraft();
+                            }}
+                            className="catalog-title-font flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <IoDownloadOutline />
+                            Export JSON
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => {
+                              setIsUtilityMenuOpen(false);
+                              setImportError(null);
+                              setImportText('');
+                              setIsImportModalOpen(true);
+                            }}
+                            className="catalog-title-font flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <IoCloudUploadOutline />
+                            Import JSON
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsUtilityMenuOpen(false);
+                              if (isBusy) {
+                                return;
+                              }
 
-                        if (realmPageBlockedReason) {
-                          showToast(realmPageBlockedReason);
-                          return;
-                        }
+                              if (realmPageBlockedReason) {
+                                showToast(realmPageBlockedReason);
+                                return;
+                              }
 
-                        if (loadedSharePostUrl) {
-                          navigateTo(loadedSharePostUrl);
-                        }
-                      }}
-                      className={`${editorActionButtonClass} editor-action-button-secondary ${
-                        isBusy || realmPageBlockedReason
-                          ? 'cursor-not-allowed opacity-50'
-                          : 'cursor-pointer'
-                      }`}
-                    >
-                      Realm Page
-                    </button>
+                              if (loadedSharePostUrl) {
+                                navigateTo(loadedSharePostUrl);
+                              }
+                            }}
+                            className={`catalog-title-font flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${
+                              isBusy || realmPageBlockedReason
+                                ? 'cursor-not-allowed opacity-50'
+                                : 'cursor-pointer hover:bg-white/8'
+                            }`}
+                          >
+                            <IoCopyOutline />
+                            Realm Page
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={openAuthorsHelpPage}
@@ -1931,7 +2050,7 @@ export const ModEditorApp = () => {
                       onChange={handleReactionTextChange}
                       onPasteMissingElements={handlePasteMissingElements}
                       placeholder={
-                        'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    message "It opens."\n    add Treasure'
+                        'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    popup "It opens. (Markdown allowed)", Treasure\n    add Treasure'
                       }
                       reactionTextDraft={draft}
                       reactionTextIssues={reactionTextIssues}
@@ -2163,6 +2282,61 @@ export const ModEditorApp = () => {
           </div>
         )}
       </div>
+
+      {isImportModalOpen && (
+        <div className="absolute inset-0 z-[1200] flex items-center justify-center bg-[var(--overlay-bg)] px-4 backdrop-blur-md">
+          <div className="realm-panel relative w-full max-w-2xl rounded-3xl p-5 backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={closeImportModal}
+              className="absolute top-4 right-4 cursor-pointer rounded-full p-2 text-slate-400 transition-colors hover:text-slate-100"
+            >
+              <IoCloseSharp />
+            </button>
+            <div className="mb-3 pr-12">
+              <h2 className="catalog-title-font realm-text-ink text-xl font-black">
+                Import Realm JSON
+              </h2>
+              <p className="realm-text-soft mt-1 text-sm">
+                Paste exported realm JSON or published mod JSON. Import always
+                creates a new unsaved draft.
+              </p>
+            </div>
+            <textarea
+              aria-label="Import realm JSON"
+              value={importText}
+              onChange={(event) => {
+                setImportError(null);
+                setImportText(event.target.value);
+              }}
+              placeholder="Paste realm JSON here"
+              rows={16}
+              className="realm-input catalog-body-font custom-scrollbar min-h-[22rem] w-full rounded-2xl border px-4 py-3 text-sm outline-none"
+            />
+            {importError && (
+              <div className="mt-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {importError}
+              </div>
+            )}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeImportModal}
+                className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={importDraft}
+                className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

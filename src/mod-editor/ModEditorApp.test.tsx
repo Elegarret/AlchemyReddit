@@ -152,4 +152,51 @@ describe('ModEditorApp', () => {
 
     await unmount();
   });
+
+  it('shows inline validation when pasted import JSON is invalid', async () => {
+    const { container, unmount } = await renderApp();
+
+    const moreButton = container.querySelector(
+      'button[aria-label="More realm actions"]'
+    );
+    expect(moreButton).toBeTruthy();
+
+    await act(async () => {
+      moreButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const importButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Import JSON')
+    );
+    expect(importButton).toBeTruthy();
+
+    await act(async () => {
+      importButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const importTextarea = container.querySelector(
+      'textarea[aria-label="Import realm JSON"]'
+    );
+    expect(importTextarea).toBeTruthy();
+
+    await act(async () => {
+      if (importTextarea instanceof HTMLTextAreaElement) {
+        importTextarea.value = '{invalid';
+        importTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+
+    const confirmButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Import'
+    );
+    expect(confirmButton).toBeTruthy();
+
+    await act(async () => {
+      confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('Import failed: invalid JSON.');
+
+    await unmount();
+  });
 });
