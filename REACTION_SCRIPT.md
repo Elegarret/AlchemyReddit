@@ -1,6 +1,6 @@
 # Reaction Script
 
-One statement per line. Lines run top to bottom.
+One statement per line. Lines run top to bottom.star
 
 Canonical formatting uses bracket-less actions such as `set health += 1` and `popup "Text", key`. Older wrapped action forms like `set(health += 1)` or `message("Text")` may still parse, but the formatter rewrites them to canonical syntax.
 
@@ -17,21 +17,34 @@ A bare element name is shorthand for `add elementName`, but canonical formatting
 
 - `add element_1`
 - `add element_1, element_2`
-- `element_1`
-- `remove element_1`
-- `remove_all`
-- `remove_all element_1`
-- `set counter += 1`
-- `set counter -= 1`
-- `set counter = 10`
+- `element_1` - shortcut for `add element_1`
+- `remove element_1` - removes 1 element with given name
+- `remove_all` - clears table
+- `remove_all element_1` - removes all elements with this name
+- `set counter += 1` - add value
+- `set counter -= 1` - substract value
+- `set counter = 10` - set value
 - `message "Message at the top of the screen"`
 - `popup "Blocking popup text"`
 - `popup "Blocking popup text", icon_name`
-- `win "Win popup, game over"`
-- `win "Win popup, game over", icon_name`
-- `lose "You lose, start over"`
+- `win "Win popup, game over"` - show win screen
+- `win "Win popup, game over", icon_name` - show winscreen with an icon of given element
+- `lose "You lose, start over"` - the same as win, but lose:)
 - `lose "You lose, start over", icon_name`
-- `stop`
+- `stop` - prevent further lines from executing. Works like ''
+
+## Conditions
+
+- `on_table(elementName)`
+- `not_on_table(elementName)`
+- `discovered(elementName)` - if the element was discovered, could be true even when the element is not on the table
+- `not_discovered(elementName)`
+- `count(counterName) < number` - compare counter's value to the number
+- `count(counterName) <= number`
+- `count(counterName) > number`
+- `count(counterName) >= number`
+- `count(counterName) == number`
+- `count(counterName) != number`
 
 ## Counter Behavior
 
@@ -47,19 +60,6 @@ This means counters can be invisible until a script reveals them:
 - `add Health`
 - `set Health -= 1`
 - `remove Health`
-
-## Conditions
-
-- `on_table(elementName)`
-- `not_on_table(elementName)`
-- `discovered(elementName)`
-- `not_discovered(elementName)`
-- `count(counterName) < number`
-- `count(counterName) <= number`
-- `count(counterName) > number`
-- `count(counterName) >= number`
-- `count(counterName) == number`
-- `count(counterName) != number`
 
 Use `if (...) action` for a single conditional action. Conditions are flat and AND-only, for example:
 
