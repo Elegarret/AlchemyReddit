@@ -1,0 +1,1133 @@
+{
+  "id": "mod-mosmarbsw165",
+  "title": "Island Survival",
+  "summary": "try to survive on a desert island",
+  "intro": "You wake up on a sea shore. Your head is aching and you don't remember what happened. \n*Your ❤️Condition shows how much strength you have left: risky choices can lower it, food and rest can restore it, and hitting zero means you are dead*",
+  "startingElementIds": [
+    "element-1",
+    "element-1-2",
+    "element-1-3",
+    "condition"
+  ],
+  "counters": [
+    {
+      "elementId": "condition",
+      "initial": 3,
+      "max": 5,
+      "min": 0
+    }
+  ],
+  "showPalette": false,
+  "elements": [
+    {
+      "id": "element-1",
+      "name": "Inspect",
+      "emoji": "🔍️",
+      "bgColorToken": "ember",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "element-1-2",
+      "name": "beach",
+      "emoji": "🏖️",
+      "bgColorToken": "sun",
+      "frameColorToken": "ember",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "sticks",
+      "name": "Torch",
+      "emoji": "🔦",
+      "bgColorToken": "sun",
+      "frameColorToken": "#ee7411",
+      "message": "You found a torch! It would lit your way in the darkness!",
+      "effect": "light",
+      "nonConsumable": true
+    },
+    {
+      "id": "element-1-3",
+      "name": "sea",
+      "emoji": "🌊",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "element-1-4",
+      "name": "sand",
+      "emoji": "🟨",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "sticks-2",
+      "name": "stick",
+      "emoji": "🌿",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "cave",
+      "name": "cave",
+      "emoji": "🏿",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "stone",
+      "name": "stone",
+      "emoji": "🪨",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "fire",
+      "name": "sparks",
+      "emoji": "🎇",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "brushwood",
+      "name": "brushwood",
+      "emoji": "🪾",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "bonfire",
+      "name": "bonfire",
+      "emoji": "🔥",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "firepit",
+      "name": "firepit",
+      "emoji": "♨️",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "mud",
+      "name": "mud",
+      "emoji": "🟫",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "clay",
+      "name": "clay",
+      "emoji": "🟤",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "pot",
+      "name": "empty pot",
+      "emoji": "🍯",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "passage",
+      "name": "passage",
+      "emoji": "⤴️",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "clean-water",
+      "name": "clean water",
+      "emoji": "💧",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "valley",
+      "name": "valley",
+      "emoji": "🌄",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "salt-water",
+      "name": "salt water",
+      "emoji": "🫗",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "condition",
+      "name": "Condition",
+      "emoji": "❤️",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "spring",
+      "name": "spring",
+      "emoji": "💦",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "ridge",
+      "name": "ridge",
+      "emoji": "⛰️",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "reef",
+      "name": "reef",
+      "emoji": "🪸",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "pool",
+      "name": "pool",
+      "emoji": "🏞️",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "berry-bush",
+      "name": "berry bush",
+      "emoji": "🫐",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "campfire",
+      "name": "campfire",
+      "emoji": "🏕️",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "fishing-pole",
+      "name": "fishing pole",
+      "emoji": "🎣",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "lean-to",
+      "name": "lean to",
+      "emoji": "⛺",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "signal-mirror",
+      "name": "signal mirror",
+      "emoji": "🪞",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "beacon",
+      "name": "beacon",
+      "emoji": "🚨",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "lookout",
+      "name": "lookout",
+      "emoji": "🔭",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "watch-post",
+      "name": "watch post",
+      "emoji": "🛖",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    },
+    {
+      "id": "driftwood",
+      "name": "driftwood",
+      "emoji": "🪵",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "shell",
+      "name": "shell",
+      "emoji": "🐚",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "flotsam",
+      "name": "wreckage",
+      "emoji": "🧰",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "The floating wreckage has a thin metal panel you might pry loose with something.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "shell-hook",
+      "name": "shell hook",
+      "emoji": "🪝",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "metal-sheet",
+      "name": "metal sheet",
+      "emoji": "🔩",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "fish",
+      "name": "fish",
+      "emoji": "🐟",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "berries",
+      "name": "berries",
+      "emoji": "🫐",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "raft",
+      "name": "raft",
+      "emoji": "🛶",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "The raft is crude. It might float, but the reef and surf look strong enough to tear it apart.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "vine",
+      "name": "vine",
+      "emoji": "🌿",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "broad-leaf",
+      "name": "broad leaf",
+      "emoji": "🍃",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "bamboo",
+      "name": "bamboo",
+      "emoji": "🎋",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "reeds",
+      "name": "reeds",
+      "emoji": "🌾",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "kindling",
+      "name": "kindling",
+      "emoji": "🪵",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "cordage",
+      "name": "cordage",
+      "emoji": "🪢",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "line-hook",
+      "name": "line hook",
+      "emoji": "🧵",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "cooked-fish",
+      "name": "cooked fish",
+      "emoji": "🐟️",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "thatch",
+      "name": "thatch",
+      "emoji": "🌾",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "frame",
+      "name": "frame",
+      "emoji": "🪵",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "fresh-water",
+      "name": "fresh water",
+      "emoji": "💧",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "meal",
+      "name": "meal",
+      "emoji": "🍲",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "deadwood",
+      "name": "deadwood",
+      "emoji": "🪵",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "signal-pyre",
+      "name": "signal pyre",
+      "emoji": "🔥",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "smoke-signal",
+      "name": "smoke signal",
+      "emoji": "💨",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "wrecked-dinghy",
+      "name": "wrecked dinghy",
+      "emoji": "🚤",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "patched-dinghy",
+      "name": "patched dinghy",
+      "emoji": "🛶",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "rescue-boat",
+      "name": "rescue boat",
+      "emoji": "🚢",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "rested",
+      "name": "rested",
+      "emoji": "💤",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": true
+    }
+  ],
+  "reactions": [
+    {
+      "leftId": "element-1",
+      "rightId": "element-1-2",
+      "outputIds": [],
+      "script": "if (not_discovered(cave)) add cave\nadd sand, stick, driftwood"
+    },
+    {
+      "leftId": "element-1",
+      "rightId": "element-1-3",
+      "outputIds": [],
+      "script": "if (not_discovered(reef)) add reef\nmessage \"Too salty to drink. Too endless to swim.\""
+    },
+    {
+      "leftId": "element-1",
+      "rightId": "cave",
+      "outputIds": [],
+      "script": "if (not_on_table(stone)) add stone, stone\nif (not_on_table(mud)) add mud\nif (not_discovered(torch)) message \"It is too dark to go deeper without a steady flame.\"\nif (not_discovered(torch)) stop\nif (not_discovered(passage)) popup \"Your torch reveals a dry passage through the rock.\", cave\nif (not_discovered(passage)) add passage"
+    },
+    {
+      "leftId": "sticks",
+      "rightId": "cave",
+      "outputIds": [],
+      "script": "if (not_on_table(stone)) add stone, stone\nif (not_on_table(mud)) add mud\nif (not_discovered(torch)) message \"It is too dark to go deeper without a steady flame.\"\nif (not_discovered(torch)) stop\nif (not_discovered(passage)) popup \"Your torch reveals a dry passage through the rock.\", cave\nif (not_discovered(passage)) add passage"
+    },
+    {
+      "leftId": "stone",
+      "rightId": "stone",
+      "outputIds": [],
+      "script": "add sparks, stone, stone"
+    },
+    {
+      "leftId": "sticks-2",
+      "rightId": "sticks-2",
+      "outputIds": [
+        "brushwood"
+      ]
+    },
+    {
+      "leftId": "brushwood",
+      "rightId": "stone",
+      "outputIds": [
+        "firepit"
+      ]
+    },
+    {
+      "leftId": "firepit",
+      "rightId": "fire",
+      "outputIds": [
+        "bonfire"
+      ]
+    },
+    {
+      "leftId": "sticks-2",
+      "rightId": "bonfire",
+      "outputIds": [
+        "sticks"
+      ]
+    },
+    {
+      "leftId": "mud",
+      "rightId": "element-1-4",
+      "outputIds": [
+        "clay"
+      ]
+    },
+    {
+      "leftId": "clay",
+      "rightId": "bonfire",
+      "outputIds": [
+        "pot"
+      ]
+    },
+    {
+      "leftId": "pot",
+      "rightId": "element-1-3",
+      "outputIds": [
+        "salt-water"
+      ]
+    },
+    {
+      "leftId": "salt-water",
+      "rightId": "bonfire",
+      "outputIds": [
+        "clean-water",
+        "pot"
+      ]
+    },
+    {
+      "leftId": "reef",
+      "rightId": "element-1",
+      "outputIds": [],
+      "script": "if (not_discovered(shell)) add shell\nif (not_discovered(wreckage)) add wreckage"
+    },
+    {
+      "leftId": "shell",
+      "rightId": "stone",
+      "outputIds": [],
+      "script": "add shell hook, stone"
+    },
+    {
+      "leftId": "flotsam",
+      "rightId": "stone",
+      "outputIds": [],
+      "script": "message \"You pry a useful sheet of metal from the wreckage.\"\nadd metal sheet, stone"
+    },
+    {
+      "leftId": "flotsam",
+      "rightId": "shell",
+      "outputIds": [],
+      "script": "message \"You pry a useful sheet of metal from the wreckage.\"\nadd metal sheet, shell"
+    },
+    {
+      "leftId": "metal-sheet",
+      "rightId": "element-1-4",
+      "outputIds": [
+        "signal-mirror"
+      ]
+    },
+    {
+      "leftId": "salt-water",
+      "rightId": "element-1",
+      "outputIds": [],
+      "script": "message \"You force it down and feel dizzier.\"\nset Condition -= 1\nif (count(Condition) == 0) lose \"Salt water finishes what the sun started.\", sea"
+    },
+    {
+      "leftId": "fish",
+      "rightId": "element-1",
+      "outputIds": [],
+      "script": "message \"Raw fish makes you retch and weakens you.\"\nset Condition -= 1\nif (count(Condition) == 0) lose \"You collapse from dehydration and sickness.\", fish"
+    },
+    {
+      "leftId": "berries",
+      "rightId": "element-1",
+      "outputIds": [],
+      "script": "message \"They take the edge off your hunger.\"\nif (count(Condition) < 5) set Condition += 1"
+    },
+    {
+      "leftId": "driftwood",
+      "rightId": "driftwood",
+      "outputIds": [],
+      "script": "message \"The raft barely holds together. Taking it past the reef would be a desperate gamble.\"\nadd raft"
+    },
+    {
+      "leftId": "raft",
+      "rightId": "element-1-3",
+      "outputIds": [],
+      "script": "lose \"The surf tears the raft apart long before you clear the reef.\", sea"
+    },
+    {
+      "leftId": "bonfire",
+      "rightId": "cave",
+      "outputIds": [],
+      "script": "lose \"Smoke chokes the cave and you do not make it back out.\", cave"
+    },
+    {
+      "leftId": "element-1",
+      "rightId": "passage",
+      "outputIds": [],
+      "script": "if (not_discovered(clean water)) message \"Going inland without drinkable water would be suicidal.\"\nif (not_discovered(clean water)) stop\nif (not_discovered(shell hook)) message \"Before leaving the shore behind, you still need a hook for catching food inland.\"\nif (not_discovered(shell hook)) stop\nif (not_discovered(signal mirror)) message \"Before leaving the shore behind, you still need something bright enough to signal for rescue.\"\nif (not_discovered(signal mirror)) stop\nif (not_discovered(valley)) popup \"Beyond the passage you find a small valley, a spring, and a ridge above the trees.\", passage\nif (not_discovered(valley)) add valley, spring, ridge\nremove_all beach\nremove_all sea\nremove_all sand\nremove_all cave\nremove_all passage\nremove_all stone\nremove_all sparks\nremove_all brushwood\nremove_all bonfire\nremove_all firepit\nremove_all mud\nremove_all clay\nremove_all salt water\nremove_all clean water\nremove_all reef\nremove_all shell\nremove_all wreckage\nremove_all metal sheet\nremove_all driftwood\nremove_all raft"
+    },
+    {
+      "leftId": "element-1",
+      "rightId": "valley",
+      "outputIds": [],
+      "script": "if (not_discovered(berry bush)) add berry bush\nadd vine, broad leaf, bamboo"
+    },
+    {
+      "leftId": "element-1",
+      "rightId": "berry-bush",
+      "outputIds": [
+        "berries"
+      ]
+    },
+    {
+      "leftId": "element-1",
+      "rightId": "spring",
+      "outputIds": [],
+      "script": "if (not_discovered(pool)) add pool\nadd reeds"
+    },
+    {
+      "leftId": "reeds",
+      "rightId": "reeds",
+      "outputIds": [
+        "kindling"
+      ]
+    },
+    {
+      "leftId": "kindling",
+      "rightId": "sticks",
+      "outputIds": [
+        "campfire"
+      ]
+    },
+    {
+      "leftId": "vine",
+      "rightId": "vine",
+      "outputIds": [
+        "cordage"
+      ]
+    },
+    {
+      "leftId": "shell-hook",
+      "rightId": "cordage",
+      "outputIds": [
+        "line-hook"
+      ]
+    },
+    {
+      "leftId": "line-hook",
+      "rightId": "bamboo",
+      "outputIds": [
+        "fishing-pole"
+      ]
+    },
+    {
+      "leftId": "fishing-pole",
+      "rightId": "pool",
+      "outputIds": [
+        "fish"
+      ]
+    },
+    {
+      "leftId": "fish",
+      "rightId": "campfire",
+      "outputIds": [
+        "cooked-fish"
+      ]
+    },
+    {
+      "leftId": "broad-leaf",
+      "rightId": "vine",
+      "outputIds": [
+        "thatch"
+      ]
+    },
+    {
+      "leftId": "bamboo",
+      "rightId": "bamboo",
+      "outputIds": [
+        "frame"
+      ]
+    },
+    {
+      "leftId": "frame",
+      "rightId": "thatch",
+      "outputIds": [
+        "lean-to"
+      ]
+    },
+    {
+      "leftId": "pot",
+      "rightId": "spring",
+      "outputIds": [
+        "fresh-water"
+      ]
+    },
+    {
+      "leftId": "cooked-fish",
+      "rightId": "fresh-water",
+      "outputIds": [
+        "meal"
+      ]
+    },
+    {
+      "leftId": "meal",
+      "rightId": "lean-to",
+      "outputIds": [],
+      "script": "if (count(Condition) < 5) set Condition += 2\npopup \"A full stomach and a dry shelter let you recover through the night.\", lean to\nadd rested\nremove_all empty pot\nremove_all pool\nremove_all fishing pole\nremove_all fish\nremove_all cooked fish\nremove_all fresh water\nremove_all shell hook\nremove_all line hook\nremove_all cordage\nremove_all reeds\nremove_all kindling\nremove_all thatch\nremove_all frame\nremove_all meal"
+    },
+    {
+      "leftId": "element-1",
+      "rightId": "lean-to",
+      "outputIds": [],
+      "script": "if (not_discovered(meal)) message \"The shelter is ready, but you still need to prepare a proper meal before the ridge climb.\"\nif (not_discovered(meal)) stop\nif (count(Condition) < 5) set Condition += 2\npopup \"You eat, settle under the lean-to, and recover enough strength for the climb.\", lean to\nadd rested\nremove_all empty pot\nremove_all pool\nremove_all fishing pole\nremove_all fish\nremove_all cooked fish\nremove_all fresh water\nremove_all shell hook\nremove_all line hook\nremove_all cordage\nremove_all reeds\nremove_all kindling\nremove_all thatch\nremove_all frame\nremove_all meal"
+    },
+    {
+      "leftId": "meal",
+      "rightId": "campfire",
+      "outputIds": [],
+      "script": "if (not_discovered(lean to)) message \"A hot meal helps, but you need a dry shelter before you can recover for the ridge climb.\"\nif (not_discovered(lean to)) stop\nif (count(Condition) < 5) set Condition += 2\npopup \"Warm food, firelight, and shelter let you recover through the night.\", campfire\nadd rested\nremove_all empty pot\nremove_all pool\nremove_all fishing pole\nremove_all fish\nremove_all cooked fish\nremove_all fresh water\nremove_all shell hook\nremove_all line hook\nremove_all cordage\nremove_all reeds\nremove_all kindling\nremove_all thatch\nremove_all frame\nremove_all meal"
+    },
+    {
+      "leftId": "element-1",
+      "rightId": "ridge",
+      "outputIds": [],
+      "script": "if (not_discovered(rested)) message \"The ridge is too hard while you are worn down. Build a camp, make a lean-to, and prepare a meal before you climb.\"\nif (not_discovered(rested)) stop\nif (not_discovered(lookout)) add lookout, wrecked dinghy\nadd deadwood"
+    },
+    {
+      "leftId": "deadwood",
+      "rightId": "deadwood",
+      "outputIds": [
+        "signal-pyre"
+      ]
+    },
+    {
+      "leftId": "signal-pyre",
+      "rightId": "campfire",
+      "outputIds": [
+        "beacon"
+      ]
+    },
+    {
+      "leftId": "broad-leaf",
+      "rightId": "beacon",
+      "outputIds": [
+        "smoke-signal"
+      ]
+    },
+    {
+      "leftId": "signal-mirror",
+      "rightId": "lookout",
+      "outputIds": [
+        "watch-post"
+      ]
+    },
+    {
+      "leftId": "smoke-signal",
+      "rightId": "watch-post",
+      "outputIds": [],
+      "script": "popup \"A dark plume rises above the ridge. Late in the afternoon, a trawler on the horizon changes course.\", beacon\nadd rescue boat\nremove_all valley\nremove_all spring\nremove_all ridge\nremove_all pool\nremove_all berry bush\nremove_all campfire\nremove_all lean to\nremove_all lookout\nremove_all beacon\nremove_all deadwood\nremove_all signal pyre\nremove_all broad leaf\nremove_all rested\nremove_all wrecked dinghy\nremove_all patched dinghy"
+    },
+    {
+      "leftId": "wrecked-dinghy",
+      "rightId": "vine",
+      "outputIds": [
+        "patched-dinghy"
+      ]
+    },
+    {
+      "leftId": "patched-dinghy",
+      "rightId": "ridge",
+      "outputIds": [],
+      "script": "lose \"You drag the patched dinghy back toward the surf, but the hull opens in the swell and the current carries you away.\", sea"
+    },
+    {
+      "leftId": "patched-dinghy",
+      "rightId": "element-1-3",
+      "outputIds": [],
+      "script": "lose \"The patched hull opens in the swell and the current carries you away.\", sea"
+    },
+    {
+      "leftId": "rescue-boat",
+      "rightId": "signal-mirror",
+      "outputIds": [],
+      "script": "win \"The crew catches your mirror flashes, follows the smoke, and pulls you off the island alive.\", signal mirror"
+    }
+  ],
+  "reactionComments": {
+    "byReaction": [
+      {
+        "leadingComments": [
+          " Shore"
+        ]
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": [
+          " Risky choices"
+        ]
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": [
+          " Inland"
+        ]
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": [
+          " Rescue"
+        ]
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      }
+    ],
+    "trailingComments": []
+  }
+}

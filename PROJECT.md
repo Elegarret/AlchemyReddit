@@ -91,9 +91,12 @@ Keep this file updated when architecture, major flows, or important project conv
 - The emoji picker follows `prefers-color-scheme` by default, so it renders in light or dark mode to match the rest of the app instead of forcing dark mode.
 
 ## TODO
-- when admin opens the other's realm he has publish instead of publish update/ Investigate. Make sure that admin's edit does not create new entity instead of editing old one.
-- win/lose popup doesnt actually resets the progress, user has to do it manually from cog-meny. It just wipes the board and the palette, but the discovered list and probably other progress things remain unchanged.
-- invent something to sugar syntax to reduce the neccessety of writing counter checks in every reaction. Example: if we have a health param, then we must currently add a (if health > 0) check into every reaction, which is not convinient
+- hub/editor: when admin opens the other's realm he has publish instead of publish update/ Investigate. Make sure that admin's edit does not create new entity instead of editing old one.
+- game: win/lose popup doesnt actually resets the progress, user has to do it manually from cog-meny. It just wipes the board and the palette, but the discovered list and probably other progress things remain unchanged.
+- reaction script: invent something to sugar syntax to reduce the neccessety of writing counter checks in every reaction. Example: if we have a health param, then we must currently add a (if health > 0) check into every reaction, which is not convinient
+- game: multi-element reaction, by rect-select
+- editor: add a round button ? next to the "editor" button in the header section of the editor, leading to authors help page
+- editor: the arrows in the elements inputs take place even when not shown, hiding a part of the text inside
 
 
 ## Future Plans
