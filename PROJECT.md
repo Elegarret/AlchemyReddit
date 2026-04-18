@@ -91,14 +91,14 @@ Keep this file updated when architecture, major flows, or important project conv
 - The emoji picker follows `prefers-color-scheme` by default, so it renders in light or dark mode to match the rest of the app instead of forcing dark mode.
 
 ## TODO
-- hub/editor: when admin opens the other's realm he has publish instead of publish update/ Investigate. Make sure that admin's edit does not create new entity instead of editing old one. If admin edits the mod, it seems that it changes it's owmnership, which is definitely wrong, the author should remain. 
+- hub/editor: when admin opens the other's realm he has publish instead of "publish update" - investigate. Make sure that admin's edit does not create new entity instead of editing old one. If admin edits the mod, it seems that it changes it's owmnership, which is definitely wrong, the author should remain. 
 - game: win/lose popup doesnt actually resets the progress, user has to do it manually from cog-meny. It just wipes the board and the palette, but the discovered list and probably other progress things remain unchanged.
 - reaction script: invent something to sugar syntax to reduce the neccessety of writing counter checks in every reaction. Example: if we have a health param, then we must currently add a (if health > 0) check into every reaction, which is not convinient
-- game: multi-element reaction, by rect-select
 - editor: add a round button ? next to the "editor" button in the header section of the editor, leading to authors help page
 - editor: the arrows in the elements inputs take place even when not shown, hiding a part of the text inside
 - editor: fix the transparent bg of import\export dropdown in the editor
 - editor: drag-n-drop of the element tile works properly when there is the only reaction. But with more than one, it swap reactions tiles and doesnt fill correctly
+- compact hub: 3rows realm tiles do not fit
 
 
 ## Future Plans
@@ -112,6 +112,7 @@ Keep this file updated when architecture, major flows, or important project conv
 - improved saves backward compatibility, do not wipe after every realm edit
 - plan: convert current hardcoded reactions set into the realm + replace all paths leading to old hardcoded game so the realm must open instead of hardcoded game. But that hardcoded realm must have no difference in expirience with the old one. It must also catch up saves from the hardcoded ga,e
 - allow several reactions with the same result, like A+B=,C+D= //results
+- game: multi-element reaction, by rect-select
 
 ## Commands
 
