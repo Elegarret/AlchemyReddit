@@ -188,6 +188,36 @@ const REACTION_SCRIPT_BLOCK_SUGGESTION = {
   'replaceEnd' | 'replaceStart'
 >;
 
+const REACTION_TEXT_EVENT_TEMPLATES: SuggestionTemplate[] = [
+  {
+    cursorOffset: 'event '.length,
+    description: 'counter event',
+    label: 'event',
+    text: 'event ',
+  },
+];
+
+const REACTION_TEXT_EVENT_MODE_TEMPLATES: SuggestionTemplate[] = [
+  {
+    cursorOffset: 'crossing: '.length,
+    description: 'when condition becomes true',
+    label: 'crossing',
+    text: 'crossing: ',
+  },
+  {
+    cursorOffset: 'once: '.length,
+    description: 'once per playthrough',
+    label: 'once',
+    text: 'once: ',
+  },
+  {
+    cursorOffset: 'always: '.length,
+    description: 'after any counter changes',
+    label: 'always',
+    text: 'always: ',
+  },
+];
+
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -927,13 +957,61 @@ export const getReactionTextAutocomplete = (params: {
     (hasScriptBlockColon && plusIndex > colonIndex)
   ) {
     const trimmedPrefix = linePrefix.trimStart();
+    const replaceStart = lineStart + (linePrefix.length - trimmedPrefix.length);
+    const eventModeMatch = trimmedPrefix.match(/^event\s+([A-Za-z_]*)$/);
+    if (eventModeMatch) {
+      const modePartial = eventModeMatch[1] ?? '';
+      return {
+        suggestions: buildSuggestions(
+          REACTION_TEXT_EVENT_MODE_TEMPLATES,
+          modePartial,
+          replaceStart + trimmedPrefix.length - modePartial.length,
+          absoluteEnd
+        ),
+      };
+    }
+
+    const eventConditionMatch = trimmedPrefix.match(
+      /^event(?:\s+(?:crossing|once|always))?:\s*(.*)$/s
+    );
+    if (eventConditionMatch) {
+      const conditionPrefix = eventConditionMatch[1] ?? '';
+      return {
+        suggestions: getConditionSuggestions({
+          absoluteStart: absoluteEnd - conditionPrefix.length,
+          counterNames,
+          elementNames,
+          prefix: conditionPrefix,
+        }),
+      };
+    }
+
+    if (/^event$/.test(trimmedPrefix)) {
+      return {
+        suggestions: buildSuggestions(
+          REACTION_TEXT_EVENT_TEMPLATES,
+          trimmedPrefix,
+          replaceStart,
+          absoluteEnd
+        ),
+      };
+    }
+
     return {
-      suggestions: buildNameSuggestions(
-        elementNames,
-        trimmedPrefix,
-        lineStart + (linePrefix.length - trimmedPrefix.length),
-        absoluteEnd
-      ),
+      suggestions: [
+        ...buildSuggestions(
+          REACTION_TEXT_EVENT_TEMPLATES,
+          trimmedPrefix,
+          replaceStart,
+          absoluteEnd
+        ),
+        ...buildNameSuggestions(
+          elementNames,
+          trimmedPrefix,
+          replaceStart,
+          absoluteEnd
+        ),
+      ],
     };
   }
 

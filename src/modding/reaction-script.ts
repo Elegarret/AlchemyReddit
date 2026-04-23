@@ -1,4 +1,4 @@
-import type { ActiveCounterDefinition } from './types';
+import type { ActiveCounterDefinition, ModEvent } from './types';
 
 export type ReactionScriptAst = {
   sourceLines?: ReactionScriptSourceLine[];
@@ -62,6 +62,9 @@ export type ReactionScriptAction =
     }
   | {
       kind: 'stop';
+    }
+  | {
+      kind: 'stop_reaction';
     };
 
 export type ReactionScriptCondition =
@@ -102,6 +105,7 @@ export type ReactionScriptValidationContext = {
     name?: string;
   }>;
   nonGameplayElementIds?: string[];
+  scriptKind?: 'event' | 'reaction';
 };
 
 export type ReactionScriptValidationResult = {
@@ -116,12 +120,19 @@ export type ReactionScriptTableElement = {
   id: string;
 };
 
+export type ReactionScriptEventState = {
+  activeEventIds: string[];
+  firedEventIds: string[];
+};
+
 export type ReactionScriptExecutionContext = ReactionScriptValidationContext & {
   counters: Record<string, number>;
   counterDefinitions?: Array<
     Pick<ActiveCounterDefinition, 'max' | 'min' | 'name'>
   >;
   discoveredElementIds: string[];
+  events?: ModEvent[];
+  eventState?: ReactionScriptEventState;
   script: ReactionScriptAst | string;
   tableElements: ReactionScriptTableElement[];
 };
@@ -140,10 +151,20 @@ export type ReactionScriptExecutionResult =
         messages: string[];
         popupEvents: ReactionScriptPopupEvent[];
         removedTableElementIds: string[];
+        eventState?: ReactionScriptEventState;
         shownCounterNames: string[];
+        stopReaction?: boolean;
         stopped: boolean;
       };
     };
+
+export const createEmptyReactionScriptEventState =
+  (): ReactionScriptEventState => ({
+    activeEventIds: [],
+    firedEventIds: [],
+  });
+
+const MAX_EVENT_EXECUTIONS_PER_REACTION = 32;
 
 const CONDITION_PREDICATE_KINDS = [
   'on_table',
@@ -464,7 +485,7 @@ const parseCondition = (
   }
 
   const countMatch = rawCondition.match(
-    /^count\s*\(\s*([A-Za-z][A-Za-z0-9_-]*)\s*\)\s*(<=|>=|==|!=|<|>)\s*(-?\d+)$/
+    /^count\s*\(\s*([^)]+?)\s*\)\s*(<=|>=|==|!=|<|>)\s*(-?\d+)$/
   );
   if (countMatch) {
     const counterName = countMatch[1] ?? '';
@@ -488,6 +509,56 @@ const parseCondition = (
   return {
     line,
     message: `Unsupported condition: ${rawCondition}`,
+  };
+};
+
+export const parseReactionScriptConditionList = (
+  rawConditionList: string,
+  line: number
+):
+  | {
+      conditions: ReactionScriptCondition[];
+      ok: true;
+    }
+  | {
+      errors: ReactionScriptIssue[];
+      ok: false;
+    } => {
+  const conditionList = splitConditionList(rawConditionList.trim());
+  if (conditionList.errors.length > 0) {
+    return {
+      errors: [
+        {
+          line,
+          message: conditionList.errors[0] ?? 'Invalid condition list.',
+        },
+      ],
+      ok: false,
+    };
+  }
+
+  const conditions: ReactionScriptCondition[] = [];
+  const errors: ReactionScriptIssue[] = [];
+  for (const part of conditionList.parts) {
+    const condition = parseCondition(part, line);
+    if (isReactionScriptIssue(condition)) {
+      errors.push(condition);
+      continue;
+    }
+
+    conditions.push(condition);
+  }
+
+  if (errors.length > 0) {
+    return {
+      errors,
+      ok: false,
+    };
+  }
+
+  return {
+    conditions,
+    ok: true,
   };
 };
 
@@ -680,6 +751,12 @@ const parseAction = (
     };
   }
 
+  if (rawAction === 'stop-reaction') {
+    return {
+      kind: 'stop_reaction',
+    };
+  }
+
   const messageAction = parseMessageAction(rawAction, line);
   if (messageAction !== null) {
     return messageAction;
@@ -822,22 +899,12 @@ const parseStatementLine = (
     };
   }
 
-  const conditionList = splitConditionList(rawConditionList);
-  if (conditionList.errors.length > 0) {
-    return {
+  const conditionList = parseReactionScriptConditionList(rawConditionList, line);
+  if (!conditionList.ok) {
+    return conditionList.errors[0] ?? {
       line,
-      message: conditionList.errors[0] ?? 'Invalid condition list.',
+      message: 'Invalid condition list.',
     };
-  }
-
-  const conditions: ReactionScriptCondition[] = [];
-  for (const part of conditionList.parts) {
-    const condition = parseCondition(part, line);
-    if (isReactionScriptIssue(condition)) {
-      return condition;
-    }
-
-    conditions.push(condition);
   }
 
   const action = parseAction(rawAction, line);
@@ -847,7 +914,7 @@ const parseStatementLine = (
 
   return {
     action,
-    conditions,
+    conditions: conditionList.conditions,
     line,
   };
 };
@@ -980,22 +1047,30 @@ const evaluateCondition = (
   counterValues: Record<string, number>
 ) => {
   if (condition.kind === 'count_compare') {
-    const counterName =
-      resolveCounterName(condition.counterName) ?? condition.counterName;
-    const counterValue = counterValues[counterName] ?? 0;
+    const resolvedCounterName = resolveCounterName(condition.counterName);
+    const elementId = resolvedCounterName
+      ? null
+      : resolveElementId(condition.counterName);
+    const countValue = resolvedCounterName
+      ? (counterValues[resolvedCounterName] ?? 0)
+      : elementId
+        ? tableElements.filter(
+            (tableElement) => tableElement.elementId === elementId
+          ).length
+        : 0;
     switch (condition.operator) {
       case '<':
-        return counterValue < condition.value;
+        return countValue < condition.value;
       case '<=':
-        return counterValue <= condition.value;
+        return countValue <= condition.value;
       case '>':
-        return counterValue > condition.value;
+        return countValue > condition.value;
       case '>=':
-        return counterValue >= condition.value;
+        return countValue >= condition.value;
       case '==':
-        return counterValue === condition.value;
+        return countValue === condition.value;
       case '!=':
-        return counterValue !== condition.value;
+        return countValue !== condition.value;
     }
   }
 
@@ -1061,6 +1136,8 @@ const formatAction = (action: ReactionScriptAction) => {
       }`;
     case 'stop':
       return 'stop';
+    case 'stop_reaction':
+      return 'stop-reaction';
   }
 };
 
@@ -1168,6 +1245,96 @@ export const formatReactionScript = (script: ReactionScriptAst | string) => {
   return formatReactionScriptAst(parsed.ast);
 };
 
+export const formatReactionScriptConditionList = (
+  rawConditionList: string,
+  line = 1
+) => {
+  const parsed = parseReactionScriptConditionList(rawConditionList, line);
+  if (!parsed.ok) {
+    return null;
+  }
+
+  return parsed.conditions.map(formatCondition).join(' and ');
+};
+
+export const validateReactionScriptConditions = (
+  conditions: ReactionScriptCondition[],
+  context: ReactionScriptValidationContext,
+  options: {
+    counterOnly?: boolean;
+  } = {}
+) => {
+  const resolveElementId = createElementResolver(context);
+  const resolveCounterName = createCounterResolver(context.counterNames);
+  const nonGameplayElements = createNonGameplayElementSet(
+    context.nonGameplayElementIds
+  );
+  const referencedCounterNames = new Set<string>();
+  const errors: ReactionScriptIssue[] = [];
+
+  for (const condition of conditions) {
+    if (condition.kind === 'count_compare') {
+      const result = validateCounterName(
+        condition.counterName,
+        1,
+        resolveCounterName
+      );
+      if (!result.error) {
+        referencedCounterNames.add(result.canonicalName);
+        continue;
+      }
+
+      if (options.counterOnly) {
+        errors.push(result.error);
+        continue;
+      }
+
+      const elementResult = validateGameplayElementRef(
+        condition.counterName,
+        1,
+        resolveElementId,
+        nonGameplayElements
+      );
+      if (elementResult.error) {
+        errors.push(result.error);
+      }
+      continue;
+    }
+
+    if (options.counterOnly) {
+      errors.push({
+        line: 1,
+        message:
+          'Event conditions only support count(counter) comparisons.',
+      });
+      continue;
+    }
+
+    const result = validateGameplayElementRef(
+      condition.elementRef,
+      1,
+      resolveElementId,
+      nonGameplayElements
+    );
+    if (result.error) {
+      errors.push(result.error);
+    }
+  }
+
+  return {
+    errors,
+    ok: errors.length === 0,
+    referencedCounterNames: Array.from(referencedCounterNames),
+  };
+};
+
+const normalizeReactionScriptEventState = (
+  eventState: ReactionScriptEventState | undefined
+) => ({
+  activeEventIds: new Set(eventState?.activeEventIds ?? []),
+  firedEventIds: new Set(eventState?.firedEventIds ?? []),
+});
+
 export const validateReactionScript = (
   script: ReactionScriptAst | string,
   context: ReactionScriptValidationContext
@@ -1193,6 +1360,16 @@ export const validateReactionScript = (
   const errors: ReactionScriptIssue[] = [];
 
   for (const statement of parsed.ast.statements) {
+    if (
+      statement.action.kind === 'stop_reaction' &&
+      context.scriptKind !== 'event'
+    ) {
+      errors.push({
+        line: statement.line,
+        message: 'stop-reaction can only be used inside event scripts.',
+      });
+    }
+
     for (const condition of statement.conditions) {
       if (condition.kind === 'count_compare') {
         const result = validateCounterName(
@@ -1200,8 +1377,18 @@ export const validateReactionScript = (
           statement.line,
           resolveCounterName
         );
-        referencedCounterNames.add(result.canonicalName ?? condition.counterName);
-        if (result.error) {
+        if (!result.error) {
+          referencedCounterNames.add(result.canonicalName);
+          continue;
+        }
+
+        const elementResult = validateGameplayElementRef(
+          condition.counterName,
+          statement.line,
+          resolveElementId,
+          nonGameplayElements
+        );
+        if (elementResult.error) {
           errors.push(result.error);
         }
         continue;
@@ -1355,7 +1542,10 @@ export const executeReactionScript = (
     };
   }
 
-  const validation = validateReactionScript(parsed.ast, context);
+  const validation = validateReactionScript(parsed.ast, {
+    ...context,
+    scriptKind: context.scriptKind ?? 'reaction',
+  });
   if (!validation.ok) {
     return {
       errors: validation.errors,
@@ -1384,156 +1574,348 @@ export const executeReactionScript = (
   const messages: string[] = [];
   const popupEvents: ReactionScriptPopupEvent[] = [];
   const shownCounterNames = new Set<string>();
+  const eventState = normalizeReactionScriptEventState(context.eventState);
+  let eventExecutionCount = 0;
+  let stopReaction = false;
   let stopped = false;
 
-  for (const statement of parsed.ast.statements) {
-    const conditionsPassed = statement.conditions.every((condition) =>
+  const evaluateConditions = (
+    conditions: ReactionScriptCondition[],
+    values: Record<string, number>
+  ) =>
+    conditions.every((condition) =>
       evaluateCondition(
         condition,
         resolveElementId,
         resolveCounterName,
         discoveredElementIds,
         tableElements,
-        counterValues
+        values
       )
     );
-    if (!conditionsPassed) {
-      continue;
+
+  const getEventConditions = (event: ModEvent):
+    | {
+        conditions: ReactionScriptCondition[];
+        ok: true;
+      }
+    | {
+        error: ReactionScriptIssue;
+        ok: false;
+      } => {
+    const parsedConditions = parseReactionScriptConditionList(event.condition, 1);
+    if (!parsedConditions.ok) {
+      return {
+        error: parsedConditions.errors[0] ?? {
+          line: 1,
+          message: 'Invalid event condition.',
+        },
+        ok: false,
+      };
     }
 
-    if (statement.action.kind === 'add') {
-      statement.action.elementRefs.forEach((elementRef) => {
-        const elementId = resolveElementId(elementRef);
-        if (elementId) {
-          if (nonGameplayElements.has(normalizeLookupKey(elementId))) {
-            const counterName = getCounterNameForElementId({
-              elementId,
-              resolveCounterName,
-              resolveElementName,
-            });
-            if (counterName) {
-              shownCounterNames.add(counterName);
-              hiddenCounterNames.delete(counterName);
+    const conditionValidation = validateReactionScriptConditions(
+      parsedConditions.conditions,
+      {
+        ...context,
+        scriptKind: 'event',
+      },
+      {
+        counterOnly: true,
+      }
+    );
+    if (!conditionValidation.ok) {
+      return {
+        error: conditionValidation.errors[0] ?? {
+          line: 1,
+          message: 'Invalid event condition.',
+        },
+        ok: false,
+      };
+    }
+
+    return {
+      conditions: parsedConditions.conditions,
+      ok: true,
+    };
+  };
+
+  const eventReferencesCounter = (
+    conditions: ReactionScriptCondition[],
+    counterName: string
+  ) =>
+    conditions.some(
+      (condition) =>
+        condition.kind === 'count_compare' &&
+        normalizeLookupKey(
+          resolveCounterName(condition.counterName) ?? condition.counterName
+        ) === normalizeLookupKey(counterName)
+    );
+
+  const runStatements = (
+    statements: ReactionScriptStatement[],
+    scriptKind: 'event' | 'reaction'
+  ): ReactionScriptIssue | null => {
+    for (const statement of statements) {
+      if (stopped || stopReaction) {
+        return null;
+      }
+
+      const conditionsPassed = evaluateConditions(
+        statement.conditions,
+        counterValues
+      );
+      if (!conditionsPassed) {
+        continue;
+      }
+
+      if (statement.action.kind === 'add') {
+        statement.action.elementRefs.forEach((elementRef) => {
+          const elementId = resolveElementId(elementRef);
+          if (elementId) {
+            if (nonGameplayElements.has(normalizeLookupKey(elementId))) {
+              const counterName = getCounterNameForElementId({
+                elementId,
+                resolveCounterName,
+                resolveElementName,
+              });
+              if (counterName) {
+                shownCounterNames.add(counterName);
+                hiddenCounterNames.delete(counterName);
+              }
+              return;
             }
-            return;
+
+            emittedElementIds.push(elementId);
           }
-
-          emittedElementIds.push(elementId);
-        }
-      });
-      continue;
-    }
-
-    if (statement.action.kind === 'set') {
-      const counterName =
-        resolveCounterName(statement.action.counterName) ??
-        statement.action.counterName;
-      const currentValue = counterValues[counterName] ?? 0;
-      const bounds = counterBounds.get(normalizeLookupKey(counterName));
-      let nextValue = currentValue;
-      if (statement.action.operator === '=') {
-        nextValue = statement.action.value;
-      } else if (statement.action.operator === '+=') {
-        nextValue = currentValue + statement.action.value;
-      } else {
-        nextValue = currentValue - statement.action.value;
-      }
-      counterValues[counterName] = bounds
-        ? clampToOptionalBounds(nextValue, bounds.min, bounds.max)
-        : nextValue;
-      continue;
-    }
-
-    if (statement.action.kind === 'remove') {
-      const elementId = resolveElementId(statement.action.elementRef);
-      if (!elementId) {
-        continue;
-      }
-
-      if (nonGameplayElements.has(normalizeLookupKey(elementId))) {
-        const counterName = getCounterNameForElementId({
-          elementId,
-          resolveCounterName,
-          resolveElementName,
         });
-        if (counterName) {
-          hiddenCounterNames.add(counterName);
-          shownCounterNames.delete(counterName);
+        continue;
+      }
+
+      if (statement.action.kind === 'set') {
+        const counterName =
+          resolveCounterName(statement.action.counterName) ??
+          statement.action.counterName;
+        const currentValue = counterValues[counterName] ?? 0;
+        const previousCounterValues = { ...counterValues };
+        const bounds = counterBounds.get(normalizeLookupKey(counterName));
+        let nextValue = currentValue;
+        if (statement.action.operator === '=') {
+          nextValue = statement.action.value;
+        } else if (statement.action.operator === '+=') {
+          nextValue = currentValue + statement.action.value;
+        } else {
+          nextValue = currentValue - statement.action.value;
+        }
+        counterValues[counterName] = bounds
+          ? clampToOptionalBounds(nextValue, bounds.min, bounds.max)
+          : nextValue;
+
+        const eventError = runCounterEvents(counterName, previousCounterValues);
+        if (eventError) {
+          return eventError;
         }
         continue;
       }
 
-      const match = tableElements.find(
-        (tableElement) => tableElement.elementId === elementId
-      );
-      if (!match) {
+      if (statement.action.kind === 'remove') {
+        const elementId = resolveElementId(statement.action.elementRef);
+        if (!elementId) {
+          continue;
+        }
+
+        if (nonGameplayElements.has(normalizeLookupKey(elementId))) {
+          const counterName = getCounterNameForElementId({
+            elementId,
+            resolveCounterName,
+            resolveElementName,
+          });
+          if (counterName) {
+            hiddenCounterNames.add(counterName);
+            shownCounterNames.delete(counterName);
+          }
+          continue;
+        }
+
+        const match = tableElements.find(
+          (tableElement) => tableElement.elementId === elementId
+        );
+        if (!match) {
+          continue;
+        }
+
+        removedTableElementIds.push(match.id);
+        const nextTableElements = tableElements.filter(
+          (tableElement) => tableElement.id !== match.id
+        );
+        tableElements.splice(0, tableElements.length, ...nextTableElements);
         continue;
       }
 
-      removedTableElementIds.push(match.id);
-      const nextTableElements = tableElements.filter(
-        (tableElement) => tableElement.id !== match.id
-      );
-      tableElements.splice(0, tableElements.length, ...nextTableElements);
-      continue;
-    }
+      if (statement.action.kind === 'remove_all') {
+        if (!statement.action.elementRef) {
+          tableElements.forEach((tableElement) => {
+            removedTableElementIds.push(tableElement.id);
+          });
+          tableElements.splice(0, tableElements.length);
+          continue;
+        }
 
-    if (statement.action.kind === 'remove_all') {
-      if (!statement.action.elementRef) {
-        tableElements.forEach((tableElement) => {
+        const elementId = resolveElementId(statement.action.elementRef);
+        if (!elementId) {
+          continue;
+        }
+
+        const removedMatches = tableElements.filter(
+          (tableElement) => tableElement.elementId === elementId
+        );
+        removedMatches.forEach((tableElement) => {
           removedTableElementIds.push(tableElement.id);
         });
-        tableElements.splice(0, tableElements.length);
+
+        const nextTableElements = tableElements.filter(
+          (tableElement) => tableElement.elementId !== elementId
+        );
+        tableElements.splice(0, tableElements.length, ...nextTableElements);
         continue;
       }
 
-      const elementId = resolveElementId(statement.action.elementRef);
-      if (!elementId) {
+      if (statement.action.kind === 'message') {
+        messages.push(statement.action.text);
         continue;
       }
 
-      const removedMatches = tableElements.filter(
-        (tableElement) => tableElement.elementId === elementId
-      );
-      removedMatches.forEach((tableElement) => {
-        removedTableElementIds.push(tableElement.id);
-      });
+      if (
+        statement.action.kind === 'popup' ||
+        statement.action.kind === 'win' ||
+        statement.action.kind === 'lose'
+      ) {
+        popupEvents.push({
+          iconElementId: statement.action.iconElementRef
+            ? resolveElementId(statement.action.iconElementRef)
+            : null,
+          kind: statement.action.kind,
+          text: statement.action.text,
+        });
 
-      const nextTableElements = tableElements.filter(
-        (tableElement) => tableElement.elementId !== elementId
-      );
-      tableElements.splice(0, tableElements.length, ...nextTableElements);
-      continue;
-    }
+        if (statement.action.kind !== 'popup') {
+          stopped = true;
+          return null;
+        }
 
-    if (statement.action.kind === 'message') {
-      messages.push(statement.action.text);
-      continue;
-    }
+        continue;
+      }
 
-    if (
-      statement.action.kind === 'popup' ||
-      statement.action.kind === 'win' ||
-      statement.action.kind === 'lose'
-    ) {
-      popupEvents.push({
-        iconElementId: statement.action.iconElementRef
-          ? resolveElementId(statement.action.iconElementRef)
-          : null,
-        kind: statement.action.kind,
-        text: statement.action.text,
-      });
+      if (statement.action.kind === 'stop_reaction') {
+        if (scriptKind === 'event') {
+          stopReaction = true;
+          return null;
+        }
 
-      if (statement.action.kind !== 'popup') {
+        return {
+          line: statement.line,
+          message: 'stop-reaction can only be used inside event scripts.',
+        };
+      }
+
+      if (scriptKind === 'reaction') {
         stopped = true;
-        break;
       }
-
-      continue;
+      return null;
     }
 
-    stopped = true;
-    break;
+    return null;
+  };
+
+  const runEventScript = (event: ModEvent) => {
+    const eventScript = parseScriptAst(event.script);
+    if (!eventScript.ok) {
+      return eventScript.errors[0] ?? {
+        line: 1,
+        message: 'Invalid event script.',
+      };
+    }
+
+    const eventValidation = validateReactionScript(eventScript.ast, {
+      ...context,
+      scriptKind: 'event',
+    });
+    if (!eventValidation.ok) {
+      return eventValidation.errors[0] ?? {
+        line: 1,
+        message: 'Invalid event script.',
+      };
+    }
+
+    return runStatements(eventScript.ast.statements, 'event');
+  };
+
+  function runCounterEvents(
+    counterName: string,
+    previousCounterValues: Record<string, number>
+  ): ReactionScriptIssue | null {
+    const events = context.events ?? [];
+    for (const [eventIndex, event] of events.entries()) {
+      if (stopped || stopReaction) {
+        return null;
+      }
+
+      const eventConditions = getEventConditions(event);
+      if (!eventConditions.ok) {
+        return eventConditions.error;
+      }
+      const { conditions } = eventConditions;
+
+      if (!eventReferencesCounter(conditions, counterName)) {
+        continue;
+      }
+
+      const eventId = String(eventIndex);
+      const wasPassed = evaluateConditions(conditions, previousCounterValues);
+      const isPassed = evaluateConditions(conditions, counterValues);
+      if (isPassed) {
+        eventState.activeEventIds.add(eventId);
+      } else {
+        eventState.activeEventIds.delete(eventId);
+      }
+
+      const shouldRun =
+        event.mode === 'always'
+          ? isPassed
+          : event.mode === 'once'
+            ? isPassed && !eventState.firedEventIds.has(eventId)
+            : !wasPassed && isPassed;
+      if (!shouldRun) {
+        continue;
+      }
+
+      eventExecutionCount += 1;
+      if (eventExecutionCount > MAX_EVENT_EXECUTIONS_PER_REACTION) {
+        return {
+          line: 1,
+          message: 'Event loop limit exceeded.',
+        };
+      }
+
+      eventState.firedEventIds.add(eventId);
+      const eventError = runEventScript(event);
+      if (eventError) {
+        return eventError;
+      }
+    }
+
+    return null;
+  }
+
+  const executionError = runStatements(
+    parsed.ast.statements,
+    context.scriptKind ?? 'reaction'
+  );
+  if (executionError) {
+    return {
+      errors: [executionError],
+      ok: false,
+    };
   }
 
   return {
@@ -1545,8 +1927,18 @@ export const executeReactionScript = (
       messages,
       popupEvents,
       removedTableElementIds,
+      ...((context.events?.length ?? 0) > 0 || context.eventState
+        ? {
+            eventState: {
+              activeEventIds: Array.from(eventState.activeEventIds),
+              firedEventIds: Array.from(eventState.firedEventIds),
+            },
+          }
+        : {}),
       shownCounterNames: Array.from(shownCounterNames),
+      ...(stopReaction ? { stopReaction } : {}),
       stopped,
     },
   };
+
 };

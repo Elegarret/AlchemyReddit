@@ -801,6 +801,13 @@
 	color: var(--catalog-ink);
 }
 
+.realm-panel-solid {
+	border: 1px solid var(--catalog-card-border);
+	background: var(--catalog-button-hover);
+	box-shadow: var(--catalog-card-shadow);
+	color: var(--catalog-button-hover-text);
+}
+
 .realm-panel-soft {
 	border: 1px solid var(--catalog-soft-border);
 	background: color-mix(in srgb, var(--catalog-header-fill) 92%, transparent);
@@ -831,6 +838,10 @@
 
 .realm-input::placeholder {
 	color: var(--catalog-input-placeholder);
+}
+
+.editor-droppable-input::-webkit-calendar-picker-indicator {
+	display: none !important;
 }
 
 .realm-button-primary {

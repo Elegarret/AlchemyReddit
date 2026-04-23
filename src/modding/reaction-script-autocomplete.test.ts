@@ -409,6 +409,60 @@ describe('getReactionTextAutocomplete', () => {
 
     expect(result.suggestions).toEqual([]);
   });
+
+  it('suggests event before event modes in reaction text mode', () => {
+    const value = 'ev';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'event',
+    ]);
+  });
+
+  it('suggests event modes only after the event keyword', () => {
+    const value = 'event o';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'once',
+    ]);
+    expect(result.suggestions[0]?.text).toBe('once: ');
+  });
+
+  it('suggests event condition helpers after event headers', () => {
+    const bareEvent = 'event: c';
+    const modeEvent = 'event once: c';
+
+    const bareResult = getReactionTextAutocomplete({
+      counterNames,
+      cursor: bareEvent.length,
+      elementNames,
+      value: bareEvent,
+    });
+    const modeResult = getReactionTextAutocomplete({
+      counterNames,
+      cursor: modeEvent.length,
+      elementNames,
+      value: modeEvent,
+    });
+
+    expect(bareResult.suggestions.map((suggestion) => suggestion.label)).toContain(
+      'count'
+    );
+    expect(modeResult.suggestions.map((suggestion) => suggestion.label)).toContain(
+      'count'
+    );
+  });
 });
 
 describe('getCommittedReactionScriptAutocompleteElement', () => {

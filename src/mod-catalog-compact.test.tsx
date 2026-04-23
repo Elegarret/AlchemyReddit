@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
 
 const listCatalogQueryMock = vi.fn();
 const navigateToMock = vi.fn();
@@ -50,7 +51,7 @@ const buildMod = (index: number) => ({
   playerCount: index * 2,
 });
 
-const waitFor = async (predicate: () => boolean, timeoutMs = 500) => {
+const waitFor = async (predicate: () => boolean, timeoutMs = 1500) => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     if (predicate()) {
@@ -64,6 +65,10 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 500) => {
 
 const getPageText = () => document.body.textContent ?? '';
 
+beforeEach(() => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+});
+
 afterEach(() => {
   listCatalogQueryMock.mockReset();
   navigateToMock.mockReset();
@@ -74,6 +79,7 @@ afterEach(() => {
   window.sessionStorage.clear();
   window.history.replaceState({}, '', '/src/mod-catalog-compact.html');
   document.body.innerHTML = '';
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: false });
   vi.resetModules();
 });
 
@@ -93,7 +99,9 @@ describe('CompactCatalog', () => {
       { ...buildMod(10), upvotes: 60 },
     ]);
 
-    await import('./mod-catalog-compact');
+    await act(async () => {
+      await import('./mod-catalog-compact');
+    });
     await waitFor(
       () =>
         !getPageText().includes('Loading realms...') &&
@@ -110,6 +118,7 @@ describe('CompactCatalog', () => {
 
     expect(getPageText()).toMatch(/Realm 2(?!\d)/);
     expect(getPageText()).toMatch(/Realm 4(?!\d)/);
+    expect(getPageText()).toMatch(/Realm 7(?!\d)/);
     expect(getPageText()).not.toMatch(/Realm 3(?!\d)/);
     expect(getPageText()).not.toMatch(/Realm 1(?!\d)/);
 
@@ -118,11 +127,15 @@ describe('CompactCatalog', () => {
     );
     expect(newTab).toBeTruthy();
 
-    newTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await waitFor(() => /Realm 3(?!\d)/.test(getPageText()));
+    await act(async () => {
+      newTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await waitFor(() => /Realm 10(?!\d)/.test(getPageText()));
 
-    expect(getPageText()).toMatch(/Realm 3(?!\d)/);
     expect(getPageText()).toMatch(/Realm 10(?!\d)/);
+    expect(getPageText()).toMatch(/Realm 5(?!\d)/);
+    expect(getPageText()).toMatch(/Realm 4(?!\d)/);
+    expect(getPageText()).toMatch(/Realm 3(?!\d)/);
     expect(getPageText()).not.toMatch(/Realm 2(?!\d)/);
     expect(getPageText()).not.toMatch(/Realm 1(?!\d)/);
   });
@@ -131,7 +144,9 @@ describe('CompactCatalog', () => {
     document.body.innerHTML = '<div id="root"></div>';
     listCatalogQueryMock.mockResolvedValue([buildMod(1)]);
 
-    await import('./mod-catalog-compact');
+    await act(async () => {
+      await import('./mod-catalog-compact');
+    });
     await waitFor(
       () =>
         document.querySelectorAll('button').length > 0 &&
@@ -141,7 +156,9 @@ describe('CompactCatalog', () => {
     const createButton = document.querySelector('button');
     expect(createButton).toBeTruthy();
 
-    createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
 
     expect(setEditorTargetModIdMock).toHaveBeenCalledWith(null);
     expect(openEntryMock).toHaveBeenCalledTimes(1);
@@ -158,9 +175,16 @@ describe('CompactCatalog', () => {
         mods: [buildMod(1), buildMod(2)],
       })
     );
-    listCatalogQueryMock.mockImplementation(() => new Promise(() => {}));
+    listCatalogQueryMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          window.setTimeout(() => resolve([buildMod(3)]), 250);
+        })
+    );
 
-    await import('./mod-catalog-compact');
+    await act(async () => {
+      await import('./mod-catalog-compact');
+    });
     await waitFor(
       () =>
         getPageText().includes('User Realms') &&

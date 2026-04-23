@@ -190,7 +190,11 @@ export const appRouter = t.router({
         if (!context.userId) {
           throw new Error('You must be logged in.');
         }
-        return await publishDraftForUser(context.userId, input);
+        return await publishDraftForUser(
+          context.userId,
+          await reddit.getCurrentUsername(),
+          input
+        );
       }),
     unpublish: publicProcedure
       .input(z.string().min(1).max(64))

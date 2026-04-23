@@ -954,6 +954,7 @@ export const DroppableInput = ({
 
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragOver(false);
     const data = getDraggedElementName(e.dataTransfer);
     if (data) {
@@ -984,12 +985,16 @@ export const DroppableInput = ({
         }}
         onDragOver={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setDragOver(true);
         }}
-        onDragLeave={() => setDragOver(false)}
+        onDragLeave={(e) => {
+          e.stopPropagation();
+          setDragOver(false);
+        }}
         onDrop={handleDrop}
         placeholder={placeholder}
-        className={`w-full bg-transparent px-2.5 py-1.5 text-sm outline-none ${onClear ? 'pr-7' : ''}`}
+        className={`editor-droppable-input w-full bg-transparent px-2.5 py-1.5 text-sm outline-none ${onClear ? 'pr-7' : ''}`}
       />
       {onClear && value && (
         <button
@@ -1178,9 +1183,13 @@ export const ReactionWidget = ({
         }
       }}
       onDrop={(event) => {
+        if (!event.dataTransfer.types.includes(REACTION_DRAG_TYPE)) {
+          return;
+        }
+
         const fromIndexText = event.dataTransfer.getData(REACTION_DRAG_TYPE);
         const fromIndex = Number(fromIndexText);
-        if (Number.isNaN(fromIndex)) {
+        if (!fromIndexText || Number.isNaN(fromIndex)) {
           return;
         }
 

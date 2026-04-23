@@ -11,6 +11,7 @@ A bare element name is shorthand for `add elementName`, but canonical formatting
 - `line := action | if_line`
 - `if_line := if ( condition_list ) action`
 - `condition_list := condition (and condition)*`
+- full reaction-text editor only: `event [crossing|once|always]: counter_condition_list` followed by indented script lines
 - `// comment` starts a line comment outside double-quoted strings and runs to end of line
 
 ## Actions
@@ -32,6 +33,7 @@ A bare element name is shorthand for `add elementName`, but canonical formatting
 - `lose "You lose, start over"` - the same as win, but lose:)
 - `lose "You lose, start over", icon_name`
 - `stop` - prevent further lines from executing. Works like ''
+- `stop-reaction` - event scripts only; stop the original reaction script after the current event finishes
 
 ## Conditions
 
@@ -45,6 +47,43 @@ A bare element name is shorthand for `add elementName`, but canonical formatting
 - `count(counterName) >= number`
 - `count(counterName) == number`
 - `count(counterName) != number`
+
+## Full-Text Counter Events
+
+Events are authored only in the full reaction-text editor. They watch counter
+changes made by `set` actions. Immediately after a counter changes, matching
+events run before the original reaction script continues.
+
+```txt
+counters: Health min=0 max=10 initial=10
+
+event: count(Health) <= 0
+    message "You died"
+    lose "You died."
+```
+
+Event conditions support counter comparisons only:
+
+- `count(Health) <= 0`
+- `count(Health) <= 0 and count(Poison) > 0`
+
+Table and discovery predicates such as `on_table(...)` and `discovered(...)`
+are not valid in event headers.
+
+Event repeat modes:
+
+- `event:` or `event crossing:` runs when the condition changes from false to true.
+- `event once:` runs only the first time it becomes true in the saved playthrough.
+- `event always:` runs every time a referenced counter changes while the condition is true.
+
+Event bodies use normal script actions. The event-only `stop-reaction` action
+prevents later lines in the original reaction script from running:
+
+```txt
+event: count(Energy) <= 0
+    message "You are out of energy."
+    stop-reaction
+```
 
 ## Counter Behavior
 

@@ -42,6 +42,7 @@ describe('parseReactionScript', () => {
         'win "You escaped."',
         'lose "The room collapses.", dust',
         'stop',
+        'stop-reaction',
       ].join('\n')
     );
 
@@ -138,6 +139,11 @@ describe('parseReactionScript', () => {
         action: { kind: 'stop' },
         conditions: [],
         line: 13,
+      },
+      {
+        action: { kind: 'stop_reaction' },
+        conditions: [],
+        line: 14,
       },
     ]);
   });
@@ -387,9 +393,54 @@ describe('validateReactionScript', () => {
     expect(hasReactionScript('// note only')).toBe(false);
     expect(hasReactionScript('// note only\nadd dust')).toBe(true);
   });
+
+  it('rejects stop-reaction outside event scripts', () => {
+    const validation = validateReactionScript('stop-reaction', {
+      counterNames: [],
+      elements: elementRefs,
+    });
+
+    expect(validation.ok).toBe(false);
+    expect(validation.errors).toEqual([
+      {
+        line: 1,
+        message: 'stop-reaction can only be used inside event scripts.',
+      },
+    ]);
+
+    expect(
+      validateReactionScript('stop-reaction', {
+        counterNames: [],
+        elements: elementRefs,
+        scriptKind: 'event',
+      }).ok
+    ).toBe(true);
+  });
 });
 
 describe('executeReactionScript', () => {
+  it('lets count(element) compare the amount of that element on the table', () => {
+    const execution = executeReactionScript({
+      counterNames: [],
+      counters: {},
+      discoveredElementIds: [],
+      elements: elementRefs,
+      script: 'if (count(Bandage) >= 2) add key',
+      tableElements: [
+        { elementId: 'bandage', id: 'table-1' },
+        { elementId: 'bandage', id: 'table-2' },
+        { elementId: 'dust', id: 'table-3' },
+      ],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.emittedElementIds).toEqual(['key']);
+  });
+
   it('executes add, set, remove, remove_all, and message actions', () => {
     const execution = executeReactionScript({
       counterNames: ['health', 'money'],
@@ -658,5 +709,145 @@ describe('executeReactionScript', () => {
     ]);
     expect(execution.result.hiddenCounterNames).toEqual([]);
     expect(execution.result.shownCounterNames).toEqual([]);
+  });
+
+  it('runs crossing events immediately after a matching counter change', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Health'],
+      counters: {
+        Health: 1,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      events: [
+        {
+          condition: 'count(Health) <= 0',
+          mode: 'crossing',
+          script: 'message "You died"\nlose "You died."',
+        },
+      ],
+      script: ['set Health -= 1', 'add bandage'].join('\n'),
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.counterValues).toEqual({
+      Health: 0,
+    });
+    expect(execution.result.messages).toEqual(['You died']);
+    expect(execution.result.popupEvents).toEqual([
+      {
+        iconElementId: null,
+        kind: 'lose',
+        text: 'You died.',
+      },
+    ]);
+    expect(execution.result.emittedElementIds).toEqual([]);
+    expect(execution.result.eventState).toEqual({
+      activeEventIds: ['0'],
+      firedEventIds: ['0'],
+    });
+  });
+
+  it('lets event scripts stop the outer reaction without a terminal popup', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Health'],
+      counters: {
+        Health: 1,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      events: [
+        {
+          condition: 'count(Health) <= 0',
+          mode: 'crossing',
+          script: 'message "Too weak."\nstop-reaction',
+        },
+      ],
+      script: ['set Health -= 1', 'add bandage'].join('\n'),
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.messages).toEqual(['Too weak.']);
+    expect(execution.result.emittedElementIds).toEqual([]);
+    expect(execution.result.stopReaction).toBe(true);
+    expect(execution.result.stopped).toBe(false);
+  });
+
+  it('supports once and always event repeat modes', () => {
+    const onceExecution = executeReactionScript({
+      counterNames: ['Health'],
+      counters: {
+        Health: 0,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      eventState: {
+        activeEventIds: ['0'],
+        firedEventIds: ['0'],
+      },
+      events: [
+        {
+          condition: 'count(Health) <= 0',
+          mode: 'once',
+          script: 'message "Once."',
+        },
+        {
+          condition: 'count(Health) <= 0',
+          mode: 'always',
+          script: 'message "Always."',
+        },
+      ],
+      script: 'set Health -= 1',
+      tableElements: [],
+    });
+
+    expect(onceExecution.ok).toBe(true);
+    if (!onceExecution.ok) {
+      return;
+    }
+
+    expect(onceExecution.result.messages).toEqual(['Always.']);
+  });
+
+  it('reports recursive event loops instead of running forever', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Heat'],
+      counters: {
+        Heat: 0,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      events: [
+        {
+          condition: 'count(Heat) >= 1',
+          mode: 'always',
+          script: 'set Heat += 1',
+        },
+      ],
+      script: 'set Heat += 1',
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(false);
+    if (execution.ok) {
+      return;
+    }
+
+    expect(execution.errors).toEqual([
+      {
+        line: 1,
+        message: 'Event loop limit exceeded.',
+      },
+    ]);
   });
 });

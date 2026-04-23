@@ -15,6 +15,7 @@ type PersistedRuleset = {
   startingCounterElementIds?: ActiveRuleset['startingCounterElementIds'];
   recipes: ActiveRuleset['recipes'];
   reactionScripts?: ActiveRuleset['reactionScripts'];
+  events?: ActiveRuleset['events'];
   elementNames?: ActiveRuleset['elementNames'];
   elementStyles: ActiveRuleset['elementStyles'];
   elementIcons: ActiveRuleset['elementIcons'];
@@ -91,6 +92,7 @@ export const readPlaytestRuleset = (): ActiveRuleset | null => {
       startingCounterElementIds: parsed.startingCounterElementIds ?? [],
       recipes: canonicalizeReactionMap(parsed.recipes),
       reactionScripts: canonicalizeReactionMap(parsed.reactionScripts ?? {}),
+      events: parsed.events ?? [],
       elementStyles: parsed.elementStyles,
       elementIcons: parsed.elementIcons,
       elementEffects: parsed.elementEffects ?? {},

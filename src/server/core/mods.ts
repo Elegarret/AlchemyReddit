@@ -121,18 +121,52 @@ const indexDraftOwnerForMod = async (
 const loadLatestMod = async (modId: string) =>
   parseMod(await redis.get(getLatestKey(modId)));
 
-const loadMostRecentDraftForMod = async (modId: string) => {
-  const ownerEntries = await redis.zRange(getDraftOwnersKey(modId), 0, 9);
+const removeDraftOwnerForMod = async (modId: string, ownerUserId: string) => {
+  await redis.del(getDraftKey(ownerUserId, modId));
+  await redis.zRem(getDraftOwnersKey(modId), [ownerUserId]);
+  await redis.zRem(getOwnerKey(ownerUserId), [modId]);
+};
+
+const cleanupStaleDraftsForMod = async (
+  modId: string,
+  currentOwnerUserId: string
+) => {
+  const ownerEntries = await redis.zRange(getDraftOwnersKey(modId), 0, 999);
+  await Promise.all(
+    ownerEntries.map(async ({ member }) => {
+      const draft = parseMod(await redis.get(getDraftKey(member, modId)));
+      if (member !== currentOwnerUserId) {
+        await removeDraftOwnerForMod(modId, member);
+        return;
+      }
+
+      if (!draft) {
+        await redis.zRem(getDraftOwnersKey(modId), [member]);
+        await redis.zRem(getOwnerKey(member), [modId]);
+      }
+    })
+  );
+};
+
+const loadCanonicalDraftForUnpublishedMod = async (modId: string) => {
+  const ownerEntries = await redis.zRange(getDraftOwnersKey(modId), 0, 999);
+  const drafts: ModDoc[] = [];
   for (const { member } of ownerEntries) {
     const draft = parseMod(await redis.get(getDraftKey(member, modId)));
     if (draft) {
-      return draft;
+      drafts.push(draft);
+      continue;
     }
 
-    await redis.zRem(getDraftOwnersKey(modId), [member]);
+    await removeDraftOwnerForMod(modId, member);
   }
 
-  return null;
+  const draft = drafts[drafts.length - 1] ?? null;
+  if (draft) {
+    await cleanupStaleDraftsForMod(modId, draft.ownerUserId);
+  }
+
+  return draft;
 };
 
 const stripPublishedFields = (mod: ModDoc): ModDoc => {
@@ -146,18 +180,76 @@ const buildSharePostTitle = (mod: Pick<ModDoc, 'title' | 'ownerUsername'>) =>
 const buildSharePostBody = (mod: Pick<ModDoc, 'summary' | 'title'>) =>
   mod.summary || mod.title;
 
-const takeModOwnership = (
-  mod: ModDoc,
-  userId: string,
-  username: string
+const getAuthorDraftForMod = async (mod: Pick<ModDoc, 'id' | 'ownerUserId'>) =>
+  parseMod(await redis.get(getDraftKey(mod.ownerUserId, mod.id)));
+
+const getCurrentDraftForMod = async (
+  mod: Pick<ModDoc, 'id' | 'ownerUserId'>
+) => {
+  const draft = await getAuthorDraftForMod(mod);
+  await cleanupStaleDraftsForMod(mod.id, mod.ownerUserId);
+  return draft;
+};
+
+const mergePublishedFieldsIntoDraft = (
+  draft: ModDoc,
+  latest: ModDoc | null
+): ModDoc =>
+  latest?.status === 'published'
+    ? {
+        ...draft,
+        publishedAt: latest.publishedAt,
+        publishedHash: latest.publishedHash,
+        sharePostId: latest.sharePostId,
+      }
+    : draft;
+
+const serializePublishedDraftSource = (
+  draft: ModDoc,
+  latest: ModDoc
 ): ModDoc => ({
-  ...mod,
-  ownerUserId: userId,
-  ownerUsername: username,
+  ...draft,
+  status: 'published',
+  publishedAt: latest.publishedAt,
+  publishedHash: latest.publishedHash,
+  sharePostId: latest.sharePostId,
 });
 
-const persistPublishedSharePostId = async (
+const loadEditableSourceForUser = async (
   userId: string,
+  username: string | undefined,
+  modId: string
+) => {
+  const latest = await loadLatestMod(modId);
+  if (latest) {
+    await assertCanManageMod(latest, userId, username);
+    const authorDraft = await getCurrentDraftForMod(latest);
+    return {
+      draft: mergePublishedFieldsIntoDraft(
+        authorDraft ?? { ...latest, status: 'draft' },
+        latest
+      ),
+      latest,
+      source: latest,
+    };
+  }
+
+  const draft =
+    (await loadCanonicalDraftForUnpublishedMod(modId)) ??
+    parseMod(await redis.get(getDraftKey(userId, modId)));
+  if (!draft) {
+    return null;
+  }
+
+  await assertCanManageMod(draft, userId, username);
+  return {
+    draft,
+    latest: null,
+    source: draft,
+  };
+};
+
+const persistPublishedSharePostId = async (
   mod: ModDoc,
   sharePostId: string
 ) => {
@@ -169,7 +261,7 @@ const persistPublishedSharePostId = async (
   mod.sharePostId = normalizedSharePostId;
   await redis.set(getLatestKey(mod.id), JSON.stringify(mod));
   await redis.set(
-    getDraftKey(userId, mod.id),
+    getDraftKey(mod.ownerUserId, mod.id),
     JSON.stringify({ ...mod, status: 'draft' })
   );
   await saveMeta(mod);
@@ -256,35 +348,55 @@ export const listModsForUser = async (userId: string) => {
   const entries = await redis.zRange(getOwnerKey(userId), 0, 99);
   const items = await Promise.all(
     entries.map(async ({ member }) => {
-      const draft = parseMod(await redis.get(getDraftKey(userId, member)));
       const latest = await loadLatestMod(member);
 
-      if (draft && latest?.status === 'published') {
-        return serializeListItem({
-          ...draft,
-          status: 'published',
-          publishedAt: latest.publishedAt,
-          publishedHash: latest.publishedHash,
-          sharePostId: latest.sharePostId,
-        }, {
-          hasDraftVersion: true,
-          hasPublishedVersion: true,
+      if (latest) {
+        if (latest.ownerUserId !== userId) {
+          await redis.zRem(getOwnerKey(userId), [member]);
+          return null;
+        }
+
+        const draft = await getCurrentDraftForMod(latest);
+        if (draft && latest.status === 'published') {
+          return serializeListItem(
+            serializePublishedDraftSource(draft, latest),
+            {
+              hasDraftVersion: true,
+              hasPublishedVersion: true,
+            }
+          );
+        }
+
+        if (draft) {
+          return serializeListItem(draft, {
+            hasDraftVersion: true,
+            hasPublishedVersion: false,
+          });
+        }
+
+        return serializeListItem(latest, {
+          hasDraftVersion: false,
+          hasPublishedVersion: latest.status === 'published',
         });
       }
 
+      const draft =
+        (await loadCanonicalDraftForUnpublishedMod(member)) ??
+        parseMod(await redis.get(getDraftKey(userId, member)));
       if (draft) {
+        if (draft.ownerUserId !== userId) {
+          await redis.zRem(getOwnerKey(userId), [member]);
+          return null;
+        }
+
         return serializeListItem(draft, {
           hasDraftVersion: true,
           hasPublishedVersion: false,
         });
       }
 
-      return latest
-        ? serializeListItem(latest, {
-            hasDraftVersion: false,
-            hasPublishedVersion: latest.status === 'published',
-          })
-        : null;
+      await redis.zRem(getOwnerKey(userId), [member]);
+      return null;
     })
   );
 
@@ -307,11 +419,14 @@ export const listAllAdminMods = async (): Promise<AdminModListItem[]> => {
   );
   const items = await Promise.all(
     modIds.map(async (modId) => {
-      const [latest, draft] = await Promise.all([
-        loadLatestMod(modId),
-        loadMostRecentDraftForMod(modId),
-      ]);
-      const source = draft ?? latest;
+      const latest = await loadLatestMod(modId);
+      const draft = latest
+        ? await getCurrentDraftForMod(latest)
+        : await loadCanonicalDraftForUnpublishedMod(modId);
+      const source =
+        draft && latest?.status === 'published'
+          ? serializePublishedDraftSource(draft, latest)
+          : draft ?? latest;
 
       if (!source) {
         return null;
@@ -345,21 +460,8 @@ export const getEditableModForUser = async (
   username: string | undefined,
   modId: string
 ) => {
-  const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
-  if (draft) {
-    return draft;
-  }
-
-  const latest = await loadLatestMod(modId);
-  if (!latest) {
-    return null;
-  }
-
-  await assertCanManageMod(latest, userId, username);
-  return {
-    ...latest,
-    status: 'draft',
-  };
+  const editable = await loadEditableSourceForUser(userId, username, modId);
+  return editable?.draft ?? null;
 };
 
 export const getPublishedMod = async (modId: string) => {
@@ -388,48 +490,59 @@ export const saveDraftForUser = async (
   rawInput: SaveDraftInput
 ) => {
   const input = saveDraftInputSchema.parse(rawInput);
-  const existingPublished = input.id ? await loadLatestMod(input.id) : null;
-  if (existingPublished) {
-    await assertCanManageMod(existingPublished, userId, username);
+  const existingEditable = input.id
+    ? await loadEditableSourceForUser(userId, username, input.id)
+    : null;
+  if (input.id && !existingEditable) {
+    throw new Error('Mod not found.');
   }
 
   const modId = input.id ?? createModId();
+  const ownerUserId = existingEditable?.source.ownerUserId ?? userId;
+  const ownerUsername = existingEditable?.source.ownerUsername ?? username;
   const updatedAt = new Date().toISOString();
   const draft: ModDoc = {
     id: modId,
     title: input.title.trim(),
     summary: input.summary.trim(),
     intro: input.intro.trim(),
-    ownerUserId: userId,
-    ownerUsername: username,
+    ownerUserId,
+    ownerUsername,
     startingElementIds: input.startingElementIds,
     counters: input.counters,
     showPalette: input.showPalette,
     elements: input.elements,
     reactions: input.reactions,
+    events: input.events,
     reactionComments: input.reactionComments,
     status: 'draft',
     updatedAt,
   };
 
-  await redis.set(getDraftKey(userId, modId), JSON.stringify(draft));
+  await redis.set(getDraftKey(ownerUserId, modId), JSON.stringify(draft));
   await saveMeta(
-    existingPublished?.status === 'published' ? existingPublished : draft
+    existingEditable?.latest?.status === 'published'
+      ? existingEditable.latest
+      : draft
   );
   await indexModForOwner(draft);
   await indexModGlobally(draft);
   await indexDraftOwnerForMod(draft);
+  await cleanupStaleDraftsForMod(modId, ownerUserId);
   return draft;
 };
 
-export const publishDraftForUser = async (userId: string, modId: string) => {
-  const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
-  if (!draft) {
+export const publishDraftForUser = async (
+  userId: string,
+  username: string | undefined,
+  modId: string
+) => {
+  const editable = await loadEditableSourceForUser(userId, username, modId);
+  if (!editable) {
     throw new Error('Draft not found.');
   }
-  const existingPublished = await loadLatestMod(modId);
+  const { draft, latest: existingPublished, source } = editable;
 
-  await assertCanManageMod(draft, userId, draft.ownerUsername);
   const validation = validateDraftInput({
     id: draft.id,
     title: draft.title,
@@ -440,6 +553,7 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
     showPalette: draft.showPalette,
     elements: draft.elements,
     reactions: draft.reactions,
+    events: draft.events,
   });
 
   if (!validation.isValid || validation.warnings.length > 0) {
@@ -454,6 +568,8 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
   const publishedAt = new Date().toISOString();
   const published: ModDoc = {
     ...draft,
+    ownerUserId: source.ownerUserId,
+    ownerUsername: source.ownerUsername,
     status: 'published',
     updatedAt: publishedAt,
     publishedAt,
@@ -465,7 +581,7 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
 
   await redis.set(getLatestKey(modId), JSON.stringify(published));
   await redis.set(
-    getDraftKey(userId, modId),
+    getDraftKey(published.ownerUserId, modId),
     JSON.stringify({ ...published, status: 'draft' })
   );
   await saveMeta(published);
@@ -473,6 +589,7 @@ export const publishDraftForUser = async (userId: string, modId: string) => {
   await indexModGlobally(published);
   await indexDraftOwnerForMod(published);
   await indexPublishedMod(published);
+  await cleanupStaleDraftsForMod(modId, published.ownerUserId);
   const sharePost = await createSharePostForMod(userId, modId);
   return {
     mod: parseMod(await redis.get(getLatestKey(modId))) ?? published,
@@ -566,28 +683,42 @@ export const removeModForUser = async (
   username: string | undefined,
   modId: string
 ) => {
-  const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
   const latest = await loadLatestMod(modId);
-  const target = draft ?? latest;
+  const draftOwnerEntries = await redis.zRange(getDraftOwnersKey(modId), 0, 999);
+  const indexedDrafts = await Promise.all(
+    draftOwnerEntries.map(async ({ member }) => ({
+      ownerId: member,
+      draft: parseMod(await redis.get(getDraftKey(member, modId))),
+    }))
+  );
+  const ownDraft = parseMod(await redis.get(getDraftKey(userId, modId)));
+  const target =
+    latest ??
+    indexedDrafts.find(({ draft }) => draft !== null)?.draft ??
+    ownDraft;
 
   if (!target) {
     throw new Error('Mod not found.');
   }
 
   await assertCanManageMod(target, userId, username);
-  await removeSharePostIfPossible(target.sharePostId);
+  await removeSharePostIfPossible(latest?.sharePostId ?? target.sharePostId);
 
   const ownerIds = new Set(
-    [draft?.ownerUserId, latest?.ownerUserId, userId].filter(
+    [
+      latest?.ownerUserId,
+      target.ownerUserId,
+      ownDraft?.ownerUserId,
+      userId,
+      ...draftOwnerEntries.map(({ member }) => member),
+      ...indexedDrafts.map(({ draft }) => draft?.ownerUserId),
+    ].filter(
       (candidate): candidate is string => Boolean(candidate)
     )
   );
 
   await redis.del(
-    getDraftKey(userId, modId),
-    ...Array.from(ownerIds)
-      .filter((ownerId) => ownerId !== userId)
-      .map((ownerId) => getDraftKey(ownerId, modId)),
+    ...Array.from(ownerIds).map((ownerId) => getDraftKey(ownerId, modId)),
     getLatestKey(modId),
     getMetaKey(modId),
     getPlayerKey(modId),
@@ -616,7 +747,7 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
 
   if (latest.sharePostId) {
     const normalizedSharePostId = normalizeRedditPostId(latest.sharePostId);
-    await persistPublishedSharePostId(userId, latest, normalizedSharePostId);
+    await persistPublishedSharePostId(latest, normalizedSharePostId);
     return {
       id: normalizedSharePostId,
       url: getPostUrl(normalizedSharePostId, context.subredditName),
@@ -645,11 +776,7 @@ export const createSharePostForMod = async (userId: string, modId: string) => {
     },
   });
 
-  const normalizedSharePostId = await persistPublishedSharePostId(
-    userId,
-    latest,
-    post.id
-  );
+  const normalizedSharePostId = await persistPublishedSharePostId(latest, post.id);
 
   return {
     id: normalizedSharePostId,
@@ -662,22 +789,20 @@ export const unpublishModForUser = async (
   username: string | undefined,
   modId: string
 ) => {
-  const draft = parseMod(await redis.get(getDraftKey(userId, modId)));
-  const latest = await loadLatestMod(modId);
-  const source = latest ?? draft;
-
-  if (!source) {
+  const editable = await loadEditableSourceForUser(userId, username, modId);
+  if (!editable) {
     throw new Error('Mod not found.');
   }
-
-  await assertCanManageMod(source, userId, username);
+  const { draft, latest, source } = editable;
 
   await removeSharePostIfPossible(latest?.sharePostId ?? draft?.sharePostId);
 
   const now = new Date().toISOString();
   const unpublished: ModDoc = {
     ...stripPublishedFields({
-      ...takeModOwnership(draft ?? latest ?? source, userId, username ?? 'unknown'),
+      ...draft,
+      ownerUserId: source.ownerUserId,
+      ownerUsername: source.ownerUsername,
       status: 'draft',
       updatedAt: now,
     }),
@@ -686,7 +811,10 @@ export const unpublishModForUser = async (
   };
 
   await redis.set(getLatestKey(modId), JSON.stringify(unpublished));
-  await redis.set(getDraftKey(userId, modId), JSON.stringify(unpublished));
+  await redis.set(
+    getDraftKey(unpublished.ownerUserId, modId),
+    JSON.stringify(unpublished)
+  );
   await saveMeta(unpublished);
   await indexModForOwner(unpublished);
   await indexModGlobally(unpublished);

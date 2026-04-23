@@ -9,7 +9,10 @@ import {
 } from '../modding/runtime';
 import {
   formatReactionScript,
+  formatReactionScriptConditionList,
+  parseReactionScriptConditionList,
   splitReactionScriptLineComment,
+  validateReactionScriptConditions,
   validateReactionScript,
 } from '../modding/reaction-script';
 import {
@@ -20,6 +23,7 @@ import {
   type ReactionComments,
   type ModCounterDefinition,
   type ModElement,
+  type ModEventMode,
   type ModListItem,
   type SaveDraftInput,
   saveDraftInputSchema,
@@ -93,6 +97,7 @@ export const createEmptyDraft = (): SaveDraftInput => ({
   intro: '',
   startingElementIds: DEFAULT_STARTER_ELEMENTS.map((element) => element.id),
   counters: [],
+  events: [],
   showPalette: true,
   elements: DEFAULT_STARTER_ELEMENTS.map((element) =>
     createStarterElement(
@@ -123,6 +128,7 @@ const toImportedDraft = (
   intro: draft.intro,
   startingElementIds: draft.startingElementIds,
   counters: draft.counters,
+  events: draft.events,
   showPalette: draft.showPalette,
   elements: draft.elements,
   reactions: draft.reactions,
@@ -274,6 +280,24 @@ const parseDeclarationLine = (rawLine: string) => {
   return {
     key: (match[1] ?? '').trim().toLowerCase(),
     value: match[2] ?? '',
+  };
+};
+
+const parseEventHeaderLine = (rawLine: string) => {
+  const match = rawLine.match(
+    /^\s*event(?:\s+(crossing|once|always))?\s*:\s*(.*)$/i
+  );
+  if (!match) {
+    return null;
+  }
+
+  const rawMode = (match[1] ?? 'crossing').toLowerCase();
+  const mode: ModEventMode =
+    rawMode === 'always' ? 'always' : rawMode === 'once' ? 'once' : 'crossing';
+
+  return {
+    condition: (match[2] ?? '').trim(),
+    mode,
   };
 };
 
@@ -512,7 +536,7 @@ const parseReactionTextDeclarations = (
   draft: SaveDraftInput,
   lines: string[]
 ) => {
-  let nextDraft = clearTextDeclarationState(draft);
+  const nextDraft = clearTextDeclarationState(draft);
   const errors: ReactionTextIssue[] = [];
   const seenKeys = new Set<DeclarationLineKey>();
   const startingElementIds: string[] = [];
@@ -671,7 +695,8 @@ const parseReactionBodyToDraft = (
   bodyLines: string[],
   bodyStartIndex: number
 ) => {
-  let nextDraft = draft;
+  const nextDraft = draft;
+  const events: SaveDraftInput['events'] = [];
   const reactions: SaveDraftInput['reactions'] = [];
   const commentBlocks: ReactionCommentBlock[] = [];
   const errors: ReactionTextIssue[] = [];
@@ -692,6 +717,119 @@ const parseReactionBodyToDraft = (
 
     const absoluteLine = bodyStartIndex + index + 1;
     const line = splitLine.code.trim();
+    const parsedEventHeader = parseEventHeaderLine(line);
+    if (parsedEventHeader) {
+      if (!parsedEventHeader.condition) {
+        errors.push({
+          line: absoluteLine,
+          message: 'Event condition cannot be empty.',
+        });
+      }
+
+      const scriptLines: string[] = [];
+      while (index + 1 < bodyLines.length) {
+        const nextLine = bodyLines[index + 1] ?? '';
+        if (nextLine.startsWith('    ')) {
+          scriptLines.push(nextLine.slice(4));
+          index += 1;
+          continue;
+        }
+
+        if (nextLine.startsWith('\t')) {
+          scriptLines.push(nextLine.slice(1));
+          index += 1;
+          continue;
+        }
+
+        break;
+      }
+
+      if (scriptLines.length === 0 || !scriptLines.join('\n').trim()) {
+        errors.push({
+          line: absoluteLine,
+          message: 'Event blocks must include an indented script body.',
+        });
+      }
+
+      const parsedConditions = parseReactionScriptConditionList(
+        parsedEventHeader.condition,
+        absoluteLine
+      );
+      const condition =
+        formatReactionScriptConditionList(parsedEventHeader.condition) ??
+        parsedEventHeader.condition;
+      if (!parsedConditions.ok) {
+        errors.push(...parsedConditions.errors);
+      } else {
+        const conditionValidation = validateReactionScriptConditions(
+          parsedConditions.conditions,
+          {
+            counterNames: getDraftCounterNames(nextDraft),
+            elements: nextDraft.elements.map((element) => ({
+              id: element.id,
+              name: element.name,
+            })),
+            nonGameplayElementIds: nextDraft.counters.map(
+              (counter) => counter.elementId
+            ),
+            scriptKind: 'event',
+          },
+          {
+            counterOnly: true,
+          }
+        );
+        conditionValidation.errors.forEach((error) => {
+          errors.push({
+            ...error,
+            line: absoluteLine,
+          });
+        });
+      }
+
+      const script =
+        formatReactionScript(scriptLines.join('\n')) ?? scriptLines.join('\n');
+      const scriptValidation = validateReactionScript(script, {
+        counterNames: getDraftCounterNames(nextDraft),
+        elements: nextDraft.elements.map((element) => ({
+          id: element.id,
+          name: element.name,
+        })),
+        nonGameplayElementIds: nextDraft.counters.map(
+          (counter) => counter.elementId
+        ),
+        scriptKind: 'event',
+      });
+      if (!scriptValidation.ok) {
+        scriptValidation.errors.forEach((error) => {
+          const missingElementName =
+            error.message.match(/^Unknown element "(.+)"\.$/)?.[1] ?? null;
+          errors.push({
+            line: absoluteLine + error.line,
+            message: error.message,
+            ...(missingElementName ? { missingElementName } : {}),
+          });
+        });
+      }
+
+      events.push({
+        condition,
+        mode: parsedEventHeader.mode,
+        script,
+      });
+      pendingLeadingComments = [];
+      continue;
+    }
+
+    if (/^event\b/i.test(line)) {
+      errors.push({
+        line: absoluteLine,
+        message:
+          'Expected an event header: event:, event crossing:, event once:, or event always:.',
+      });
+      pendingLeadingComments = [];
+      continue;
+    }
+
     const parsedDeclarationLine = parseDeclarationLine(line);
     if (parsedDeclarationLine && getSupportedDeclarationKey(parsedDeclarationLine.key)) {
       errors.push({
@@ -863,6 +1001,7 @@ const parseReactionBodyToDraft = (
         trailingComments: pendingLeadingComments,
       },
       reactions,
+      events,
     },
     errors,
   };
@@ -996,9 +1135,18 @@ export const formatReactionText = (draft: SaveDraftInput) => {
     declarationLines.push(`nonconsumables: ${nonConsumableNames.join(', ')}`);
   }
 
+  const eventLines = (draft.events ?? []).flatMap((event) => {
+    const modeText = event.mode === 'crossing' ? '' : ` ${event.mode}`;
+    const formattedScript = formatReactionScript(event.script) ?? event.script;
+    return [
+      `event${modeText}: ${event.condition}`,
+      ...formattedScript.split('\n').map((line) => `    ${line}`),
+    ];
+  });
+
   const lines =
-    reactionLines.length > 0
-      ? [...declarationLines, '', ...reactionLines]
+    eventLines.length > 0 || reactionLines.length > 0
+      ? [...declarationLines, '', ...eventLines, ...reactionLines]
       : declarationLines;
 
   return lines.join('\n') + (lines.length > 0 ? '\n' : '');

@@ -14,6 +14,7 @@ import {
   IoCopyOutline,
   IoDownloadOutline,
   IoEllipsisHorizontal,
+  IoHelpCircleOutline,
   IoPlaySharp,
   IoRocketSharp,
   IoSaveSharp,
@@ -131,6 +132,21 @@ const removeElementsFromDraft = (
   elementIds: string[]
 ) => elementIds.reduce(removeElementFromDraft, current);
 
+type LoadedRealmMeta = Pick<
+  ModListItem,
+  | 'hasDraftVersion'
+  | 'hasPublishedVersion'
+  | 'id'
+  | 'publishedAt'
+  | 'publishedHash'
+  | 'sharePostId'
+  | 'status'
+  | 'summary'
+  | 'title'
+  | 'updatedAt'
+  | 'ownerUsername'
+>;
+
 export const ModEditorApp = () => {
   const [tab, setTab] = useState<EditorTab>('editor');
   const [draft, setDraft] = useState<SaveDraftInput>(createEmptyDraft);
@@ -156,9 +172,14 @@ export const ModEditorApp = () => {
   const [importText, setImportText] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
+  const [isPublishConfirmOpen, setIsPublishConfirmOpen] = useState(false);
+  const [isDeleteRealmModalOpen, setIsDeleteRealmModalOpen] = useState(false);
+  const [isDeleteRealmArmed, setIsDeleteRealmArmed] = useState(false);
   const [pendingRemoveModId, setPendingRemoveModId] = useState<string | null>(
     null
   );
+  const [loadedRealmMeta, setLoadedRealmMeta] =
+    useState<LoadedRealmMeta | null>(null);
   const [elementPanelView, setElementPanelView] =
     useState<ElementPanelView>('compact');
   const [isValidationBlinking, setIsValidationBlinking] = useState(false);
@@ -270,7 +291,7 @@ export const ModEditorApp = () => {
     [counterElementIds, draft.elements]
   );
   const loadedMod = loadedDraftId
-    ? (myMods.find((mod) => mod.id === loadedDraftId) ?? null)
+    ? (myMods.find((mod) => mod.id === loadedDraftId) ?? loadedRealmMeta)
     : null;
   const hasLoadedPublishedVersion = Boolean(
     loadedMod?.hasPublishedVersion ?? loadedMod?.status === 'published'
@@ -286,6 +307,7 @@ export const ModEditorApp = () => {
         showPalette: draftWithTextChanges.showPalette,
         elements: draftWithTextChanges.elements,
         reactions: draftWithTextChanges.reactions,
+        events: draftWithTextChanges.events ?? [],
       }),
     [draftWithTextChanges]
   );
@@ -370,13 +392,15 @@ export const ModEditorApp = () => {
 
   const hydrateEditorDraft = (
     nextDraft: SaveDraftInput,
-    nextLoadedDraftId: string | null
+    nextLoadedDraftId: string | null,
+    nextLoadedRealmMeta: LoadedRealmMeta | null = null
   ) => {
     setDraft(nextDraft);
     setShouldShowValidationPlank(true);
     setIsValidationExpanded(false);
     setReactionText(formatReactionText(nextDraft));
     setLoadedDraftId(nextLoadedDraftId);
+    setLoadedRealmMeta(nextLoadedRealmMeta);
     setShareUrl(null);
     setPendingRemoveModId(null);
     setEditorTargetModId(null);
@@ -1018,6 +1042,20 @@ export const ModEditorApp = () => {
       ...(loadedDraftId ? { id: loadedDraftId } : {}),
     });
     setLoadedDraftId(saved.id);
+    setLoadedRealmMeta((current) => ({
+      hasDraftVersion: true,
+      hasPublishedVersion:
+        current?.hasPublishedVersion ?? Boolean(saved.publishedHash),
+      id: saved.id,
+      ownerUsername: saved.ownerUsername,
+      publishedAt: current?.publishedAt ?? saved.publishedAt,
+      publishedHash: current?.publishedHash ?? saved.publishedHash,
+      sharePostId: current?.sharePostId ?? saved.sharePostId,
+      status: current?.status ?? saved.status,
+      summary: saved.summary,
+      title: saved.title,
+      updatedAt: saved.updatedAt,
+    }));
     return saved.id;
   };
 
@@ -1086,6 +1124,20 @@ export const ModEditorApp = () => {
 
       const published = await trpc.mods.publish.mutate(modId);
       showToast('Realm published');
+      setIsPublishConfirmOpen(false);
+      setLoadedRealmMeta({
+        hasDraftVersion: true,
+        hasPublishedVersion: true,
+        id: published.mod.id,
+        ownerUsername: published.mod.ownerUsername,
+        publishedAt: published.mod.publishedAt,
+        publishedHash: published.mod.publishedHash,
+        sharePostId: published.mod.sharePostId,
+        status: 'published',
+        summary: published.mod.summary,
+        title: published.mod.title,
+        updatedAt: published.mod.updatedAt,
+      });
       setShareUrl(null);
       await refreshLists();
       navigateTo(published.sharePost.url);
@@ -1107,8 +1159,18 @@ export const ModEditorApp = () => {
 
     setIsBusy(true);
     try {
-      await trpc.mods.unpublish.mutate(loadedDraftId);
+      const unpublished = await trpc.mods.unpublish.mutate(loadedDraftId);
       showToast('Realm moved back to drafts');
+      setLoadedRealmMeta({
+        hasDraftVersion: true,
+        hasPublishedVersion: false,
+        id: unpublished.id,
+        ownerUsername: unpublished.ownerUsername,
+        status: 'draft',
+        summary: unpublished.summary,
+        title: unpublished.title,
+        updatedAt: unpublished.updatedAt,
+      });
       setShareUrl(null);
       await refreshLists();
     } catch (error) {
@@ -1220,9 +1282,25 @@ export const ModEditorApp = () => {
           showPalette: loaded.showPalette,
           elements: loaded.elements,
           reactions: loaded.reactions,
-          reactionComments: loaded.reactionComments,
+          events: loaded.events ?? [],
+          ...(loaded.reactionComments
+            ? { reactionComments: loaded.reactionComments }
+            : {}),
         },
-        loaded.id
+        loaded.id,
+        {
+          hasDraftVersion: true,
+          hasPublishedVersion: Boolean(loaded.publishedHash),
+          id: loaded.id,
+          ownerUsername: loaded.ownerUsername,
+          publishedAt: loaded.publishedAt,
+          publishedHash: loaded.publishedHash,
+          sharePostId: loaded.sharePostId,
+          status: loaded.publishedHash ? 'published' : loaded.status,
+          summary: loaded.summary,
+          title: loaded.title,
+          updatedAt: loaded.updatedAt,
+        }
       );
     } catch (error) {
       console.error(error);
@@ -1260,6 +1338,7 @@ export const ModEditorApp = () => {
         setShouldShowValidationPlank(false);
         setIsValidationExpanded(false);
         setLoadedDraftId(null);
+        setLoadedRealmMeta(null);
         setShareUrl(null);
         setEditorTargetModId(null);
       }
@@ -1271,6 +1350,43 @@ export const ModEditorApp = () => {
       setPendingRemoveModId(null);
       showToast(
         error instanceof Error ? error.message : 'Failed to remove realm'
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const deleteLoadedRealm = async () => {
+    if (!loadedDraftId) {
+      showToast('Save the realm first');
+      setIsDeleteRealmModalOpen(false);
+      setIsDeleteRealmArmed(false);
+      return;
+    }
+
+    if (!isDeleteRealmArmed) {
+      setIsDeleteRealmArmed(true);
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      await trpc.mods.remove.mutate(loadedDraftId);
+      setDraft(createEmptyDraft());
+      setShouldShowValidationPlank(false);
+      setIsValidationExpanded(false);
+      setLoadedDraftId(null);
+      setLoadedRealmMeta(null);
+      setShareUrl(null);
+      setEditorTargetModId(null);
+      setIsDeleteRealmModalOpen(false);
+      setIsDeleteRealmArmed(false);
+      await refreshLists();
+      showToast('Realm deleted');
+    } catch (error) {
+      console.error(error);
+      showToast(
+        error instanceof Error ? error.message : 'Failed to delete realm'
       );
     } finally {
       setIsBusy(false);
@@ -1374,6 +1490,105 @@ export const ModEditorApp = () => {
           </div>
         )}
 
+        {isPublishConfirmOpen && (
+          <div
+            className="fixed inset-0 z-[122] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+            onClick={() => setIsPublishConfirmOpen(false)}
+          >
+            <div
+              className="realm-panel-solid w-full max-w-md rounded-3xl p-5 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="catalog-title-font text-[11px] font-bold tracking-[0.24em] opacity-75 uppercase">
+                Launch Realm
+              </div>
+              <h2 className="catalog-title-font mt-2 text-2xl font-black">
+                {hasLoadedPublishedVersion ? 'Send the update live?' : 'Ready to go public?'}
+              </h2>
+              <div className="mt-3 space-y-2 text-sm leading-relaxed opacity-90">
+                <p>Your realm will be public and ready for players to discover.</p>
+                <p>
+                  You can keep improving it later. Publishing an update resets
+                  player saves for this realm, so make sure this version is worth it.
+                </p>
+                <p>
+                  After launch, share it with friends and relevant subs without
+                  spam. More players means more reactions, feedback, and bragging rights.
+                </p>
+              </div>
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPublishConfirmOpen(false)}
+                  className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={publishDraft}
+                  className="realm-button-accent catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
+                >
+                  {hasLoadedPublishedVersion ? 'Launch Update' : 'Launch Realm'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isDeleteRealmModalOpen && (
+          <div
+            className="fixed inset-0 z-[123] flex items-center justify-center bg-black/65 px-4 backdrop-blur-sm"
+            onClick={() => {
+              setIsDeleteRealmModalOpen(false);
+              setIsDeleteRealmArmed(false);
+            }}
+          >
+            <div
+              className="realm-panel w-full max-w-md rounded-3xl p-5 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="catalog-title-font text-[11px] font-bold tracking-[0.24em] text-rose-600 uppercase">
+                Delete Realm
+              </div>
+              <h2 className="catalog-title-font realm-text-ink mt-2 text-xl font-black">
+                Delete this realm completely?
+              </h2>
+              <p className="realm-text-soft mt-3 text-sm leading-relaxed">
+                This permanently removes the realm, published data, drafts,
+                catalog entries, player count, and share post when Reddit allows
+                it. This cannot be undone.
+              </p>
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDeleteRealmModalOpen(false);
+                    setIsDeleteRealmArmed(false);
+                  }}
+                  className="realm-button-muted catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={deleteLoadedRealm}
+                  className={`catalog-title-font cursor-pointer rounded-full px-4 py-2 text-sm font-bold text-white ${
+                    isDeleteRealmArmed
+                      ? 'bg-rose-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {isDeleteRealmArmed
+                    ? 'Click Again to Delete'
+                    : 'I Understand'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {pasteMissingElements && (
           <div
             className="fixed inset-0 z-[121] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
@@ -1451,12 +1666,24 @@ export const ModEditorApp = () => {
               </h1>
             </div>
 
-            <div className="justify-self-end">
+            <div className="flex items-center gap-2 justify-self-end">
               <button
                 onClick={() => setTab('editor')}
                 className={`catalog-title-font rounded-full px-4 py-2 text-sm font-bold ${tab === 'editor' ? 'realm-button-accent' : 'realm-button-muted'}`}
               >
                 Editor
+              </button>
+              <button
+                type="button"
+                onClick={openAuthorsHelpPage}
+                title={
+                  authorsHelpPageUrl
+                    ? 'Open Authors Help Page'
+                    : 'Authors Help Page URL is not configured.'
+                }
+                className="realm-button-muted flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
+              >
+                <IoHelpCircleOutline />
               </button>
             </div>
           </div>
@@ -1629,9 +1856,12 @@ export const ModEditorApp = () => {
                           return;
                         }
 
-                        void (primaryPublishAction === 'unpublish'
-                          ? unpublishDraft()
-                          : publishDraft());
+                        if (primaryPublishAction === 'unpublish') {
+                          void unpublishDraft();
+                          return;
+                        }
+
+                        setIsPublishConfirmOpen(true);
                       }}
                       className={`${editorActionButtonClass} editor-action-button-primary ${
                         isBusy || publishBlockedReason
@@ -1691,7 +1921,7 @@ export const ModEditorApp = () => {
                         <IoEllipsisHorizontal />
                       </button>
                       {isUtilityMenuOpen && (
-                        <div className="realm-panel-soft absolute top-full right-0 z-20 mt-2 flex min-w-[13rem] flex-col rounded-2xl border p-2 shadow-2xl backdrop-blur-xl">
+                        <div className="realm-panel-solid absolute top-full right-0 z-20 mt-2 flex min-w-[13rem] flex-col rounded-2xl p-2 shadow-2xl">
                           <button
                             type="button"
                             disabled={isBusy}
@@ -1744,21 +1974,29 @@ export const ModEditorApp = () => {
                             <IoCopyOutline />
                             Realm Page
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsUtilityMenuOpen(false);
+                              if (!loadedDraftId) {
+                                showToast('Save the realm first');
+                                return;
+                              }
+                              setIsDeleteRealmArmed(false);
+                              setIsDeleteRealmModalOpen(true);
+                            }}
+                            className={`catalog-title-font flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${
+                              loadedDraftId
+                                ? 'cursor-pointer text-rose-700 hover:bg-rose-500/12'
+                                : 'cursor-not-allowed opacity-50'
+                            }`}
+                          >
+                            <IoTrashSharp />
+                            Delete Realm
+                          </button>
                         </div>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={openAuthorsHelpPage}
-                      title={
-                        authorsHelpPageUrl
-                          ? 'Open Authors Help Page'
-                          : 'Authors Help Page URL is not configured.'
-                      }
-                      className={`${editorActionButtonClass} editor-action-button-secondary cursor-pointer`}
-                    >
-                      Authors Help
-                    </button>
                   </div>
                 </div>
               </div>
@@ -2050,7 +2288,7 @@ export const ModEditorApp = () => {
                       onChange={handleReactionTextChange}
                       onPasteMissingElements={handlePasteMissingElements}
                       placeholder={
-                        'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    popup "It opens. (Markdown allowed)", Treasure\n    add Treasure'
+                        'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nevent: count(Health) <= 0\n    message "You died"\n    lose "You died."\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    popup "It opens. (Markdown allowed)", Treasure\n    add Treasure'
                       }
                       reactionTextDraft={draft}
                       reactionTextIssues={reactionTextIssues}

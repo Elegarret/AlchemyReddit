@@ -30,6 +30,24 @@ const dispatchPasteEvent = (target: HTMLTextAreaElement, text: string) => {
   target.dispatchEvent(pasteEvent);
 };
 
+const setTextareaValue = (
+  target: HTMLTextAreaElement,
+  nextValue: string,
+  cursor = nextValue.length
+) => {
+  const valueSetter = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    'value'
+  )?.set;
+  if (!valueSetter) {
+    throw new Error('Expected textarea value setter to exist.');
+  }
+
+  valueSetter.call(target, nextValue);
+  target.setSelectionRange(cursor, cursor);
+  target.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
 describe('ReactionScriptAutocompleteTextarea', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -438,6 +456,147 @@ describe('ReactionScriptAutocompleteTextarea', () => {
     });
 
     expect(onElementCommitted).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('keeps newly opened suggestions inactive until keyboard navigation chooses one', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+      writable: true,
+    });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState('add ');
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="script"
+          onChange={setValue}
+          placeholder="Type a script"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    if (!textarea) {
+      throw new Error('Expected textarea to render.');
+    }
+
+    await act(async () => {
+      textarea.focus();
+      textarea.setSelectionRange(4, 4);
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          key: 'A',
+        })
+      );
+      setTextareaValue(textarea, 'add A');
+    });
+
+    expect(document.body.textContent).toContain('Amber');
+
+    const plainEnter = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Enter',
+    });
+    await act(async () => {
+      textarea.dispatchEvent(plainEnter);
+    });
+
+    expect(plainEnter.defaultPrevented).toBe(false);
+
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          key: 'ArrowDown',
+        })
+      );
+    });
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        })
+      );
+    });
+
+    expect(textarea.value).toBe('add Amber');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('inserts an indented line after an event condition header', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState('event once: count(health)');
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={['health']}
+          elementNames={elementNames}
+          mode="reaction-text"
+          onChange={setValue}
+          placeholder="Type reactions"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    if (!textarea) {
+      throw new Error('Expected textarea to render.');
+    }
+
+    await act(async () => {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        })
+      );
+    });
+
+    expect(textarea.value).toBe('event once: count(health)\n    ');
 
     await act(async () => {
       root.unmount();

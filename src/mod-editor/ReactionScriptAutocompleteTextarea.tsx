@@ -61,10 +61,13 @@ const POPUP_OFFSET = 8;
 
 const SYSTEM_WORDS = new Set([
   'add',
+  'always',
   'and',
   'count',
   'counters',
+  'crossing',
   'discovered',
+  'event',
   'if',
   'message',
   'not_discovered',
@@ -77,6 +80,8 @@ const SYSTEM_WORDS = new Set([
   'set',
   'starters',
   'stop',
+  'reaction',
+  'once',
   'undiscovered',
   'win',
   'lose',
@@ -635,7 +640,9 @@ export const ReactionScriptAutocompleteTextarea = ({
   const [isFocused, setIsFocused] = useState(false);
   const [selectionStart, setSelectionStart] = useState(0);
   const [isAutocompleteEnabled, setIsAutocompleteEnabled] = useState(false);
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<
+    number | null
+  >(null);
   const [popupPosition, setPopupPosition] = useState<CaretPopupPosition | null>(
     null
   );
@@ -726,17 +733,17 @@ export const ReactionScriptAutocompleteTextarea = ({
   useEffect(() => {
     if (suggestions.length === 0) {
       suggestionItemRefs.current = [];
-      setSelectedSuggestionIndex(0);
+      setSelectedSuggestionIndex(null);
       return;
     }
 
     setSelectedSuggestionIndex((current) =>
-      Math.min(current, suggestions.length - 1)
+      current === null ? null : Math.min(current, suggestions.length - 1)
     );
   }, [suggestions.length]);
 
   useEffect(() => {
-    if (suggestions.length === 0) {
+    if (suggestions.length === 0 || selectedSuggestionIndex === null) {
       return;
     }
 
@@ -792,7 +799,7 @@ export const ReactionScriptAutocompleteTextarea = ({
     onChange(applied.value);
     hasPendingEditRef.current = true;
     setSelectionStart(applied.cursor);
-    setSelectedSuggestionIndex(0);
+    setSelectedSuggestionIndex(null);
     setIsAutocompleteEnabled(nextSuggestions.length > 0);
 
     requestAnimationFrame(() => {
@@ -811,7 +818,7 @@ export const ReactionScriptAutocompleteTextarea = ({
     onChange(nextValue);
     hasPendingEditRef.current = true;
     setSelectionStart(nextCursor);
-    setSelectedSuggestionIndex(0);
+    setSelectedSuggestionIndex(null);
     setIsAutocompleteEnabled(
       shouldOpenAutocompleteAtCursor({
         counterNames,
@@ -849,7 +856,7 @@ export const ReactionScriptAutocompleteTextarea = ({
         onChange(event.target.value);
         hasPendingEditRef.current = true;
         setSelectionStart(event.target.selectionStart);
-        setSelectedSuggestionIndex(0);
+        setSelectedSuggestionIndex(null);
         setIsAutocompleteEnabled(shouldEnableAutocompleteOnChangeRef.current);
         shouldEnableAutocompleteOnChangeRef.current = false;
       }}
@@ -912,7 +919,7 @@ export const ReactionScriptAutocompleteTextarea = ({
           settleEditing();
         }
         setSelectionStart(nextSelectionStart);
-        setSelectedSuggestionIndex(0);
+        setSelectedSuggestionIndex(null);
         setIsAutocompleteEnabled(
           event.currentTarget.selectionStart ===
             event.currentTarget.selectionEnd &&
@@ -968,7 +975,7 @@ export const ReactionScriptAutocompleteTextarea = ({
           mode === 'reaction-text' &&
           event.key === 'Enter' &&
           event.currentTarget.selectionStart === event.currentTarget.selectionEnd &&
-          suggestions.length === 0
+          (suggestions.length === 0 || selectedSuggestionIndex === null)
         ) {
           const lineEnd = getLineEnd(
             event.currentTarget.value,
@@ -986,8 +993,16 @@ export const ReactionScriptAutocompleteTextarea = ({
             currentLine.startsWith('    ') || currentLine.startsWith('\t');
           const isScriptBlockHeader =
             !/^\s/.test(currentLine) && currentLine.trimEnd().endsWith(':');
+          const isEventConditionHeader =
+            !/^\s/.test(currentLine) &&
+            /^event(?:\s+(?:crossing|once|always))?:\s*\S/.test(
+              currentLine.trimEnd()
+            );
 
-          if (atLineEnd && (isIndentedLine || isScriptBlockHeader)) {
+          if (
+            atLineEnd &&
+            (isIndentedLine || isScriptBlockHeader || isEventConditionHeader)
+          ) {
             event.preventDefault();
             const applied = insertIndentedNewlineAtSelection({
               selectionEnd: event.currentTarget.selectionEnd,
@@ -1003,7 +1018,9 @@ export const ReactionScriptAutocompleteTextarea = ({
           if (event.key === 'ArrowDown') {
             event.preventDefault();
             setSelectedSuggestionIndex((current) =>
-              current + 1 >= suggestions.length ? 0 : current + 1
+              current === null || current + 1 >= suggestions.length
+                ? 0
+                : current + 1
             );
             return;
           }
@@ -1011,12 +1028,18 @@ export const ReactionScriptAutocompleteTextarea = ({
           if (event.key === 'ArrowUp') {
             event.preventDefault();
             setSelectedSuggestionIndex((current) =>
-              current === 0 ? suggestions.length - 1 : current - 1
+              current === null || current === 0
+                ? suggestions.length - 1
+                : current - 1
             );
             return;
           }
 
           if (event.key === 'Enter' || event.key === 'Tab') {
+            if (selectedSuggestionIndex === null) {
+              return;
+            }
+
             const suggestion = suggestions[selectedSuggestionIndex];
             if (!suggestion) {
               return;
@@ -1142,36 +1165,47 @@ export const ReactionScriptAutocompleteTextarea = ({
               top: popupPosition?.top ?? -9999,
             }}
           >
-            <div className="custom-scrollbar max-h-48 overflow-y-auto">
-              {suggestions.map((suggestion, suggestionIndex) => (
-                <button
-                  key={`${suggestion.label}-${suggestion.replaceStart}-${suggestionIndex}`}
-                  ref={(node) => {
-                    suggestionItemRefs.current[suggestionIndex] = node;
-                  }}
-                  type="button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => acceptSuggestion(suggestion)}
-                  className={`flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left font-mono text-xs transition-colors ${
-                    suggestionIndex === selectedSuggestionIndex
-                      ? 'bg-cyan-500/18 text-cyan-50'
-                      : 'text-[color:var(--catalog-ink)] hover:bg-white/6'
-                  }`}
-                >
-                  <span className="text-inherit">
-                    {suggestion.previewText ?? suggestion.text}
-                  </span>
-                  <span
-                    className={`text-[10px] ${
-                      suggestionIndex === selectedSuggestionIndex
-                        ? 'text-cyan-100/85'
-                        : 'text-[color:var(--catalog-muted)]'
+            <div
+              className="custom-scrollbar max-h-48 overflow-y-auto"
+              onWheel={() => {
+                setSelectedSuggestionIndex((current) =>
+                  current === null && suggestions.length > 0 ? 0 : current
+                );
+              }}
+            >
+              {suggestions.map((suggestion, suggestionIndex) => {
+                const isSelected = suggestionIndex === selectedSuggestionIndex;
+                return (
+                  <button
+                    key={`${suggestion.label}-${suggestion.replaceStart}-${suggestionIndex}`}
+                    ref={(node) => {
+                      suggestionItemRefs.current[suggestionIndex] = node;
+                    }}
+                    type="button"
+                    onMouseEnter={() => setSelectedSuggestionIndex(suggestionIndex)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => acceptSuggestion(suggestion)}
+                    className={`flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left font-mono text-xs transition-colors ${
+                      isSelected
+                        ? 'bg-cyan-500/18 text-cyan-50'
+                        : 'text-[color:var(--catalog-ink)] hover:bg-white/6'
                     }`}
                   >
-                    {suggestion.description ?? suggestion.label}
-                  </span>
-                </button>
-              ))}
+                    <span className="text-inherit">
+                      {suggestion.previewText ?? suggestion.text}
+                    </span>
+                    <span
+                      className={`text-[10px] ${
+                        isSelected
+                          ? 'text-cyan-100/85'
+                          : 'text-[color:var(--catalog-muted)]'
+                      }`}
+                    >
+                      {suggestion.description ?? suggestion.label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <div className="border-t border-[color:var(--catalog-soft-border)] px-3 py-2 text-[10px] text-[color:var(--catalog-muted)]">
               Press `Enter` or `Tab` to accept, `Esc` to close.

@@ -284,6 +284,57 @@ What happens:
 - If health reaches 0 or below, the realm ends with a lose screen.
 - Otherwise, the player gets a popup and `Open Door`.
 
+### Full-Text Counter Events
+
+In the full text editor, you can write event blocks that watch counters. Events
+run immediately after a `set Counter ...` line changes a referenced counter.
+
+```
+counters: Health min=0 max=10 initial=10
+
+event: count(Health) <= 0
+    message "You died"
+    lose "You died."
+
+Door+Shoulder:
+    set Health -= 2
+    popup "You force the door open.", Open Door
+    add Open Door
+```
+
+The event above runs as soon as `Health` reaches `0` or less. The door reaction
+continues by default unless the event ends the realm with `win` / `lose` or uses
+`stop-reaction`.
+
+```
+event: count(Energy) <= 0
+    message "You are out of energy."
+    stop-reaction
+```
+
+Event headers only support counter conditions:
+
+```
+event: count(Health) <= 0
+event: count(Health) <= 0 and count(Poison) > 0
+```
+
+Events cannot use `on_table(...)`, `discovered(...)`, or other element
+conditions in the header.
+
+Repeat modes:
+
+```
+event crossing: count(Health) <= 0
+event once: count(Alarm) >= 1
+event always: count(Heat) >= 10
+```
+
+- `event:` is the same as `event crossing:`.
+- `crossing` runs when the condition changes from false to true.
+- `once` runs only once per saved playthrough.
+- `always` runs every time a referenced counter changes while the condition is true.
+
 ### Puzzle Example: A Three-Step Ritual
 
 This pattern is useful for rituals, machines, recipes, or locks that need repeated progress.
@@ -399,6 +450,9 @@ The full text editor can also start with a declaration block:
 starters: Air, Fire, Earth, Water
 counters: Health min=0 max=10 initial=10, Ritual Progress initial=0
 nonconsumables: Furnace, Workbench
+
+event: count(Health) <= 0
+    lose "You died."
 
 Air+Fire=Steam
 Furnace+Ore:
@@ -526,6 +580,15 @@ Stops the script immediately.
 stop
 ```
 
+`stop-reaction`
+
+Only valid inside event scripts. Stops the original reaction script after the
+event finishes.
+
+```
+stop-reaction
+```
+
 ### Conditions
 
 `if`
@@ -587,6 +650,25 @@ Combines multiple conditions. All of them must be true.
 
 ```
 if (condition and condition) action
+```
+
+`event`
+
+Full text editor only. Starts a counter event block.
+
+```
+event: count(Health) <= 0
+    lose "You died."
+```
+
+`crossing`, `once`, `always`
+
+Set how often an event can run.
+
+```
+event crossing: count(Health) <= 0
+event once: count(Alarm) >= 1
+event always: count(Heat) >= 10
 ```
 
 ### Operators

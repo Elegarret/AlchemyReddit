@@ -161,6 +161,77 @@ describe('applyReactionTextToDraft', () => {
     );
   });
 
+  it('parses and formats full-text counter event blocks', () => {
+    const result = parseReactionTextToDraft(
+      createDraftWithElements('Health', 'Bandage'),
+      [
+        'starters: Air, Fire',
+        'counters: Health min=0 max=10 initial=1',
+        '',
+        'event: count(Health)<=0',
+        '    message "You died"',
+        '    lose "You died."',
+        'event always: count(Health) <= 0',
+        '    add Bandage',
+        'Air+Fire=Bandage',
+      ].join('\n')
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.draft.events).toEqual([
+      {
+        condition: 'count(Health) <= 0',
+        mode: 'crossing',
+        script: 'message "You died"\nlose "You died."',
+      },
+      {
+        condition: 'count(Health) <= 0',
+        mode: 'always',
+        script: 'add Bandage',
+      },
+    ]);
+    expect(formatReactionText(result.draft)).toBe(
+      [
+        'starters: Air, Fire',
+        'counters: Health min=0 max=10 initial=1',
+        '',
+        'event: count(Health) <= 0',
+        '    message "You died"',
+        '    lose "You died."',
+        'event always: count(Health) <= 0',
+        '    add Bandage',
+        'Air+Fire=Bandage',
+        '',
+      ].join('\n')
+    );
+  });
+
+  it('rejects non-counter event conditions in full text mode', () => {
+    const result = parseReactionTextToDraft(
+      createDraftWithElements('Health', 'Bandage'),
+      [
+        'starters: Air, Fire',
+        'counters: Health initial=1',
+        '',
+        'event: on_table(Air)',
+        '    message "Nope"',
+        'Air+Fire=Bandage',
+      ].join('\n')
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([
+      {
+        line: 4,
+        message: 'Event conditions only support count(counter) comparisons.',
+      },
+    ]);
+  });
+
   it('accepts reactions immediately after declarations without a blank line', () => {
     const result = parseReactionTextToDraft(
       createDraftWithElements('Health', 'Steam'),
@@ -374,6 +445,7 @@ describe('applyReactionTextToDraft', () => {
       intro: 'Hello **realm**',
       startingElementIds: ['air', 'fire', 'earth', 'water'],
       counters: [],
+      events: [],
       showPalette: true,
       elements: draft.elements,
       reactions: draft.reactions,
@@ -413,6 +485,7 @@ describe('applyReactionTextToDraft', () => {
       intro: 'Welcome back',
       startingElementIds: ['air', 'fire'],
       counters: [],
+      events: [],
       showPalette: true,
       elements: createEmptyDraft().elements,
       reactions: [],

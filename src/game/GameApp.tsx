@@ -2,12 +2,15 @@ import { context, navigateTo, showToast } from '@devvit/web/client';
 import {
 	useEffect,
 	useLayoutEffect,
+	useMemo,
 	useRef,
 	useState,
 	type CSSProperties,
 	type MouseEvent as ReactMouseEvent,
 } from 'react';
 import {
+  IoAddSharp,
+  IoAlbumsSharp,
   IoCloseSharp,
   IoCreateOutline,
   IoSearchSharp,
@@ -34,6 +37,10 @@ import {
   type ModElementEffect,
 } from '../modding/types';
 import type { ReactionScriptPopupEvent } from '../modding/reaction-script';
+import {
+	createEmptyReactionScriptEventState,
+	type ReactionScriptEventState,
+} from '../modding/reaction-script';
 import { trpc } from '../trpc';
 import { openEntry, setEditorTargetModId } from '../webview-navigation';
 import { readPlaytestRuleset } from './playtest';
@@ -320,6 +327,34 @@ const getPersistedVisibleCounterNames = (
 	);
 };
 
+const getPersistedEventState = (
+	ruleset: ActiveRuleset,
+	value: unknown
+): ReactionScriptEventState => {
+	if (!isRecord(value)) {
+		return createEmptyReactionScriptEventState();
+	}
+
+	const validEventIds = new Set(ruleset.events.map((_, index) => String(index)));
+	const normalizeEventIds = (entry: unknown) =>
+		Array.isArray(entry)
+			? Array.from(
+					new Set(
+						entry.flatMap((eventId) =>
+							typeof eventId === 'string' && validEventIds.has(eventId)
+								? [eventId]
+								: []
+						)
+					)
+				)
+			: [];
+
+	return {
+		activeEventIds: normalizeEventIds(value.activeEventIds),
+		firedEventIds: normalizeEventIds(value.firedEventIds),
+	};
+};
+
 const applyCounterVisibilityChanges = (params: {
 	currentVisibleCounterNames: string[];
 	hiddenCounterNames: string[];
@@ -410,6 +445,7 @@ const GameSession = ({
 }: GameSessionProps) => {
 	const storageKeys = getLocalStorageKeys(ruleset);
 	const introStorageKey = `${storageKeys.discovered}-intro-dismissed`;
+	const completionStorageKey = `${storageKeys.discovered}-completion-dismissed`;
 	const realmMenuRef = useRef<HTMLDivElement>(null);
 	const [discovered, setDiscovered] = useState<string[]>(() => {
 		try {
@@ -477,6 +513,19 @@ const GameSession = ({
 			return getDefaultVisibleCounterNames(ruleset);
 		}
 	});
+	const [eventState, setEventState] = useState<ReactionScriptEventState>(() => {
+		try {
+			const saved = localStorage.getItem(storageKeys.events);
+			if (!saved) {
+				return createEmptyReactionScriptEventState();
+			}
+
+			return getPersistedEventState(ruleset, JSON.parse(saved));
+		} catch (error) {
+			console.error('Failed to load event state', error);
+			return createEmptyReactionScriptEventState();
+		}
+	});
 	const [pulsingCounterTokens, setPulsingCounterTokens] = useState<
 		Record<string, number>
 	>({});
@@ -540,6 +589,7 @@ const GameSession = ({
 			return true;
 		}
 	});
+	const [showCompletionPopup, setShowCompletionPopup] = useState(false);
 
 	useEffect(() => {
 		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -737,6 +787,18 @@ const GameSession = ({
 	const renderedCounters = isPlaytest
 		? activeCounters
 		: activeCounters.filter((counter) => counter.isVisible);
+	const allGameplayElementIds = useMemo(
+		() => {
+			const counterElementIdSet = new Set(
+				ruleset.counterDefinitions.map((counter) => counter.elementId)
+			);
+			return Object.keys(ruleset.elementStyles).filter(
+				(elementId) => !counterElementIdSet.has(elementId)
+			);
+		},
+		[ruleset.counterDefinitions, ruleset.elementStyles]
+	);
+	const totalElementsCount = allGameplayElementIds.length;
 	const counterChipDeltasByName = counterChipDeltas.reduce<Record<string, CounterChipDelta[]>>(
 		(grouped, delta) => {
 			if (!grouped[delta.counterName]) {
@@ -789,6 +851,30 @@ const GameSession = ({
 	}, [discovered, isPlaytest, progressScope]);
 
 	useEffect(() => {
+		if (allGameplayElementIds.length === 0) {
+			return;
+		}
+
+		const discoveredSet = new Set(discovered);
+		const hasDiscoveredEveryElement = allGameplayElementIds.every((elementId) =>
+			discoveredSet.has(elementId)
+		);
+		if (!hasDiscoveredEveryElement) {
+			return;
+		}
+
+		try {
+			if (localStorage.getItem(completionStorageKey) === '1') {
+				return;
+			}
+		} catch {
+			// Ignore storage failures and show the popup for this session.
+		}
+
+		setShowCompletionPopup(true);
+	}, [allGameplayElementIds, completionStorageKey, discovered]);
+
+	useEffect(() => {
 		localStorage.setItem(storageKeys.elements, JSON.stringify(elements));
 	}, [elements]);
 
@@ -802,6 +888,10 @@ const GameSession = ({
 			JSON.stringify(visibleCounterNames)
 		);
 	}, [storageKeys.counterVisibility, visibleCounterNames]);
+
+	useEffect(() => {
+		localStorage.setItem(storageKeys.events, JSON.stringify(eventState));
+	}, [eventState, storageKeys.events]);
 
 	useEffect(() => {
 		const currentCounterValues = Object.fromEntries(
@@ -1090,6 +1180,7 @@ const GameSession = ({
 			: createStarterTableElements(ruleset);
 		const resetCounters = getRulesetCounterValues(ruleset);
 		const resetVisibleCounterNames = getDefaultVisibleCounterNames(ruleset);
+		const resetEventState = createEmptyReactionScriptEventState();
 		Object.values(counterPulseTimeouts.current).forEach((timeoutId) => {
 			window.clearTimeout(timeoutId);
 		});
@@ -1103,6 +1194,7 @@ const GameSession = ({
 		setElements(resetElements);
 		setCounterValues(resetCounters);
 		setVisibleCounterNames(resetVisibleCounterNames);
+		setEventState(resetEventState);
 		setPulsingCounterTokens({});
 		setCounterChipDeltas([]);
 		setCurrentPage(0);
@@ -1124,9 +1216,12 @@ const GameSession = ({
 			storageKeys.counterVisibility,
 			JSON.stringify(resetVisibleCounterNames)
 		);
+		localStorage.setItem(storageKeys.events, JSON.stringify(resetEventState));
 		localStorage.setItem(storageKeys.page, '0');
 		localStorage.removeItem(introStorageKey);
+		localStorage.removeItem(completionStorageKey);
 		setShowRealmIntro(Boolean(ruleset.intro.trim()));
+		setShowCompletionPopup(false);
 
 		if (!isPlaytest) {
 			trpc.progress.save
@@ -1137,6 +1232,15 @@ const GameSession = ({
 
 	const closeActiveScriptedPopup = () => {
 		setScriptedPopupQueue((current) => current.slice(1));
+	};
+
+	const dismissCompletionPopup = () => {
+		setShowCompletionPopup(false);
+		try {
+			localStorage.setItem(completionStorageKey, '1');
+		} catch {
+			// Ignore storage failures in constrained clients.
+		}
 	};
 
 	const prepareToLeaveRealm = () => {
@@ -1422,6 +1526,7 @@ const GameSession = ({
 					id: element.id,
 				})),
 				discoveredElementIds: discovered,
+				eventState,
 				leftId: draggedEl.name,
 				rightId: targetEl.name,
 				ruleset,
@@ -1520,6 +1625,9 @@ const GameSession = ({
 					])
 				);
 				setCounterValues(result.counterValues);
+				if (result.eventState) {
+					setEventState(result.eventState);
+				}
 				setVisibleCounterNames((current) =>
 					applyCounterVisibilityChanges({
 						currentVisibleCounterNames: current,
@@ -1727,7 +1835,6 @@ const GameSession = ({
 	}
 
 	const nextKeyItem = ruleset.keyItems.find((item) => !discovered.includes(item));
-	const totalElementsCount = Object.keys(ruleset.elementStyles).length;
 
 	const starDrops = useRef(Array.from({ length: 20 }).map(() => ({
 		top: `${Math.random() * 100}%`,
@@ -2481,6 +2588,57 @@ const GameSession = ({
 				</div>
 			)}
 
+			{showCompletionPopup && (
+				<div className="absolute inset-0 z-[2400] flex items-center justify-center bg-black/60 backdrop-blur-xl animate-fade-in">
+					<div className="relative mx-4 w-full max-w-md overflow-hidden rounded-[2rem] border border-amber-200/30 bg-[linear-gradient(180deg,rgba(120,53,15,0.95),rgba(14,116,144,0.94))] p-8 text-center text-white shadow-2xl animate-scale-in">
+						<div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.28),transparent_55%)]" />
+						<div className="relative z-10">
+							<div className="mb-3 text-[11px] font-bold uppercase tracking-[0.28em] text-amber-100">
+								Realm Mastered
+							</div>
+							<div className="mb-5 flex justify-center">
+								<div className="flex h-24 w-24 items-center justify-center rounded-full border border-amber-200/30 bg-amber-100/10 text-5xl shadow-lg">
+									🏆
+								</div>
+							</div>
+							<h3 className="mb-3 text-3xl font-black tracking-tight">
+								Every element discovered
+							</h3>
+							<p className="mb-6 text-base leading-relaxed text-white/90">
+								You found everything this realm has to offer.
+							</p>
+							<div className="flex flex-col gap-3">
+								<button
+									type="button"
+									onClick={dismissCompletionPopup}
+									className="w-full cursor-pointer rounded-2xl bg-amber-300 py-3.5 font-bold text-amber-950 transition-all hover:scale-[1.02] active:scale-95"
+								>
+									Continue
+								</button>
+								<div className="grid grid-cols-2 gap-3">
+									<button
+										type="button"
+										onClick={openAlchemyHub}
+										className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/6 py-3 font-bold text-white transition-all hover:scale-[1.02] hover:bg-white/10 active:scale-95"
+									>
+										<IoAlbumsSharp />
+										Hub
+									</button>
+									<button
+										type="button"
+										onClick={openCreateMyAlchemy}
+										className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/6 py-3 font-bold text-white transition-all hover:scale-[1.02] hover:bg-white/10 active:scale-95"
+									>
+										<IoAddSharp />
+										Create
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
 			{/* Scripted Popup Queue */}
 			{activeScriptedPopup && (
 				<div className="absolute inset-0 z-[2500] flex items-center justify-center bg-black/65 backdrop-blur-xl animate-fade-in">
@@ -2601,6 +2759,13 @@ const GameSession = ({
 										className="w-full cursor-pointer rounded-2xl border border-white/12 bg-white/6 py-3.5 font-bold text-white transition-all hover:scale-[1.02] hover:bg-white/10 active:scale-95"
 									>
 										Back to the Realms List
+									</button>
+									<button
+										onClick={openCreateMyAlchemy}
+										className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/6 py-3.5 font-bold text-white transition-all hover:scale-[1.02] hover:bg-white/10 active:scale-95"
+									>
+										<IoAddSharp />
+										Create My Realm
 									</button>
 								</div>
 							)}

@@ -624,6 +624,111 @@ describe('validateModDraft', () => {
     expect(result.isValid).toBe(false);
   });
 
+  it('reports invalid counter event conditions during draft validation', () => {
+    const result = validateModDraft({
+      title: 'Broken Event Realm',
+      summary: 'Event validation should reject table predicates.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [
+        {
+          elementId: 'health',
+          initial: 1,
+        },
+      ],
+      events: [
+        {
+          condition: 'on_table(Air)',
+          mode: 'crossing',
+          script: 'message "Nope"',
+        },
+      ],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        makeElement('health', 'Health'),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: ['air'],
+        },
+      ],
+    });
+
+    expect(result.scriptErrors).toContain(
+      'Event 1 condition: Event conditions only support count(counter) comparisons.'
+    );
+    expect(result.isValid).toBe(false);
+  });
+
+  it('returns event state from scripted ruleset reactions', () => {
+    const ruleset = buildRulesetFromDraft({
+      title: 'Event Realm',
+      summary: 'A counter event can react to scripted counter changes.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [
+        {
+          elementId: 'health',
+          initial: 1,
+        },
+      ],
+      events: [
+        {
+          condition: 'count(Health) <= 0',
+          mode: 'crossing',
+          script: 'message "You died"',
+        },
+      ],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        makeElement('health', 'Health'),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: [],
+          script: 'set Health -= 1',
+        },
+      ],
+    });
+
+    const resolved = resolveReactionForRuleset({
+      counterValues: {
+        Health: 1,
+      },
+      currentTableElements: [
+        { elementId: 'air', id: 'table-1' },
+        { elementId: 'fire', id: 'table-2' },
+      ],
+      discoveredElementIds: ['air', 'fire'],
+      eventState: {
+        activeEventIds: [],
+        firedEventIds: [],
+      },
+      leftId: 'air',
+      rightId: 'fire',
+      ruleset,
+    });
+
+    expect(resolved?.ok).toBe(true);
+    if (!resolved || !resolved.ok) {
+      return;
+    }
+
+    expect(resolved.result.messages).toEqual(['You died']);
+    expect(resolved.result.eventState).toEqual({
+      activeEventIds: ['0'],
+      firedEventIds: ['0'],
+    });
+  });
+
   it('allows counters as starters while still rejecting counter ingredients and outputs', () => {
     const result = validateModDraft({
       title: 'Counter Realm',

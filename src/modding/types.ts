@@ -79,6 +79,17 @@ export const modReactionSchema = z.object({
 
 export type ModReaction = z.infer<typeof modReactionSchema>;
 
+export const modEventModeSchema = z.enum(['crossing', 'once', 'always']);
+export type ModEventMode = z.infer<typeof modEventModeSchema>;
+
+export const modEventSchema = z.object({
+  mode: modEventModeSchema.optional().default('crossing'),
+  condition: z.string().min(1).max(MAX_REACTION_SCRIPT_LENGTH),
+  script: z.string().min(1).max(MAX_REACTION_SCRIPT_LENGTH),
+});
+
+export type ModEvent = z.infer<typeof modEventSchema>;
+
 const reactionCommentLineSchema = z.string().max(MAX_REACTION_SCRIPT_LENGTH);
 
 export const reactionCommentBlockSchema = z.object({
@@ -157,6 +168,7 @@ export const modDocSchema = z.object({
   showPalette: z.boolean().optional().default(true),
   elements: z.array(modElementSchema).max(128),
   reactions: z.array(modReactionSchema).max(512),
+  events: z.array(modEventSchema).max(128).optional().default([]),
   reactionComments: reactionCommentsSchema.optional().default({
     byReaction: [],
     trailingComments: [],
@@ -169,7 +181,8 @@ export const modDocSchema = z.object({
 });
 
 type ParsedModDoc = z.infer<typeof modDocSchema>;
-export type ModDoc = Omit<ParsedModDoc, 'reactionComments'> & {
+export type ModDoc = Omit<ParsedModDoc, 'events' | 'reactionComments'> & {
+  events?: ModEvent[];
   reactionComments?: ReactionComments;
 };
 
@@ -234,6 +247,7 @@ export type ActiveRuleset = {
   startingCounterElementIds: string[];
   recipes: Record<string, string[]>;
   reactionScripts: Record<string, string>;
+  events: ModEvent[];
   elementNames?: Record<string, string>;
   elementStyles: Record<string, string>;
   elementIcons: Record<string, ElementIconValue>;
@@ -274,6 +288,7 @@ export const saveDraftInputSchema = z.object({
   showPalette: z.boolean().optional().default(true),
   elements: z.array(modElementSchema).max(128),
   reactions: z.array(modReactionSchema).max(512),
+  events: z.array(modEventSchema).max(128).optional().default([]),
   reactionComments: reactionCommentsSchema.optional().default({
     byReaction: [],
     trailingComments: [],
@@ -281,6 +296,10 @@ export const saveDraftInputSchema = z.object({
 });
 
 type ParsedSaveDraftInput = z.infer<typeof saveDraftInputSchema>;
-export type SaveDraftInput = Omit<ParsedSaveDraftInput, 'reactionComments'> & {
+export type SaveDraftInput = Omit<
+  ParsedSaveDraftInput,
+  'events' | 'reactionComments'
+> & {
+  events?: ModEvent[];
   reactionComments?: ReactionComments;
 };
