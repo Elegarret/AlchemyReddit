@@ -116,32 +116,104 @@ export const Splash = () => {
 
 	return (
 		<div className="realm-page flex h-screen flex-col items-center justify-center gap-5 overflow-hidden px-4 py-4">
-			<div className="splash-orbit-compact relative mt-4 flex h-48 w-48 items-center justify-center">
-				{/* Orbiting elements */}
-				<div className="absolute flex flex-col items-center animate-orbit" style={{ animationDelay: '0s' }}>
-					<div className="w-14 h-14 rounded-xl bg-blue-400 border-2 border-blue-600 flex items-center justify-center text-3xl shadow-lg ring-4 ring-[var(--ring-offset)]/50">☁️</div>
-				</div>
-				<div className="absolute flex flex-col items-center animate-orbit" style={{ animationDelay: '-3.75s' }}>
-					<div className="w-14 h-14 rounded-xl bg-orange-300 border-2 border-orange-500 flex items-center justify-center text-3xl shadow-lg ring-4 ring-[var(--ring-offset)]/50">🔥</div>
-				</div>
-				<div className="absolute flex flex-col items-center animate-orbit" style={{ animationDelay: '-7.5s' }}>
-					<div className="w-14 h-14 rounded-xl bg-sky-200 border-2 border-sky-400 flex items-center justify-center text-3xl shadow-lg ring-4 ring-[var(--ring-offset)]/50">💧</div>
-				</div>
-				<div className="absolute flex flex-col items-center animate-orbit" style={{ animationDelay: '-11.25s' }}>
-					<div className="w-14 h-14 rounded-xl bg-stone-500 border-2 border-stone-700 flex items-center justify-center text-3xl shadow-lg ring-4 ring-[var(--ring-offset)]/50">⛰️</div>
+			<div className="splash-orbit-compact relative mt-4 flex h-56 w-56 items-center justify-center">
+				<div className="splash-orbit-scene absolute inset-0">
+					<div
+						className="splash-orbit-plane splash-orbit-plane-x"
+					>
+						<div
+							className="splash-orbit-ring splash-orbit-ring-inner splash-orbit-spin-forward"
+						>
+							{[
+								{
+									backgroundClassName: 'bg-blue-400 border-blue-600 ring-[var(--ring-offset)]/50',
+									emoji: '☁️',
+								},
+								{
+									backgroundClassName: 'bg-orange-300 border-orange-500 ring-[var(--ring-offset)]/50',
+									emoji: '🔥',
+								},
+							].map((item, index) => (
+								<div
+									key={item.emoji}
+									className="splash-orbit-slot"
+									style={{
+										transform: `translate(-50%, -50%) rotate(${index * 180}deg) translateX(56px)`,
+									}}
+								>
+									<div className="splash-orbit-face splash-orbit-face-plane-x">
+										<div
+											className="splash-orbit-face-angle"
+											style={{ transform: `rotate(${-index * 180}deg)` }}
+										>
+											<div className="splash-orbit-face-spin-forward">
+												<div
+													className={`splash-orbit-element flex h-10 w-10 items-center justify-center rounded-lg border-2 text-xl shadow-lg ring-3 sm:h-11 sm:w-11 sm:text-2xl ${item.backgroundClassName}`}
+												>
+													{item.emoji}
+												</div>
+											</div>
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+					<div
+						className="splash-orbit-plane splash-orbit-plane-y"
+					>
+						<div
+							className="splash-orbit-ring splash-orbit-ring-outer splash-orbit-spin-reverse"
+						>
+							{[
+								{
+									backgroundClassName: 'bg-sky-200 border-sky-400 ring-[var(--ring-offset)]/50',
+									emoji: '💧',
+								},
+								{
+									backgroundClassName: 'bg-stone-500 border-stone-700 ring-[var(--ring-offset)]/50',
+									emoji: '⛰️',
+								},
+							].map((item, index) => (
+								<div
+									key={item.emoji}
+									className="splash-orbit-slot"
+									style={{
+										transform: `translate(-50%, -50%) rotate(${index * 180}deg) translateX(78px)`,
+									}}
+								>
+									<div className="splash-orbit-face splash-orbit-face-plane-y">
+										<div
+											className="splash-orbit-face-angle"
+											style={{ transform: `rotate(${-index * 180}deg)` }}
+										>
+											<div className="splash-orbit-face-spin-reverse">
+												<div
+													className={`splash-orbit-element flex h-10 w-10 items-center justify-center rounded-lg border-2 text-xl shadow-lg ring-3 sm:h-11 sm:w-11 sm:text-2xl ${item.backgroundClassName}`}
+												>
+													{item.emoji}
+												</div>
+											</div>
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
 				</div>
 
-				{/* Centered Mercury Symbol with Glow */}
-				<div className="absolute inset-0 flex items-center justify-center">
-					<div className="absolute w-24 h-24 mercury-glow blur-2xl rounded-full" />
-					<span className="text-6xl mercury-symbol">☿</span>
+				<div className="absolute inset-0 z-10 flex items-center justify-center">
+					<div className="absolute h-28 w-28 rounded-full mercury-glow blur-2xl" />
+					<div className="realm-title-backdrop relative flex flex-col items-center gap-1 rounded-[1.75rem] px-5 py-3 shadow-xl">
+						<span className="text-3xl leading-none mercury-symbol">☿</span>
+						<h1 className="catalog-title-font text-3xl font-black tracking-tight text-primary drop-shadow-md">
+							Alchemy
+						</h1>
+					</div>
 				</div>
 			</div>
 
-			<div className="flex flex-col items-center gap-2 mt-4 text-center">
-				<div className="realm-title-backdrop rounded-full px-5 py-2">
-					<h1 className="catalog-title-font text-4xl font-black text-primary tracking-tight drop-shadow-md">Alchemy</h1>
-				</div>
+			<div className="mt-2 flex flex-col items-center gap-2 text-center">
 				<p className="catalog-body-font realm-text-soft px-4 text-base font-medium leading-relaxed">
 					Combine elements to discover the world!
 				</p>

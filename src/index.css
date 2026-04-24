@@ -139,6 +139,82 @@
 		}
 	}
 
+	@keyframes splash-orbit-plane-x {
+		0% {
+			transform: rotateX(68deg) rotateY(-10deg) rotateZ(0deg);
+		}
+
+		50% {
+			transform: rotateX(248deg) rotateY(10deg) rotateZ(180deg);
+		}
+
+		100% {
+			transform: rotateX(428deg) rotateY(-10deg) rotateZ(360deg);
+		}
+	}
+
+	@keyframes splash-orbit-plane-y {
+		0% {
+			transform: rotateY(72deg) rotateX(8deg) rotateZ(0deg);
+		}
+
+		50% {
+			transform: rotateY(252deg) rotateX(-10deg) rotateZ(-180deg);
+		}
+
+		100% {
+			transform: rotateY(432deg) rotateX(8deg) rotateZ(-360deg);
+		}
+	}
+
+	@keyframes splash-orbit-spin-forward {
+		from {
+			transform: rotateZ(0deg);
+		}
+
+		to {
+			transform: rotateZ(360deg);
+		}
+	}
+
+	@keyframes splash-orbit-spin-reverse {
+		from {
+			transform: rotateZ(360deg);
+		}
+
+		to {
+			transform: rotateZ(0deg);
+		}
+	}
+
+	@keyframes splash-orbit-face-plane-x {
+		0% {
+			transform: rotateZ(0deg) rotateY(10deg) rotateX(-68deg);
+		}
+
+		50% {
+			transform: rotateZ(-180deg) rotateY(-10deg) rotateX(-248deg);
+		}
+
+		100% {
+			transform: rotateZ(-360deg) rotateY(10deg) rotateX(-428deg);
+		}
+	}
+
+	@keyframes splash-orbit-face-plane-y {
+		0% {
+			transform: rotateZ(0deg) rotateX(-8deg) rotateY(-72deg);
+		}
+
+		50% {
+			transform: rotateZ(180deg) rotateX(10deg) rotateY(-252deg);
+		}
+
+		100% {
+			transform: rotateZ(360deg) rotateX(-8deg) rotateY(-432deg);
+		}
+	}
+
 	@keyframes pulsate {
 
 		0%,
@@ -828,6 +904,107 @@
 
 .splash-orbit-compact {
 	--orbit-radius: 72px;
+	isolation: isolate;
+	perspective: 1100px;
+	transform-style: preserve-3d;
+}
+
+.splash-orbit-scene {
+	pointer-events: none;
+	transform-style: preserve-3d;
+}
+
+.splash-orbit-plane {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transform-style: preserve-3d;
+}
+
+.splash-orbit-plane-x {
+	animation: splash-orbit-plane-x 18s linear infinite;
+}
+
+.splash-orbit-plane-y {
+	animation: splash-orbit-plane-y 22s linear infinite;
+}
+
+.splash-orbit-ring {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 9999px;
+	border: 1.5px solid color-mix(in srgb, var(--catalog-soft-border) 82%, transparent);
+	background:
+		radial-gradient(circle at center,
+			color-mix(in srgb, var(--catalog-glass-fill-strong) 45%, transparent) 0%,
+			transparent 72%);
+	box-shadow:
+		0 0 0 1px color-mix(in srgb, var(--catalog-page-shadow) 10%, transparent),
+		inset 0 0 18px color-mix(in srgb, white 12%, transparent),
+		0 18px 42px color-mix(in srgb, var(--catalog-page-shadow) 18%, transparent);
+	transform-style: preserve-3d;
+}
+
+.splash-orbit-ring-inner {
+	height: 132px;
+	width: 132px;
+}
+
+.splash-orbit-ring-outer {
+	height: 176px;
+	width: 176px;
+}
+
+.splash-orbit-spin-forward {
+	animation: splash-orbit-spin-forward 12s linear infinite;
+}
+
+.splash-orbit-spin-reverse {
+	animation: splash-orbit-spin-reverse 16s linear infinite;
+}
+
+.splash-orbit-slot {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform-style: preserve-3d;
+}
+
+.splash-orbit-face {
+	transform-style: preserve-3d;
+}
+
+.splash-orbit-face-angle {
+	transform-style: preserve-3d;
+}
+
+.splash-orbit-face-plane-x {
+	animation: splash-orbit-face-plane-x 18s linear infinite;
+}
+
+.splash-orbit-face-plane-y {
+	animation: splash-orbit-face-plane-y 22s linear infinite;
+}
+
+.splash-orbit-face-spin-forward {
+	animation: splash-orbit-spin-reverse 12s linear infinite;
+}
+
+.splash-orbit-face-spin-reverse {
+	animation: splash-orbit-spin-forward 16s linear infinite;
+}
+
+.splash-orbit-element {
+	backface-visibility: hidden;
+	box-shadow:
+		0 16px 30px color-mix(in srgb, var(--catalog-page-shadow) 24%, transparent),
+		0 0 20px color-mix(in srgb, white 18%, transparent);
+	transform: translateZ(14px);
+	transform-style: preserve-3d;
 }
 
 .realm-input {
