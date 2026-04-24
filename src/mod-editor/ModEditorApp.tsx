@@ -1508,12 +1508,12 @@ export const ModEditorApp = () => {
               <div className="mt-3 space-y-2 text-sm leading-relaxed opacity-90">
                 <p>Your realm will be public and ready for players to discover.</p>
                 <p>
-                  You can keep improving it later. Publishing an update resets
-                  player saves for this realm, so make sure this version is worth it.
+                  You can keep improving it later. But be careful: publishing an update resets
+                  player saves, so make sure this version is worth it.
                 </p>
                 <p>
-                  After launch, share it with friends and relevant subs without
-                  spam. More players means more reactions, feedback, and bragging rights.
+                  Don't forget to share your creation! Send the link to your friends or repost it to a relevant sub.
+                  There's nothing more rewarding than having lots of people playing your game!
                 </p>
               </div>
               <div className="mt-5 flex flex-wrap justify-end gap-2">

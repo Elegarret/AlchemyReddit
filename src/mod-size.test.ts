@@ -13,8 +13,8 @@ describe('mod size tiers', () => {
     expect(getRealmSizeLabel(10)).toBe('tiny');
     expect(getRealmSizeLabel(11)).toBe('small');
     expect(getRealmSizeLabel(30)).toBe('small');
-    expect(getRealmSizeLabel(31)).toBe('medium');
-    expect(getRealmSizeLabel(50)).toBe('medium');
+    expect(getRealmSizeLabel(31)).toBe('mid');
+    expect(getRealmSizeLabel(50)).toBe('mid');
     expect(getRealmSizeLabel(51)).toBe('big');
     expect(getRealmSizeLabel(100)).toBe('big');
     expect(getRealmSizeLabel(101)).toBe('huge');

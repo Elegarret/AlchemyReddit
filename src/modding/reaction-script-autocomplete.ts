@@ -144,6 +144,14 @@ const CONDITION_TEMPLATES: SuggestionTemplate[] = [
   },
 ];
 
+const EVENT_CONDITION_TEMPLATES: SuggestionTemplate[] = [
+  {
+    cursorOffset: 'count('.length,
+    label: 'count',
+    text: 'count()',
+  },
+];
+
 const AND_TEMPLATE: SuggestionTemplate = {
   cursorOffset: 'and '.length,
   description: 'logical and',
@@ -565,6 +573,58 @@ const getConditionSuggestions = (params: {
   );
 };
 
+const getEventConditionSuggestions = (params: {
+  absoluteStart: number;
+  counterNames: string[];
+  prefix: string;
+}) => {
+  const { absoluteStart, counterNames, prefix } = params;
+  const countCall = getOpenCallContext(prefix, ['count']);
+  if (countCall) {
+    return buildNameSuggestions(
+      counterNames,
+      countCall.argumentText,
+      absoluteStart + countCall.replaceStart,
+      absoluteStart + prefix.length
+    );
+  }
+
+  const conditionSegment = getConditionSegment(prefix);
+  const segmentText = conditionSegment.text;
+  const trimmedSegment = segmentText.trimStart();
+  const replaceStart =
+    absoluteStart +
+    conditionSegment.start +
+    (segmentText.length - trimmedSegment.length);
+  const replaceEnd = absoluteStart + prefix.length;
+
+  if (isCompleteCondition(segmentText)) {
+    return [
+      {
+        cursorOffset: AND_TEMPLATE.cursorOffset,
+        ...(AND_TEMPLATE.description
+          ? { description: AND_TEMPLATE.description }
+          : {}),
+        label: AND_TEMPLATE.label,
+        replaceEnd,
+        replaceStart: replaceEnd,
+        text: AND_TEMPLATE.text,
+      },
+    ];
+  }
+
+  if (!/^[A-Za-z_]*$/.test(trimmedSegment)) {
+    return [];
+  }
+
+  return buildSuggestions(
+    EVENT_CONDITION_TEMPLATES,
+    trimmedSegment,
+    replaceStart,
+    replaceEnd
+  );
+};
+
 const getActionSuggestions = (params: {
   absoluteStart: number;
   allowIf: boolean;
@@ -977,10 +1037,9 @@ export const getReactionTextAutocomplete = (params: {
     if (eventConditionMatch) {
       const conditionPrefix = eventConditionMatch[1] ?? '';
       return {
-        suggestions: getConditionSuggestions({
+        suggestions: getEventConditionSuggestions({
           absoluteStart: absoluteEnd - conditionPrefix.length,
           counterNames,
-          elementNames,
           prefix: conditionPrefix,
         }),
       };

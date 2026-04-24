@@ -1,4 +1,4 @@
-import { context, navigateTo, showToast } from '@devvit/web/client';
+import { context, navigateTo, showShareSheet, showToast } from '@devvit/web/client';
 import {
 	useEffect,
 	useLayoutEffect,
@@ -8,6 +8,7 @@ import {
 	type CSSProperties,
 	type MouseEvent as ReactMouseEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   IoAddSharp,
   IoAlbumsSharp,
@@ -78,6 +79,11 @@ const STARTER_ELEMENT_GAP = 28;
 const STARTER_EDGE_MARGIN = 56;
 const HIDDEN_PLAYTEST_COUNTER_HINT =
 	'This counter is hidden, you can see it only in the playtest mode';
+
+type FixedMenuPosition = {
+	left: number;
+	top: number;
+};
 const LEGACY_COMMENTS_POST_ID = '1qwhma7';
 const LEGACY_COMMENTS_URL =
 	'https://www.reddit.com/r/AlchemyGame/comments/1qwhma7/alchemygame/';
@@ -446,7 +452,8 @@ const GameSession = ({
 	const storageKeys = getLocalStorageKeys(ruleset);
 	const introStorageKey = `${storageKeys.discovered}-intro-dismissed`;
 	const completionStorageKey = `${storageKeys.discovered}-completion-dismissed`;
-	const realmMenuRef = useRef<HTMLDivElement>(null);
+	const realmMenuAnchorRef = useRef<HTMLDivElement>(null);
+	const realmMenuPanelRef = useRef<HTMLDivElement>(null);
 	const [discovered, setDiscovered] = useState<string[]>(() => {
 		try {
 			const saved = localStorage.getItem(storageKeys.discovered);
@@ -568,7 +575,8 @@ const GameSession = ({
 	const [confirmWipe, setConfirmWipe] = useState(false);
 	const [infoPopup, setInfoPopup] = useState<string | null>(null);
 	const [computerPopup, setComputerPopup] = useState<string | null>(null);
-	const [reactionMessage, setReactionMessage] = useState<string | null>(null);
+	const [reactionMessages, setReactionMessages] = useState<string[]>([]);
+	const [visibleReactionMessageCount, setVisibleReactionMessageCount] = useState(0);
 	const [scriptedPopupQueue, setScriptedPopupQueue] = useState<
 		ReactionScriptPopupEvent[]
 	>([]);
@@ -577,6 +585,8 @@ const GameSession = ({
 	const [isQuaking, setIsQuaking] = useState(false);
 	const [stormFlashVisible, setStormFlashVisible] = useState(false);
 	const [showRealmMenu, setShowRealmMenu] = useState(false);
+	const [realmMenuPosition, setRealmMenuPosition] =
+		useState<FixedMenuPosition | null>(null);
 	const [hoverSupported, setHoverSupported] = useState(supportsHoverInput);
 	const [showRealmIntro, setShowRealmIntro] = useState(() => {
 		if (!ruleset.intro.trim()) {
@@ -590,6 +600,24 @@ const GameSession = ({
 		}
 	});
 	const [showCompletionPopup, setShowCompletionPopup] = useState(false);
+
+	useEffect(() => {
+		if (reactionMessages.length === 0) {
+			setVisibleReactionMessageCount(0);
+			return;
+		}
+
+		setVisibleReactionMessageCount(1);
+		const timeoutIds = reactionMessages.slice(1).map((_, index) =>
+			window.setTimeout(() => {
+				setVisibleReactionMessageCount(index + 2);
+			}, (index + 1) * 500)
+		);
+
+		return () => {
+			timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+		};
+	}, [reactionMessages]);
 
 	useEffect(() => {
 		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -632,7 +660,7 @@ const GameSession = ({
 				return;
 			}
 
-			if (realmMenuRef.current?.contains(target)) {
+			if (isInsideRealmMenu(target)) {
 				return;
 			}
 
@@ -642,6 +670,35 @@ const GameSession = ({
 		document.addEventListener('pointerdown', handlePointerDown);
 		return () => {
 			document.removeEventListener('pointerdown', handlePointerDown);
+		};
+	}, [showRealmMenu]);
+
+	useLayoutEffect(() => {
+		if (!showRealmMenu) {
+			setRealmMenuPosition(null);
+			return;
+		}
+
+		const updateRealmMenuPosition = () => {
+			const anchor = realmMenuAnchorRef.current;
+			if (!anchor) {
+				setRealmMenuPosition(null);
+				return;
+			}
+
+			const rect = anchor.getBoundingClientRect();
+			setRealmMenuPosition({
+				left: rect.left,
+				top: rect.bottom,
+			});
+		};
+
+		updateRealmMenuPosition();
+		window.addEventListener('resize', updateRealmMenuPosition);
+		window.addEventListener('scroll', updateRealmMenuPosition, true);
+		return () => {
+			window.removeEventListener('resize', updateRealmMenuPosition);
+			window.removeEventListener('scroll', updateRealmMenuPosition, true);
 		};
 	}, [showRealmMenu]);
 
@@ -1201,7 +1258,7 @@ const GameSession = ({
 		setDragging(null);
 		setReactiveIDs([]);
 		setScriptedPopupQueue([]);
-		setReactionMessage(null);
+		setReactionMessages([]);
 		setDiscoveryPopup(null);
 		setInfoPopup(null);
 		setComputerPopup(null);
@@ -1244,7 +1301,7 @@ const GameSession = ({
 	};
 
 	const prepareToLeaveRealm = () => {
-		setReactionMessage(null);
+		setReactionMessages([]);
 		setScriptedPopupQueue([]);
 		setShowOptions(false);
 		setShowRealmMenu(false);
@@ -1546,7 +1603,9 @@ const GameSession = ({
 				const result = reactionResolution.result;
 				const midX = (draggedEl.x + targetEl.x) / 2;
 				const midY = (draggedEl.y + targetEl.y) / 2;
-				const nextReactionMessage = result.messages.join('\n').trim();
+				const nextReactionMessages = result.messages
+					.map((message) => message.trim())
+					.filter((message) => message.length > 0);
 
 				// Trigger Flash
 				setFlash({ x: midX, y: midY, id: ++flashCounter.current });
@@ -1635,7 +1694,7 @@ const GameSession = ({
 						shownCounterNames: result.shownCounterNames,
 					})
 				);
-				setReactionMessage(nextReactionMessage.length > 0 ? nextReactionMessage : null);
+				setReactionMessages(nextReactionMessages);
 				if (result.popupEvents.length > 0) {
 					setScriptedPopupQueue((current) => [
 						...current,
@@ -1913,6 +1972,12 @@ const GameSession = ({
 		commentsTarget.postId !== normalizedCurrentPostId
 			? commentsTarget.url
 			: null;
+	const shareTargetUrl = commentsTarget?.url ?? null;
+	const isInsideRealmMenu = (target: Node) =>
+		Boolean(
+			realmMenuAnchorRef.current?.contains(target) ||
+				realmMenuPanelRef.current?.contains(target)
+		);
 
 	const handleOpenComments = () => {
 		if (!commentsTargetUrl) {
@@ -1921,6 +1986,24 @@ const GameSession = ({
 
 		setShowRealmMenu(false);
 		navigateTo(commentsTargetUrl);
+	};
+
+	const handleShareRealm = async () => {
+		if (!shareTargetUrl) {
+			return;
+		}
+
+		setShowRealmMenu(false);
+		try {
+			await showShareSheet({
+				title: ruleset.title,
+				text: shareTargetUrl,
+				data: shareTargetUrl,
+			});
+		} catch (error) {
+			console.error(error);
+			showToast('Failed to open share sheet');
+		}
 	};
 
 	return (
@@ -2036,7 +2119,7 @@ const GameSession = ({
 						{counterBar}
 					</div>
 				)}
-				{reactionMessage && (
+				{reactionMessages.length > 0 && (
 					<div
 						className={`pointer-events-none absolute inset-x-0 z-[120] flex justify-center pl-14 pr-14 ${
 							isPlaytest ? 'top-10' : 'top-2'
@@ -2044,27 +2127,43 @@ const GameSession = ({
 					>
 						<button
 							type="button"
-							onClick={() => setReactionMessage(null)}
+							onClick={() => setReactionMessages([])}
 							className="pointer-events-auto w-fit max-w-full cursor-pointer rounded-[1.35rem] border border-cyan-200/22 bg-slate-950/92 px-4 py-2 text-left text-sm font-semibold text-cyan-50 shadow-[0_14px_32px_rgba(2,6,23,0.42)] backdrop-blur-xl transition-colors hover:bg-slate-950"
 						>
-							<span className="block whitespace-pre-line break-words">
-								{reactionMessage}
-							</span>
+							<div className="flex flex-col">
+								{reactionMessages
+									.slice(0, visibleReactionMessageCount)
+									.map((reactionMessage, index) => (
+										<div key={`${index}-${reactionMessage}`}>
+											{index > 0 && (
+												<div className="my-2 border-t border-cyan-200/18" />
+											)}
+											<span className="block whitespace-pre-line break-words">
+												{reactionMessage}
+											</span>
+										</div>
+									))}
+							</div>
 						</button>
 					</div>
 				)}
 
 				<div
-					ref={realmMenuRef}
-					className="absolute left-2 top-2 z-40 pb-2"
+					ref={realmMenuAnchorRef}
+					className="absolute left-2 top-2 z-30"
 					onPointerEnter={() => {
 						if (!hoverSupported || hasBlockingScriptedPopup) {
 							return;
 						}
 						setShowRealmMenu(true);
 					}}
-					onPointerLeave={() => {
+					onPointerLeave={(event) => {
 						if (!hoverSupported) {
+							return;
+						}
+
+						const nextTarget = event.relatedTarget;
+						if (nextTarget instanceof Node && isInsideRealmMenu(nextTarget)) {
 							return;
 						}
 						setShowRealmMenu(false);
@@ -2077,10 +2176,7 @@ const GameSession = ({
 					}}
 					onBlurCapture={(event) => {
 						const nextTarget = event.relatedTarget;
-						if (
-							nextTarget instanceof Node &&
-							realmMenuRef.current?.contains(nextTarget)
-						) {
+						if (nextTarget instanceof Node && isInsideRealmMenu(nextTarget)) {
 							return;
 						}
 						setShowRealmMenu(false);
@@ -2113,34 +2209,6 @@ const GameSession = ({
 							☿
 						</span>
 					</button>
-
-					{showRealmMenu && (
-						<div className="realm-panel-soft absolute left-0 top-full flex min-w-[13.5rem] flex-col gap-1 rounded-2xl border border-cyan-200/18 bg-slate-950/92 p-2 text-left shadow-[0_18px_40px_rgba(2,6,23,0.5)] backdrop-blur-xl">
-							{commentsTargetUrl && (
-								<button
-									type="button"
-									onClick={handleOpenComments}
-									className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
-								>
-									Comments
-								</button>
-							)}
-							<button
-								type="button"
-								onClick={openAlchemyHub}
-								className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
-							>
-								Alchemy Hub
-							</button>
-							<button
-								type="button"
-								onClick={openCreateMyAlchemy}
-								className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
-							>
-								Create my Alchemy!
-							</button>
-						</div>
-					)}
 				</div>
 
 				<button
@@ -2805,6 +2873,78 @@ const GameSession = ({
 					</div>
 				</div>
 			)}
+			{showRealmMenu &&
+				realmMenuPosition &&
+				createPortal(
+					<div
+						ref={realmMenuPanelRef}
+						className="realm-panel-soft fixed z-[10050] flex min-w-[13.5rem] flex-col gap-1 rounded-2xl border border-cyan-200/18 bg-slate-950/92 p-2 text-left shadow-[0_18px_40px_rgba(2,6,23,0.5)] backdrop-blur-xl"
+						style={{
+							left: realmMenuPosition.left,
+							top: realmMenuPosition.top,
+						}}
+						onPointerEnter={() => {
+							if (!hoverSupported || hasBlockingScriptedPopup) {
+								return;
+							}
+							setShowRealmMenu(true);
+						}}
+						onPointerLeave={(event) => {
+							if (!hoverSupported) {
+								return;
+							}
+
+							const nextTarget = event.relatedTarget;
+							if (nextTarget instanceof Node && isInsideRealmMenu(nextTarget)) {
+								return;
+							}
+							setShowRealmMenu(false);
+						}}
+						onBlurCapture={(event) => {
+							const nextTarget = event.relatedTarget;
+							if (nextTarget instanceof Node && isInsideRealmMenu(nextTarget)) {
+								return;
+							}
+							setShowRealmMenu(false);
+						}}
+					>
+						{commentsTargetUrl && (
+							<button
+								type="button"
+								onClick={handleOpenComments}
+								className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
+							>
+								Comments
+							</button>
+						)}
+						{shareTargetUrl && (
+							<button
+								type="button"
+								onClick={() => {
+									void handleShareRealm();
+								}}
+								className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
+							>
+								Share
+							</button>
+						)}
+						<button
+							type="button"
+							onClick={openAlchemyHub}
+							className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
+						>
+							Alchemy Hub
+						</button>
+						<button
+							type="button"
+							onClick={openCreateMyAlchemy}
+							className="cursor-pointer rounded-xl px-3 py-2 text-left text-sm font-semibold text-cyan-50 transition-colors hover:bg-cyan-400/12"
+						>
+							Create my Alchemy!
+						</button>
+					</div>,
+					document.body
+				)}
 		</div>
 	);
 };

@@ -15,6 +15,7 @@ const {
 	progressSaveMutateMock,
 	readPlaytestRulesetMock,
 	setEditorTargetModIdMock,
+	showShareSheetMock,
 	showToastMock,
 } = vi.hoisted(() => ({
 	clientContextMock: {
@@ -28,12 +29,14 @@ const {
 	progressSaveMutateMock: vi.fn(),
 	readPlaytestRulesetMock: vi.fn(),
 	setEditorTargetModIdMock: vi.fn(),
+	showShareSheetMock: vi.fn(),
 	showToastMock: vi.fn(),
 }));
 
 vi.mock('@devvit/web/client', () => ({
 	context: clientContextMock,
 	navigateTo: navigateToMock,
+	showShareSheet: showShareSheetMock,
 	showToast: showToastMock,
 }));
 
@@ -138,7 +141,7 @@ const getRequiredElement = (parent: ParentNode, selector: string) => {
 };
 
 const getButtonByText = (parent: ParentNode, label: string) =>
-	Array.from(parent.querySelectorAll('button')).find(
+	Array.from(document.querySelectorAll('button')).find(
 		(button) => button.textContent?.trim() === label
 	) ?? null;
 
@@ -352,6 +355,7 @@ afterEach(() => {
 	readPlaytestRulesetMock.mockReset();
 	readPlaytestRulesetMock.mockReturnValue(null);
 	setEditorTargetModIdMock.mockReset();
+	showShareSheetMock.mockReset();
 	showToastMock.mockReset();
 	localStorage.clear();
 	sessionStorage.clear();
@@ -500,6 +504,32 @@ describe('GameRoot realm menu', () => {
 		expect(navigateToMock).toHaveBeenCalledWith(
 			'https://www.reddit.com/comments/sharepost/'
 		);
+
+		await game.unmount();
+	});
+
+	it('shows Share for a published mod realm and opens the native share sheet', async () => {
+		initGetQueryMock.mockResolvedValue(
+			createInitResponse({
+				activeModListing: { sharePostId: 't3_sharepost' },
+				activeRuleset: createModRuleset(),
+			})
+		);
+
+		const game = await renderGameRoot();
+		const trigger = getRequiredElement(
+			game.container,
+			'button[aria-label="Open realm menu"]'
+		);
+
+		await clickElement(trigger);
+		await clickElement(getButtonByText(game.container, 'Share')!);
+
+		expect(showShareSheetMock).toHaveBeenCalledWith({
+			title: 'Storm Lab',
+			text: 'https://www.reddit.com/comments/sharepost/',
+			data: 'https://www.reddit.com/comments/sharepost/',
+		});
 
 		await game.unmount();
 	});

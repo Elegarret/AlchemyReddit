@@ -2,7 +2,7 @@ export type RealmSizeLabel =
   | 'empty'
   | 'tiny'
   | 'small'
-  | 'medium'
+  | 'mid'
   | 'big'
   | 'huge'
   | 'mega';
@@ -23,7 +23,7 @@ export const getRealmSizeLabel = (
   }
 
   if (reactionCount <= 50) {
-    return 'medium';
+    return 'mid';
   }
 
   if (reactionCount <= 100) {

@@ -456,12 +456,12 @@ describe('getReactionTextAutocomplete', () => {
       value: modeEvent,
     });
 
-    expect(bareResult.suggestions.map((suggestion) => suggestion.label)).toContain(
-      'count'
-    );
-    expect(modeResult.suggestions.map((suggestion) => suggestion.label)).toContain(
-      'count'
-    );
+    expect(bareResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'count',
+    ]);
+    expect(modeResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'count',
+    ]);
   });
 });
 
