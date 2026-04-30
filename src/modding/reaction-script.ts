@@ -13,6 +13,26 @@ export type ReactionScriptSourceLine =
     }
   | {
       commentText?: string;
+      conditions: ReactionScriptCondition[];
+      kind: 'if_block';
+      line: number;
+      sourceLines: ReactionScriptBlockSourceLine[];
+    }
+  | {
+      commentText?: string;
+      kind: 'statement';
+      line: number;
+      statement: ReactionScriptStatement;
+    };
+
+export type ReactionScriptBlockSourceLine =
+  | {
+      commentText: string;
+      kind: 'comment';
+      line: number;
+    }
+  | {
+      commentText?: string;
       kind: 'statement';
       line: number;
       statement: ReactionScriptStatement;
@@ -20,6 +40,7 @@ export type ReactionScriptSourceLine =
 
 export type ReactionScriptStatement = {
   action: ReactionScriptAction;
+  conditionGroupId?: number;
   conditions: ReactionScriptCondition[];
   line: number;
 };
@@ -133,6 +154,7 @@ export type ReactionScriptExecutionContext = ReactionScriptValidationContext & {
   discoveredElementIds: string[];
   events?: ModEvent[];
   eventState?: ReactionScriptEventState;
+  nonConsumableElementIds?: string[];
   script: ReactionScriptAst | string;
   tableElements: ReactionScriptTableElement[];
 };
@@ -745,6 +767,13 @@ const parseAction = (
   rawAction: string,
   line: number
 ): ReactionScriptAction | ReactionScriptIssue => {
+  if (/^if(?=\s|\()/.test(rawAction.trim())) {
+    return {
+      line,
+      message: 'Nested if blocks are not supported.',
+    };
+  }
+
   if (rawAction === 'stop') {
     return {
       kind: 'stop',
@@ -824,22 +853,83 @@ const parseAction = (
   };
 };
 
-const parseStatementLine = (
-  rawLine: string,
+const splitIfActionList = (
+  rawAction: string,
   line: number
-): ReactionScriptStatement | ReactionScriptIssue => {
-  const trimmedLine = rawLine.trim();
-  if (!/^if(?=\s|\()/.test(trimmedLine)) {
-    const action = parseAction(trimmedLine, line);
-    if (isReactionScriptIssue(action)) {
-      return action;
+): ReactionScriptIssue | string[] => {
+  const actions: string[] = [];
+  let inString = false;
+  let isEscaped = false;
+  let segmentStart = 0;
+
+  for (let index = 0; index < rawAction.length; index += 1) {
+    const character = rawAction[index];
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+
+      if (character === '\\') {
+        isEscaped = true;
+        continue;
+      }
+
+      if (character === '"') {
+        inString = false;
+      }
+      continue;
     }
 
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (character !== ';') {
+      continue;
+    }
+
+    const action = rawAction.slice(segmentStart, index).trim();
+    if (!action) {
+      return {
+        line,
+        message: 'If action lists cannot contain empty actions.',
+      };
+    }
+
+    actions.push(action);
+    segmentStart = index + 1;
+  }
+
+  const trailingAction = rawAction.slice(segmentStart).trim();
+  if (!trailingAction) {
     return {
-      action,
-      conditions: [],
       line,
+      message: 'If action lists cannot contain empty actions.',
     };
+  }
+
+  return [...actions, trailingAction];
+};
+
+const parseIfLineParts = (
+  rawLine: string,
+  line: number
+):
+  | {
+      conditions: ReactionScriptCondition[];
+      rawAction: string;
+      ok: true;
+    }
+  | {
+      issue: ReactionScriptIssue;
+      ok: false;
+    }
+  | null => {
+  const trimmedLine = rawLine.trim();
+  if (!/^if(?=\s|\()/.test(trimmedLine)) {
+    return null;
   }
 
   let cursor = 'if'.length;
@@ -848,15 +938,12 @@ const parseStatementLine = (
   }
 
   if (trimmedLine[cursor] !== '(') {
-    const action = parseAction(trimmedLine, line);
-    if (isReactionScriptIssue(action)) {
-      return action;
-    }
-
     return {
-      action,
-      conditions: [],
-      line,
+      issue: {
+        line,
+        message: 'If conditions must start with an opening parenthesis.',
+      },
+      ok: false,
     };
   }
 
@@ -877,8 +964,11 @@ const parseStatementLine = (
 
   if (closingIndex === -1) {
     return {
-      line,
-      message: 'If conditions must end with a closing parenthesis.',
+      issue: {
+        line,
+        message: 'If conditions must end with a closing parenthesis.',
+      },
+      ok: false,
     };
   }
 
@@ -887,36 +977,104 @@ const parseStatementLine = (
 
   if (!rawConditionList) {
     return {
-      line,
-      message: 'If conditions cannot be empty.',
-    };
-  }
-
-  if (!rawAction) {
-    return {
-      line,
-      message: 'If statements must include exactly one action.',
+      issue: {
+        line,
+        message: 'If conditions cannot be empty.',
+      },
+      ok: false,
     };
   }
 
   const conditionList = parseReactionScriptConditionList(rawConditionList, line);
   if (!conditionList.ok) {
-    return conditionList.errors[0] ?? {
-      line,
-      message: 'Invalid condition list.',
+    return {
+      issue: conditionList.errors[0] ?? {
+        line,
+        message: 'Invalid condition list.',
+      },
+      ok: false,
     };
   }
 
-  const action = parseAction(rawAction, line);
-  if (isReactionScriptIssue(action)) {
-    return action;
+  return {
+    conditions: conditionList.conditions,
+    ok: true,
+    rawAction,
+  };
+};
+
+const parseStatementLine = (
+  rawLine: string,
+  line: number,
+  createConditionGroupId: () => number,
+  conditionGroupId?: number
+): ReactionScriptIssue | ReactionScriptStatement[] => {
+  const trimmedLine = rawLine.trim();
+  const parsedIfLine = parseIfLineParts(trimmedLine, line);
+  if (parsedIfLine === null) {
+    const action = parseAction(trimmedLine, line);
+    if (isReactionScriptIssue(action)) {
+      return action;
+    }
+
+    return [{
+      action,
+      conditions: [],
+      ...(conditionGroupId !== undefined ? { conditionGroupId } : {}),
+      line,
+    }];
   }
 
-  return {
-    action,
-    conditions: conditionList.conditions,
-    line,
-  };
+  if (!parsedIfLine.ok) {
+    return parsedIfLine.issue;
+  }
+
+  if (!parsedIfLine.rawAction) {
+    return {
+      line,
+      message: 'If statements must include an action or an indented block.',
+    };
+  }
+
+  if (parsedIfLine.rawAction === ':') {
+    return {
+      line,
+      message: 'If blocks must include an indented body.',
+    };
+  }
+
+  if (parsedIfLine.rawAction.startsWith(':')) {
+    return {
+      line,
+      message: 'If block headers must end after the colon.',
+    };
+  }
+
+  const rawActions = splitIfActionList(parsedIfLine.rawAction, line);
+  if (!Array.isArray(rawActions)) {
+    return rawActions;
+  }
+
+  const nextConditionGroupId =
+    rawActions.length > 1 ? createConditionGroupId() : conditionGroupId;
+  const statements: ReactionScriptStatement[] = [];
+  for (const rawAction of rawActions) {
+    const action = parseAction(rawAction, line);
+    if (isReactionScriptIssue(action)) {
+      return action;
+    }
+
+    statements.push({
+      action,
+      conditions: parsedIfLine.conditions,
+      ...(nextConditionGroupId !== undefined
+        ? { conditionGroupId: nextConditionGroupId }
+        : {}),
+      line,
+    });
+  }
+
+  return statements;
 };
 
 const createElementResolver = (context: ReactionScriptValidationContext) => {
@@ -1044,20 +1202,29 @@ const evaluateCondition = (
   resolveCounterName: (counterName: string) => string | null,
   discoveredElementIds: Set<string>,
   tableElements: ReactionScriptTableElement[],
-  counterValues: Record<string, number>
+  counterValues: Record<string, number>,
+  options: {
+    counterOnly?: boolean;
+  } = {}
 ) => {
   if (condition.kind === 'count_compare') {
     const resolvedCounterName = resolveCounterName(condition.counterName);
-    const elementId = resolvedCounterName
-      ? null
-      : resolveElementId(condition.counterName);
     const countValue = resolvedCounterName
       ? (counterValues[resolvedCounterName] ?? 0)
-      : elementId
-        ? tableElements.filter(
-            (tableElement) => tableElement.elementId === elementId
-          ).length
-        : 0;
+      : options.counterOnly
+        ? null
+        : (() => {
+            const elementId = resolveElementId(condition.counterName);
+            return elementId
+              ? tableElements.filter(
+                  (tableElement) => tableElement.elementId === elementId
+                ).length
+              : 0;
+          })();
+    if (countValue === null) {
+      return false;
+    }
+
     switch (condition.operator) {
       case '<':
         return countValue < condition.value;
@@ -1150,6 +1317,25 @@ const formatStatement = (statement: ReactionScriptStatement) => {
   return `if (${statement.conditions.map(formatCondition).join(' and ')}) ${actionText}`;
 };
 
+const formatIfBlockHeader = (
+  conditions: ReactionScriptCondition[],
+  commentText: string | undefined
+) => {
+  const header = `if (${conditions.map(formatCondition).join(' and ')}):`;
+  return commentText !== undefined ? `${header} //${commentText}` : header;
+};
+
+const formatIfBlockSourceLine = (sourceLine: ReactionScriptBlockSourceLine) => {
+  if (sourceLine.kind === 'comment') {
+    return `    //${sourceLine.commentText}`;
+  }
+
+  const formattedStatement = formatAction(sourceLine.statement.action);
+  return sourceLine.commentText !== undefined
+    ? `    ${formattedStatement} //${sourceLine.commentText}`
+    : `    ${formattedStatement}`;
+};
+
 export const hasReactionScript = (script: string | undefined) =>
   (script ?? '')
     .replace(/\r\n/g, '\n')
@@ -1171,8 +1357,15 @@ export const parseReactionScript = (
   const sourceLines: ReactionScriptSourceLine[] = [];
   const errors: ReactionScriptIssue[] = [];
   const lines = scriptText.replace(/\r\n/g, '\n').split('\n');
+  let nextConditionGroupId = 1;
+  const createConditionGroupId = () => {
+    const conditionGroupId = nextConditionGroupId;
+    nextConditionGroupId += 1;
+    return conditionGroupId;
+  };
 
-  lines.forEach((lineText, index) => {
+  for (let index = 0; index < lines.length; index += 1) {
+    const lineText = lines[index] ?? '';
     const { code, commentText } = splitReactionScriptLineComment(lineText);
     const trimmedLine = code.trim();
     if (!trimmedLine) {
@@ -1183,23 +1376,138 @@ export const parseReactionScript = (
           line: index + 1,
         });
       }
-      return;
+      continue;
     }
 
-    const parsed = parseStatementLine(trimmedLine, index + 1);
-    if (isReactionScriptIssue(parsed)) {
+    const parsedIfLine = parseIfLineParts(trimmedLine, index + 1);
+    if (parsedIfLine !== null) {
+      if (!parsedIfLine.ok) {
+        errors.push(parsedIfLine.issue);
+        continue;
+      }
+
+      if (parsedIfLine.rawAction === ':') {
+        const headerLine = index + 1;
+        const conditionGroupId = createConditionGroupId();
+        const blockSourceLines: ReactionScriptBlockSourceLine[] = [];
+        const blockStatements: ReactionScriptStatement[] = [];
+
+        while (index + 1 < lines.length) {
+          const nextLineText = lines[index + 1] ?? '';
+          const hasSpacesIndent = nextLineText.startsWith('    ');
+          const hasTabIndent = nextLineText.startsWith('\t');
+          const nextSplitLine = splitReactionScriptLineComment(nextLineText);
+          const nextLineHasContent =
+            nextSplitLine.code.trim().length > 0 ||
+            nextSplitLine.commentText !== null;
+
+          if (!hasSpacesIndent && !hasTabIndent) {
+            if (nextLineHasContent) {
+              break;
+            }
+
+            break;
+          }
+
+          index += 1;
+          const bodyLineNumber = index + 1;
+          const bodyLineText = nextLineText.slice(hasSpacesIndent ? 4 : 1);
+          const bodySplitLine = splitReactionScriptLineComment(bodyLineText);
+          const bodyTrimmedLine = bodySplitLine.code.trim();
+          if (!bodyTrimmedLine) {
+            if (bodySplitLine.commentText !== null) {
+              blockSourceLines.push({
+                commentText: bodySplitLine.commentText,
+                kind: 'comment',
+                line: bodyLineNumber,
+              });
+            }
+            continue;
+          }
+
+          const action = parseAction(bodyTrimmedLine, bodyLineNumber);
+          if (isReactionScriptIssue(action)) {
+            errors.push(action);
+            continue;
+          }
+
+          const statement = {
+            action,
+            conditionGroupId,
+            conditions: parsedIfLine.conditions,
+            line: bodyLineNumber,
+          };
+          blockStatements.push(statement);
+          blockSourceLines.push({
+            ...(bodySplitLine.commentText !== null
+              ? { commentText: bodySplitLine.commentText }
+              : {}),
+            kind: 'statement',
+            line: bodyLineNumber,
+            statement,
+          });
+        }
+
+        if (blockStatements.length === 0) {
+          errors.push({
+            line: headerLine,
+            message: 'If blocks must include an indented body.',
+          });
+          continue;
+        }
+
+        statements.push(...blockStatements);
+        sourceLines.push({
+          ...(commentText !== null ? { commentText } : {}),
+          conditions: parsedIfLine.conditions,
+          kind: 'if_block',
+          line: headerLine,
+          sourceLines: blockSourceLines,
+        });
+        continue;
+      }
+    }
+
+    const parsed = parseStatementLine(
+      trimmedLine,
+      index + 1,
+      createConditionGroupId
+    );
+    if (!Array.isArray(parsed)) {
       errors.push(parsed);
-      return;
+      continue;
     }
 
-    statements.push(parsed);
+    statements.push(...parsed);
+    if (parsed.length > 1 && parsed[0]) {
+      sourceLines.push({
+        conditions: parsed[0].conditions,
+        kind: 'if_block',
+        line: index + 1,
+        sourceLines: parsed.map((statement, statementIndex) => ({
+          ...(commentText !== null && statementIndex === parsed.length - 1
+            ? { commentText }
+            : {}),
+          kind: 'statement',
+          line: index + 1,
+          statement,
+        })),
+      });
+      continue;
+    }
+
+    const statement = parsed[0];
+    if (!statement) {
+      continue;
+    }
+
     sourceLines.push({
       ...(commentText !== null ? { commentText } : {}),
       kind: 'statement',
       line: index + 1,
-      statement: parsed,
+      statement,
     });
-  });
+  }
 
   if (errors.length > 0) {
     return {
@@ -1223,6 +1531,13 @@ export const formatReactionScriptAst = (ast: ReactionScriptAst) => {
       .map((sourceLine) => {
         if (sourceLine.kind === 'comment') {
           return `//${sourceLine.commentText}`;
+        }
+
+        if (sourceLine.kind === 'if_block') {
+          return [
+            formatIfBlockHeader(sourceLine.conditions, sourceLine.commentText),
+            ...sourceLine.sourceLines.map(formatIfBlockSourceLine),
+          ].join('\n');
         }
 
         const formattedStatement = formatStatement(sourceLine.statement);
@@ -1334,6 +1649,19 @@ const normalizeReactionScriptEventState = (
   activeEventIds: new Set(eventState?.activeEventIds ?? []),
   firedEventIds: new Set(eventState?.firedEventIds ?? []),
 });
+
+const normalizeEventIdentityText = (value: string) =>
+  value.trim().replace(/\s+/g, ' ');
+
+export const getReactionScriptEventId = (
+  event: Pick<ModEvent, 'condition' | 'mode' | 'script'>
+) =>
+  [
+    'event',
+    event.mode,
+    normalizeEventIdentityText(event.condition),
+    normalizeEventIdentityText(event.script),
+  ].join(':');
 
 export const validateReactionScript = (
   script: ReactionScriptAst | string,
@@ -1559,6 +1887,9 @@ export const executeReactionScript = (
   const nonGameplayElements = createNonGameplayElementSet(
     context.nonGameplayElementIds
   );
+  const nonConsumableElements = createNonGameplayElementSet(
+    context.nonConsumableElementIds
+  );
   const discoveredElementIds = new Set(context.discoveredElementIds);
   const tableElements = [...context.tableElements];
   const counterValues = { ...context.counters };
@@ -1581,7 +1912,10 @@ export const executeReactionScript = (
 
   const evaluateConditions = (
     conditions: ReactionScriptCondition[],
-    values: Record<string, number>
+    values: Record<string, number>,
+    options?: {
+      counterOnly?: boolean;
+    }
   ) =>
     conditions.every((condition) =>
       evaluateCondition(
@@ -1590,7 +1924,8 @@ export const executeReactionScript = (
         resolveCounterName,
         discoveredElementIds,
         tableElements,
-        values
+        values,
+        options
       )
     );
 
@@ -1656,15 +1991,27 @@ export const executeReactionScript = (
     statements: ReactionScriptStatement[],
     scriptKind: 'event' | 'reaction'
   ): ReactionScriptIssue | null => {
+    const conditionGroupResults = new Map<number, boolean>();
+
     for (const statement of statements) {
       if (stopped || stopReaction) {
         return null;
       }
 
-      const conditionsPassed = evaluateConditions(
-        statement.conditions,
-        counterValues
-      );
+      const cachedGroupResult =
+        statement.conditionGroupId !== undefined
+          ? conditionGroupResults.get(statement.conditionGroupId)
+          : undefined;
+      const conditionsPassed =
+        cachedGroupResult ??
+        evaluateConditions(statement.conditions, counterValues);
+      if (
+        statement.conditionGroupId !== undefined &&
+        cachedGroupResult === undefined
+      ) {
+        conditionGroupResults.set(statement.conditionGroupId, conditionsPassed);
+      }
+
       if (!conditionsPassed) {
         continue;
       }
@@ -1754,10 +2101,19 @@ export const executeReactionScript = (
 
       if (statement.action.kind === 'remove_all') {
         if (!statement.action.elementRef) {
-          tableElements.forEach((tableElement) => {
+          const removedMatches = tableElements.filter(
+            (tableElement) =>
+              !nonConsumableElements.has(
+                normalizeLookupKey(tableElement.elementId)
+              )
+          );
+          removedMatches.forEach((tableElement) => {
             removedTableElementIds.push(tableElement.id);
           });
-          tableElements.splice(0, tableElements.length);
+          const nextTableElements = tableElements.filter((tableElement) =>
+            nonConsumableElements.has(normalizeLookupKey(tableElement.elementId))
+          );
+          tableElements.splice(0, tableElements.length, ...nextTableElements);
           continue;
         }
 
@@ -1855,7 +2211,7 @@ export const executeReactionScript = (
     previousCounterValues: Record<string, number>
   ): ReactionScriptIssue | null {
     const events = context.events ?? [];
-    for (const [eventIndex, event] of events.entries()) {
+    for (const event of events) {
       if (stopped || stopReaction) {
         return null;
       }
@@ -1870,9 +2226,13 @@ export const executeReactionScript = (
         continue;
       }
 
-      const eventId = String(eventIndex);
-      const wasPassed = evaluateConditions(conditions, previousCounterValues);
-      const isPassed = evaluateConditions(conditions, counterValues);
+      const eventId = getReactionScriptEventId(event);
+      const wasPassed = evaluateConditions(conditions, previousCounterValues, {
+        counterOnly: true,
+      });
+      const isPassed = evaluateConditions(conditions, counterValues, {
+        counterOnly: true,
+      });
       if (isPassed) {
         eventState.activeEventIds.add(eventId);
       } else {

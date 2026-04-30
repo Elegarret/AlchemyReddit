@@ -9,6 +9,7 @@ import {
 } from '../modding/reaction-script-autocomplete';
 import {
   formatReactionScript,
+  parseReactionScript,
   splitReactionScriptLineComment,
   validateReactionScript,
 } from '../modding/reaction-script';
@@ -160,6 +161,43 @@ const insertIndentedNewlineAtSelection = (params: {
     value: nextValue,
   };
 };
+
+const insertNewlineWithIndentAtSelection = (params: {
+  indent: string;
+  selectionEnd: number;
+  selectionStart: number;
+  value: string;
+}) => {
+  const { indent, selectionEnd, selectionStart, value } = params;
+  const insertion = `\n${indent}`;
+  const nextValue =
+    value.slice(0, selectionStart) + insertion + value.slice(selectionEnd);
+  const cursor = selectionStart + insertion.length;
+
+  return {
+    cursor,
+    value: nextValue,
+  };
+};
+
+const getNextIfBlockIndent = (line: string) => {
+  const splitLine = splitReactionScriptLineComment(line);
+  const code = splitLine.code.trimEnd();
+  if (!code.endsWith(':') || !/^if(?=\s|\()/.test(code.trimStart())) {
+    return null;
+  }
+
+  const leadingWhitespace = line.match(/^\s*/)?.[0] ?? '';
+  const indentUnit =
+    leadingWhitespace.includes('\t') && !leadingWhitespace.includes(' ')
+      ? '\t'
+      : '    ';
+  const bodyIndent = `${leadingWhitespace}${indentUnit}`;
+  const probe = `${line}\n${bodyIndent}stop`;
+  return parseReactionScript(probe).ok ? bodyIndent : null;
+};
+
+const getLineIndent = (line: string) => line.match(/^\s*/)?.[0] ?? '';
 
 const getSuggestionsForMode = (params: {
   counterNames: string[];
@@ -969,6 +1007,71 @@ export const ReactionScriptAutocompleteTextarea = ({
           });
           applyTextareaMutation(applied.value, applied.cursor);
           return;
+        }
+
+        if (
+          event.key === 'Enter' &&
+          event.currentTarget.selectionStart === event.currentTarget.selectionEnd
+        ) {
+          const lineEnd = getLineEnd(
+            event.currentTarget.value,
+            event.currentTarget.selectionStart
+          );
+          const lineStart = getLineStart(
+            event.currentTarget.value,
+            event.currentTarget.selectionStart
+          );
+          const currentLine = event.currentTarget.value.slice(lineStart, lineEnd);
+          const atLineEnd =
+            event.currentTarget.selectionStart === lineEnd &&
+            event.currentTarget.selectionEnd === lineEnd;
+          const nextIfBlockIndent = atLineEnd
+            ? getNextIfBlockIndent(currentLine)
+            : null;
+
+          if (nextIfBlockIndent !== null) {
+            event.preventDefault();
+            const applied = insertNewlineWithIndentAtSelection({
+              indent: nextIfBlockIndent,
+              selectionEnd: event.currentTarget.selectionEnd,
+              selectionStart: event.currentTarget.selectionStart,
+              value: event.currentTarget.value,
+            });
+            applyTextareaMutation(applied.value, applied.cursor);
+            return;
+          }
+        }
+
+        if (
+          event.key === 'Enter' &&
+          event.currentTarget.selectionStart === event.currentTarget.selectionEnd &&
+          (suggestions.length === 0 || selectedSuggestionIndex === null)
+        ) {
+          const lineEnd = getLineEnd(
+            event.currentTarget.value,
+            event.currentTarget.selectionStart
+          );
+          const lineStart = getLineStart(
+            event.currentTarget.value,
+            event.currentTarget.selectionStart
+          );
+          const currentLine = event.currentTarget.value.slice(lineStart, lineEnd);
+          const atLineEnd =
+            event.currentTarget.selectionStart === lineEnd &&
+            event.currentTarget.selectionEnd === lineEnd;
+          const currentIndent = getLineIndent(currentLine);
+
+          if (atLineEnd && currentIndent) {
+            event.preventDefault();
+            const applied = insertNewlineWithIndentAtSelection({
+              indent: currentIndent,
+              selectionEnd: event.currentTarget.selectionEnd,
+              selectionStart: event.currentTarget.selectionStart,
+              value: event.currentTarget.value,
+            });
+            applyTextareaMutation(applied.value, applied.cursor);
+            return;
+          }
         }
 
         if (

@@ -116,6 +116,27 @@ const NESTED_ACTION_TEMPLATES = TOP_LEVEL_ACTION_TEMPLATES.filter(
   (template) => template.label !== 'if'
 );
 
+const END_IF_BLOCK_SUGGESTION_LABEL = 'end if-block';
+
+const RESERVED_SUGGESTION_LABELS = new Set([
+  'add',
+  'and',
+  'count',
+  'discovered',
+  'if',
+  'message',
+  'not_discovered',
+  'not_on_table',
+  'on_table',
+  'popup',
+  'remove',
+  'remove_all',
+  'set',
+  'stop',
+  'win',
+  'lose',
+]);
+
 const CONDITION_TEMPLATES: SuggestionTemplate[] = [
   {
     cursorOffset: 'on_table('.length,
@@ -305,6 +326,82 @@ const buildNameSuggestions = (
     replaceStart,
     text: value,
   }));
+};
+
+const getIndentUnitLength = (value: string) => {
+  if (value.startsWith('    ')) {
+    return 4;
+  }
+
+  if (value.startsWith('\t')) {
+    return 1;
+  }
+
+  return 0;
+};
+
+const createEndIfBlockSuggestion = (
+  lineStart: number,
+  indentLength: number
+): ReactionScriptAutocompleteSuggestion => ({
+  cursorOffset: 0,
+  description: 'remove block indent',
+  insertText: '',
+  label: END_IF_BLOCK_SUGGESTION_LABEL,
+  previewText: END_IF_BLOCK_SUGGESTION_LABEL,
+  replaceEnd: lineStart + indentLength,
+  replaceStart: lineStart,
+  text: '',
+});
+
+const getWordBoundsAtCursor = (value: string, cursor: number) => {
+  let start = cursor;
+  while (start > 0 && /[A-Za-z_]/.test(value[start - 1] ?? '')) {
+    start -= 1;
+  }
+
+  let end = cursor;
+  while (end < value.length && /[A-Za-z_]/.test(value[end] ?? '')) {
+    end += 1;
+  }
+
+  if (start === end) {
+    return null;
+  }
+
+  return {
+    end,
+    start,
+    text: value.slice(start, end),
+  };
+};
+
+const filterSingleReservedWordSuggestionAtCursor = (params: {
+  cursor: number;
+  suggestions: ReactionScriptAutocompleteSuggestion[];
+  value: string;
+}) => {
+  const { cursor, suggestions, value } = params;
+  if (suggestions.length !== 1) {
+    return suggestions;
+  }
+
+  const [suggestion] = suggestions;
+  if (!suggestion || !RESERVED_SUGGESTION_LABELS.has(suggestion.label)) {
+    return suggestions;
+  }
+
+  const word = getWordBoundsAtCursor(value, cursor);
+  if (
+    !word ||
+    cursor <= word.start ||
+    cursor >= word.end ||
+    word.text !== suggestion.label
+  ) {
+    return suggestions;
+  }
+
+  return [];
 };
 
 const getCommittedElementName = (value: string) => {
@@ -888,8 +985,10 @@ export const getReactionScriptAutocomplete = (params: {
     value,
   } = params;
   const lineStart = value.lastIndexOf('\n', Math.max(cursor - 1, 0)) + 1;
+  const lineEndIndex = value.indexOf('\n', cursor);
+  const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
   const lineCommentContext = getCommentAwareLineContext(
-    value.slice(lineStart, cursor),
+    value.slice(lineStart, lineEnd),
     cursor - lineStart
   );
   if (lineCommentContext.isInComment) {
@@ -897,40 +996,90 @@ export const getReactionScriptAutocomplete = (params: {
   }
 
   const linePrefix = lineCommentContext.linePrefix;
+  const indentLength = getIndentUnitLength(linePrefix);
+  if (indentLength > 0) {
+    const unindentedPrefix = linePrefix.slice(indentLength);
+    if (/^if(?=\s|\()/.test(unindentedPrefix.trimStart())) {
+      return { suggestions: [] };
+    }
+
+    const actionSuggestions = getActionSuggestions({
+      absoluteStart: lineStart + indentLength,
+      allowIf: false,
+      counterNames,
+      elementNames,
+      iconElementNames,
+      prefix: unindentedPrefix,
+    });
+    const suggestions =
+      unindentedPrefix.length === 0
+        ? [
+            createEndIfBlockSuggestion(lineStart, indentLength),
+            ...actionSuggestions,
+          ]
+        : actionSuggestions;
+
+    return {
+      suggestions: filterSingleReservedWordSuggestionAtCursor({
+        cursor,
+        suggestions,
+        value,
+      }),
+    };
+  }
+
   const ifContext = getLineIfContext(linePrefix);
 
   if (ifContext?.kind === 'conditions') {
+    const suggestions = getConditionSuggestions({
+      absoluteStart: lineStart + ifContext.prefixStart,
+      counterNames,
+      elementNames,
+      prefix: ifContext.prefix,
+    });
+
     return {
-      suggestions: getConditionSuggestions({
-        absoluteStart: lineStart + ifContext.prefixStart,
-        counterNames,
-        elementNames,
-        prefix: ifContext.prefix,
+      suggestions: filterSingleReservedWordSuggestionAtCursor({
+        cursor,
+        suggestions,
+        value,
       }),
     };
   }
 
   if (ifContext?.kind === 'action') {
+    const suggestions = getActionSuggestions({
+      absoluteStart: lineStart + ifContext.prefixStart,
+      allowIf: false,
+      counterNames,
+      elementNames,
+      iconElementNames,
+      prefix: ifContext.prefix,
+    });
+
     return {
-      suggestions: getActionSuggestions({
-        absoluteStart: lineStart + ifContext.prefixStart,
-        allowIf: false,
-        counterNames,
-        elementNames,
-        iconElementNames,
-        prefix: ifContext.prefix,
+      suggestions: filterSingleReservedWordSuggestionAtCursor({
+        cursor,
+        suggestions,
+        value,
       }),
     };
   }
 
+  const suggestions = getActionSuggestions({
+    absoluteStart: lineStart,
+    allowIf: true,
+    counterNames,
+    elementNames,
+    iconElementNames,
+    prefix: linePrefix,
+  });
+
   return {
-    suggestions: getActionSuggestions({
-      absoluteStart: lineStart,
-      allowIf: true,
-      counterNames,
-      elementNames,
-      iconElementNames,
-      prefix: linePrefix,
+    suggestions: filterSingleReservedWordSuggestionAtCursor({
+      cursor,
+      suggestions,
+      value,
     }),
   };
 };

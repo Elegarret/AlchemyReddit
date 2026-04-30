@@ -1,0 +1,1695 @@
+{
+  "title": "Warrior's Path",
+  "summary": "Guide a glory-seeking warrior through prison escapes, town intrigue, undead armies, and an unfinished final mystery.",
+  "intro": "A wandering warrior roams in search of glory. The road splits before him. Will he go right or left?",
+  "startingElementIds": [
+    "warrior",
+    "right",
+    "left"
+  ],
+  "counters": [],
+  "showPalette": false,
+  "compactElements": false,
+  "elements": [
+    {
+      "id": "warrior",
+      "name": "Warrior",
+      "iconSource": "emoji",
+      "emoji": "⚔️",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "A wandering warrior roams in search of glory. The road splits before him. Will he go right or left?",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "right",
+      "name": "Right",
+      "iconSource": "emoji",
+      "emoji": "➡️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "left",
+      "name": "Left",
+      "iconSource": "emoji",
+      "emoji": "⬅️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "cave",
+      "name": "Cave",
+      "iconSource": "emoji",
+      "emoji": "🕳️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "A cave yawns open ahead. Will it hold treasure, or a quick death?",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "dragon",
+      "name": "Dragon",
+      "iconSource": "emoji",
+      "emoji": "🐉",
+      "bgColorToken": "sun",
+      "frameColorToken": "ember",
+      "message": "A dragon was waiting inside. It incinerates you in an instant.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "back",
+      "name": "Back",
+      "iconSource": "emoji",
+      "emoji": "↩️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "lake",
+      "name": "Lake",
+      "iconSource": "emoji",
+      "emoji": "🌊",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ice",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "swim",
+      "name": "Swim",
+      "iconSource": "emoji",
+      "emoji": "🏊",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ice",
+      "message": "The heat is unbearable. A swim sounds tempting.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "drink",
+      "name": "Drink",
+      "iconSource": "emoji",
+      "emoji": "🚰",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ice",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "forest",
+      "name": "Forest",
+      "iconSource": "emoji",
+      "emoji": "🌲",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "Ahead lie a dark forest and a quiet lake. Do you risk the woods, or linger by the water?",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "return",
+      "name": "Return",
+      "iconSource": "emoji",
+      "emoji": "🔙",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "gorgon-medusa",
+      "name": "Gorgon Medusa",
+      "iconSource": "emoji",
+      "emoji": "🪼",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ice",
+      "message": "A monstrous jellyfish rises from the depths of the lake and moves in for the kill.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "bandit-camp",
+      "name": "Bandit Camp",
+      "iconSource": "emoji",
+      "emoji": "🏕️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "A bandit camp lies ahead. Dangerous, yes, but victory here could bring real glory.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "go-around",
+      "name": "Go Around",
+      "iconSource": "emoji",
+      "emoji": "↪️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "back-to-the-lake",
+      "name": "Back to the Lake",
+      "iconSource": "emoji",
+      "emoji": "🔙",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ice",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "guard",
+      "name": "Guard",
+      "iconSource": "emoji",
+      "emoji": "💂",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "stick",
+      "name": "Stick",
+      "iconSource": "emoji",
+      "emoji": "🪵",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "sharpened-stick",
+      "name": "Sharpened Stick",
+      "iconSource": "emoji",
+      "emoji": "🗡️",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "You sharpen the stick into a crude but deadly spear.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "dead-guard",
+      "name": "Dead Guard",
+      "iconSource": "emoji",
+      "emoji": "☠️",
+      "bgColorToken": "sun",
+      "frameColorToken": "sand",
+      "message": "The guard is dead. Something glints on his belt. A key.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "bloody-stick",
+      "name": "Bloody Stick",
+      "iconSource": "emoji",
+      "emoji": "🩸",
+      "bgColorToken": "sun",
+      "frameColorToken": "ember",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "keys",
+      "name": "Keys",
+      "iconSource": "emoji",
+      "emoji": "🗝️",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "You search the body, find the keys, and quietly help yourself to his sword.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "go-forward",
+      "name": "Go Forward",
+      "iconSource": "emoji",
+      "emoji": "🚶",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "You step out of the cell. There is only one passage ahead, and that makes it worse.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "prisoner-cells",
+      "name": "Prisoner Cells",
+      "iconSource": "emoji",
+      "emoji": "🔒",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "Rows of prison cells line the corridor. Some prisoners stare in silence, others spit and beg to be released.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "back-to-the-corpse",
+      "name": "Back to the Corpse",
+      "iconSource": "emoji",
+      "emoji": "🔙",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "friendly-stranger",
+      "name": "Friendly Stranger",
+      "iconSource": "emoji",
+      "emoji": "🙂",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "old-man",
+      "name": "Old Man",
+      "iconSource": "emoji",
+      "emoji": "👴",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "You have found other captives, but not allies you can trust. No exit is obvious from here.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "huge-ogre",
+      "name": "Huge Ogre",
+      "iconSource": "emoji",
+      "emoji": "👹",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "secret-door",
+      "name": "Secret Door",
+      "iconSource": "emoji",
+      "emoji": "🚪",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "The old man thanks you for the rescue and reveals a secret door used by the guards.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "path-ahead",
+      "name": "Path Ahead",
+      "iconSource": "emoji",
+      "emoji": "🛤️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "return-to-the-cells",
+      "name": "Return to the Cells",
+      "iconSource": "emoji",
+      "emoji": "🔙",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "left-passage",
+      "name": "Left Passage",
+      "iconSource": "emoji",
+      "emoji": "↙️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "The door slams shut behind you. The old man cannot open it from this side. There is no turning back now.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "sturdy-rope",
+      "name": "Sturdy Rope",
+      "iconSource": "emoji",
+      "emoji": "🪢",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "Around the bend you spot two guards and duck out of sight. One would be easy. Two are not. All you have is a stick, a stone, and a rope.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "sharpened-stone",
+      "name": "Sharpened Stone",
+      "iconSource": "emoji",
+      "emoji": "🪨",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "blunt-stick",
+      "name": "Blunt Stick",
+      "iconSource": "emoji",
+      "emoji": "🪵",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "wrapped-stick",
+      "name": "Wrapped Stick",
+      "iconSource": "emoji",
+      "emoji": "🪵",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "You wrap the rope around the stick. Add a blade, and it might pass for an axe.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "primitive-axe",
+      "name": "Primitive Axe",
+      "iconSource": "emoji",
+      "emoji": "🪓",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "Now it looks like a primitive axe. If you throw it, you get exactly one careful chance.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "wounded-guard",
+      "name": "Wounded Guard",
+      "iconSource": "emoji",
+      "emoji": "🤕",
+      "bgColorToken": "sun",
+      "frameColorToken": "ember",
+      "message": "You wound one guard. The other charges you in fury.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "enraged-guard",
+      "name": "Enraged Guard",
+      "iconSource": "emoji",
+      "emoji": "😠",
+      "bgColorToken": "sun",
+      "frameColorToken": "ember",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "arm",
+      "name": "Arm",
+      "iconSource": "emoji",
+      "emoji": "💪",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "Where do you strike? The head, the arm, or the chest?",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "head",
+      "name": "Head",
+      "iconSource": "emoji",
+      "emoji": "🗿",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "chest",
+      "name": "Chest",
+      "iconSource": "emoji",
+      "emoji": "🫀",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "clear-path",
+      "name": "Clear Path",
+      "iconSource": "emoji",
+      "emoji": "🛣️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "The way is clear, at least for the moment.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "corpse",
+      "name": "Corpse",
+      "iconSource": "emoji",
+      "emoji": "🦴",
+      "bgColorToken": "sun",
+      "frameColorToken": "sand",
+      "message": "You slash the guard’s arm. He drops his sword and clutches the wound. That opening is all you need. He falls, dead at your feet.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "exit",
+      "name": "Exit",
+      "iconSource": "emoji",
+      "emoji": "🚪",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "No traps. No guards. That alone feels wrong.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "trees",
+      "name": "Trees",
+      "iconSource": "emoji",
+      "emoji": "🌳",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "Moonlight spills over a forest with no visible trail. Behind you is the den you just escaped. Going back is not an option.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "south",
+      "name": "South",
+      "iconSource": "emoji",
+      "emoji": "⬇️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "west",
+      "name": "West",
+      "iconSource": "emoji",
+      "emoji": "⬅️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "east",
+      "name": "East",
+      "iconSource": "emoji",
+      "emoji": "➡️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "north",
+      "name": "North",
+      "iconSource": "emoji",
+      "emoji": "⬆️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "thick-brush",
+      "name": "Thick Brush",
+      "iconSource": "emoji",
+      "emoji": "🌿",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "Towering brush blocks the way. You will need another route.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "back-to-the-prison-exit",
+      "name": "Back to the Prison Exit",
+      "iconSource": "emoji",
+      "emoji": "🔙",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "goblin-camp",
+      "name": "Goblin Camp",
+      "iconSource": "emoji",
+      "emoji": "👺",
+      "bgColorToken": "mint",
+      "frameColorToken": "forest",
+      "message": "A goblin camp lies to the east, and there are far too many of them. You wisely back away.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "bitter-cold",
+      "name": "Bitter Cold",
+      "iconSource": "emoji",
+      "emoji": "🥶",
+      "bgColorToken": "ice",
+      "frameColorToken": "ocean",
+      "message": "The farther north you go, the colder it gets. Without warm clothes, this road will kill you.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "path",
+      "name": "Path",
+      "iconSource": "emoji",
+      "emoji": "🛤️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "After a long march through brush and trees, you finally find a path. It leads somewhere. That may be enough.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "town",
+      "name": "Town",
+      "iconSource": "emoji",
+      "emoji": "🏘️",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "At last, the path leads to a town.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "shop",
+      "name": "Shop",
+      "iconSource": "emoji",
+      "emoji": "🏪",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "Inside the town you find a shop, a forge, and a post office.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "forge",
+      "name": "Forge",
+      "iconSource": "emoji",
+      "emoji": "⚒️",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "post-office",
+      "name": "Post Office",
+      "iconSource": "emoji",
+      "emoji": "📮",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "blacksmith",
+      "name": "Blacksmith",
+      "iconSource": "emoji",
+      "emoji": "🧑‍🏭",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "The forge is hot, but the blacksmith is taking a quiet break.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "work-order",
+      "name": "Work Order",
+      "iconSource": "emoji",
+      "emoji": "📜",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "You ask the blacksmith to reforge your rusted sword. He demands more gold than you have, then offers a deal: deliver his work order to the merchant, and he will do it for free.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "exit-the-forge",
+      "name": "Exit the Forge",
+      "iconSource": "emoji",
+      "emoji": "🚪",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "merchant",
+      "name": "Merchant",
+      "iconSource": "emoji",
+      "emoji": "🧑‍💼",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "The merchant spots you the moment you enter the shop.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "payment-due",
+      "name": "Payment Due",
+      "iconSource": "emoji",
+      "emoji": "💸",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "exit-the-shop",
+      "name": "Exit the Shop",
+      "iconSource": "emoji",
+      "emoji": "🚪",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "The merchant thanks you and tells you to return to the blacksmith for your payment.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "fighter",
+      "name": "Fighter",
+      "iconSource": "emoji",
+      "emoji": "🛡️",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "You are no longer just a wandering warrior. After everything you have survived, you have become a true fighter.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "fair",
+      "name": "Fair",
+      "iconSource": "emoji",
+      "emoji": "🎪",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "As you leave the forge, music and cheers drift through the street. A fair is in full swing nearby.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "best-invention-contest",
+      "name": "Best Invention Contest",
+      "iconSource": "emoji",
+      "emoji": "🏆",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "The fair is hosting a contest for the best invention. The prize is five hundred gold.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "log",
+      "name": "Log",
+      "iconSource": "emoji",
+      "emoji": "🪵",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "You make it into the contest just in time. Your first task is simple: build a cabinet.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "tools",
+      "name": "Tools",
+      "iconSource": "emoji",
+      "emoji": "🧰",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "board",
+      "name": "Board",
+      "iconSource": "emoji",
+      "emoji": "🪵",
+      "bgColorToken": "forest",
+      "frameColorToken": "mint",
+      "message": "You saw the log into boards.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "cabinet-door",
+      "name": "Cabinet Door",
+      "iconSource": "emoji",
+      "emoji": "🚪",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "You put together a cabinet door.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "nails",
+      "name": "Nails",
+      "iconSource": "emoji",
+      "emoji": "📌",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "doorless-cabinet",
+      "name": "Doorless Cabinet",
+      "iconSource": "emoji",
+      "emoji": "🗄️",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "The cabinet is built, but it still has no door.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "cabinet",
+      "name": "Cabinet",
+      "iconSource": "emoji",
+      "emoji": "🗄️",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "The cabinet is finished. Your rivals are still fumbling with boards and nails. It is time to show it to the judges.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "jury",
+      "name": "Jury",
+      "iconSource": "emoji",
+      "emoji": "👥",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "wait",
+      "name": "Wait",
+      "iconSource": "emoji",
+      "emoji": "⏳",
+      "bgColorToken": "royal",
+      "frameColorToken": "ocean",
+      "message": "The judges score your work 10, 8, and 9. Now you wait for the others to finish.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "leave-the-fair",
+      "name": "Leave the Fair",
+      "iconSource": "emoji",
+      "emoji": "🚶",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "gate",
+      "name": "Gate",
+      "iconSource": "emoji",
+      "emoji": "🚧",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "The gate will not open. Someone has barred it shut.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "draw-sword",
+      "name": "Draw Sword",
+      "iconSource": "emoji",
+      "emoji": "🗡️",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "tower",
+      "name": "Tower",
+      "iconSource": "emoji",
+      "emoji": "🗼",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "You flee the fair before the riders cut you down. You could run from the city, or stand and defend it.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "darkness",
+      "name": "Darkness",
+      "iconSource": "emoji",
+      "emoji": "🌑",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "In the distance, a dark cloud rolls toward the fair. One glance is enough to know something is terribly wrong.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "death-knights",
+      "name": "Death Knights",
+      "iconSource": "emoji",
+      "emoji": "☠️",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "Figures emerge from the black cloud on dark horses, clad in black armor and carrying weapons that smoke with shadow.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "infantryman",
+      "name": "Infantryman",
+      "iconSource": "emoji",
+      "emoji": "🪖",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "You draw your sword as lines of infantry and archers advance to meet the Death Knights.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "archer",
+      "name": "Archer",
+      "iconSource": "emoji",
+      "emoji": "🏹",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "death-knight",
+      "name": "Death Knight",
+      "iconSource": "emoji",
+      "emoji": "☠️",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "dark-mage",
+      "name": "Dark Mage",
+      "iconSource": "emoji",
+      "emoji": "🧙",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "death-knight-corpses",
+      "name": "Death Knight Corpses",
+      "iconSource": "emoji",
+      "emoji": "☠️",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "You cut down one Death Knight, but more enemies keep pressing through the dark cloud.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "skeleton-swordsman",
+      "name": "Skeleton Swordsman",
+      "iconSource": "emoji",
+      "emoji": "💀",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "The dark mage casts a vile spell. Soldiers around you convulse, tear open, and their own skeletons claw their way free.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "skeleton-archer",
+      "name": "Skeleton Archer",
+      "iconSource": "emoji",
+      "emoji": "💀",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "fallen-soldiers",
+      "name": "Fallen Soldiers",
+      "iconSource": "emoji",
+      "emoji": "⚰️",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "sword",
+      "name": "Sword",
+      "iconSource": "emoji",
+      "emoji": "⚔️",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "You shatter the skeletons with a sweeping strike, but the dark mage knocks your sword away. You need it back now.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "severe-wound",
+      "name": "Severe Wound",
+      "iconSource": "emoji",
+      "emoji": "🩹",
+      "bgColorToken": "sun",
+      "frameColorToken": "ember",
+      "message": "A massive dark sphere hurls you through the air and into a nearby house. When you wake, a deep wound is pouring blood.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "house",
+      "name": "House",
+      "iconSource": "emoji",
+      "emoji": "🏠",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "crossbow",
+      "name": "Crossbow",
+      "iconSource": "emoji",
+      "emoji": "🏹",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "Inside the tower you find a crossbow. At last, a weapon you can use at range.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "mutant",
+      "name": "Mutant",
+      "iconSource": "emoji",
+      "emoji": "🧟",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "From the tower window you see a stitched monstrosity shambling toward you. Three crossbowmen rush to help.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "crossbowman",
+      "name": "Crossbowman",
+      "iconSource": "emoji",
+      "emoji": "🏹",
+      "bgColorToken": "rose",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "enraged-mutant",
+      "name": "Enraged Mutant",
+      "iconSource": "emoji",
+      "emoji": "😡",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "Your bolts barely slow the mutant. It lashes out, drags one of the crossbowmen close, and crushes his head in one hand.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "bleeding-mutant",
+      "name": "Bleeding Mutant",
+      "iconSource": "emoji",
+      "emoji": "🩸",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "At last your shots draw black blood, but the mutant is already climbing the tower. The crossbowmen break and flee.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "mutant-in-the-tower",
+      "name": "Mutant in the Tower",
+      "iconSource": "emoji",
+      "emoji": "🧟",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "The mutant reaches the tower. There is no escape now. You have to fight.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "wounded-mutant",
+      "name": "Wounded Mutant",
+      "iconSource": "emoji",
+      "emoji": "🤕",
+      "bgColorToken": "shadow",
+      "frameColorToken": "stone",
+      "message": "You drive the sword into the mutant’s head, but some foul magic keeps it moving. You cannot pull the blade free before it starts swinging its hook.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "descent",
+      "name": "Descent",
+      "iconSource": "emoji",
+      "emoji": "🪜",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "strange-basement",
+      "name": "Strange Basement",
+      "iconSource": "emoji",
+      "emoji": "🧱",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "You race down from the slower mutant and stumble into a strange basement before you realize where you are.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "torch",
+      "name": "Torch",
+      "iconSource": "emoji",
+      "emoji": "🔥",
+      "bgColorToken": "sun",
+      "frameColorToken": "ember",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "chest-crate",
+      "name": "Chest Crate",
+      "iconSource": "emoji",
+      "emoji": "📦",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "By torchlight you find dust, junk, and a few objects that might help you deal with the mutant.",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "junk",
+      "name": "Junk",
+      "iconSource": "emoji",
+      "emoji": "🗑️",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "hook",
+      "name": "Hook",
+      "iconSource": "emoji",
+      "emoji": "🪝",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "hole-by-the-door",
+      "name": "Hole by the Door",
+      "iconSource": "emoji",
+      "emoji": "🕳️",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "room-2",
+      "name": "Room 2",
+      "iconSource": "emoji",
+      "emoji": "2️⃣",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "room-1",
+      "name": "Room 1",
+      "iconSource": "emoji",
+      "emoji": "1️⃣",
+      "bgColorToken": "stone",
+      "frameColorToken": "sun",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    }
+  ],
+  "reactions": [
+    {
+      "leftId": "warrior",
+      "rightId": "cave",
+      "outputIds": [],
+      "script": "add Dragon\nremove Back\nremove Warrior\nremove Cave\nlose \"A dragon was waiting inside. It incinerates you in an instant.\""
+    },
+    {
+      "leftId": "left",
+      "rightId": "warrior",
+      "outputIds": [],
+      "script": "add Back\nadd Cave\nadd Warrior\nremove Right"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "lake",
+      "outputIds": [],
+      "script": "add Swim\nadd Drink\nadd Warrior\nremove Forest\nadd Return"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "swim",
+      "outputIds": [],
+      "script": "remove Return\nremove Drink\nadd Gorgon Medusa\nlose \"The lake monster rises beneath you. Your final mistake was getting into the water.\""
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "right",
+      "outputIds": [],
+      "script": "remove Left\nadd Warrior\nadd Forest\nadd Lake"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "return",
+      "outputIds": [],
+      "script": "add Forest\nadd Lake\nadd Warrior\nremove Swim\nremove Drink\nremove Bandit Camp\nremove Go Around"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "back",
+      "outputIds": [],
+      "script": "add Warrior\nadd Left\nadd Right\nremove Cave"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "drink",
+      "outputIds": [],
+      "script": "message \"You drink from the lake and quickly realize that swimming here would be a mistake.\"\nadd Warrior\nremove Swim"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "forest",
+      "outputIds": [],
+      "script": "add Bandit Camp\nadd Go Around\nadd Warrior\nremove Lake\nadd Back to the Lake"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "go-around",
+      "outputIds": [],
+      "script": "popup \"You try to sneak around the camp, trip badly, and black out. When you wake, you are in a prison cell with a guard nearby.\"\nremove Back to the Lake\nremove Bandit Camp\nadd Guard\nadd Stick\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "back-to-the-lake",
+      "outputIds": [],
+      "script": "remove Bandit Camp\nremove Go Around\nadd Forest\nadd Lake\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "sharpened-stick",
+      "outputIds": [],
+      "script": "if (count(Guard) < 1) add Warrior; add Sharpened Stick; stop\nremove Guard\nadd Dead Guard\nadd Bloody Stick\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "stick",
+      "outputIds": [],
+      "script": "add Sharpened Stick\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "dead-guard",
+      "outputIds": [],
+      "script": "add Warrior\nadd Keys"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "keys",
+      "outputIds": [],
+      "script": "add Go Forward\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "go-forward",
+      "outputIds": [],
+      "script": "remove Bloody Stick\nadd Prisoner Cells\nadd Warrior\nadd Back to the Corpse"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "friendly-stranger",
+      "outputIds": [],
+      "script": "message \"The friendly-looking stranger moves like lightning, snatches your sword, and cuts your throat.\"\nadd Friendly Stranger\nremove Back to the Corpse\nlose \"The friendly-looking stranger moves like lightning, snatches your sword, and cuts your throat.\""
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "prisoner-cells",
+      "outputIds": [],
+      "script": "add Old Man\nadd Friendly Stranger\nadd Huge Ogre\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "huge-ogre",
+      "outputIds": [],
+      "script": "message \"The moment you open the ogre’s cell, it caves in your skull.\"\nadd Huge Ogre\nremove Back to the Corpse\nlose \"The moment you open the ogre’s cell, it caves in your skull.\""
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "old-man",
+      "outputIds": [],
+      "script": "add Old Man\nadd Warrior\nadd Secret Door\nremove Back to the Corpse"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "bandit-camp",
+      "outputIds": [],
+      "script": "popup \"You charge the bandit camp shouting for glory, only to be clubbed from behind. You wake up in a prison cell with a guard beside you.\"\nadd Warrior\nadd Guard\nadd Stick\nremove Go Around\nremove Back to the Lake"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "back-to-the-corpse",
+      "outputIds": [],
+      "script": "add Bloody Stick\nadd Warrior\nadd Go Forward\nremove Prisoner Cells\nremove Huge Ogre\nremove Friendly Stranger\nremove Old Man"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "secret-door",
+      "outputIds": [],
+      "script": "if (count(Old Man) < 1) add Warrior; add Secret Door; stop\nremove Old Man\nadd Old Man\nadd Warrior\nadd Path Ahead\nadd Return to the Cells\nremove Huge Ogre\nremove Friendly Stranger\nremove Back to the Corpse"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "return-to-the-cells",
+      "outputIds": [],
+      "script": "if (count(Old Man) < 1) add Warrior; add Return to the Cells; stop\nremove Old Man\nadd Warrior\nadd Old Man\nadd Huge Ogre\nadd Secret Door\nadd Friendly Stranger\nremove Path Ahead"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "path-ahead",
+      "outputIds": [],
+      "script": "if (count(Old Man) < 1) add Warrior; add Path Ahead; stop\nremove Old Man\nadd Warrior\nadd Left Passage\nremove Secret Door\nremove Return to the Cells"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "left-passage",
+      "outputIds": [],
+      "script": "add Warrior\nadd Guard\nadd Guard\nadd Sturdy Rope\nadd Sharpened Stone\nadd Blunt Stick"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "guard",
+      "outputIds": [],
+      "script": "message \"Charging the guard bare-handed was a fatal mistake.\"\nadd Guard\nlose \"Charging the guard bare-handed was a fatal mistake.\""
+    },
+    {
+      "leftId": "blunt-stick",
+      "rightId": "sturdy-rope",
+      "outputIds": [],
+      "script": "if (count(Warrior) < 1) add Blunt Stick; add Sturdy Rope; stop\nremove Warrior\nadd Warrior\nadd Wrapped Stick"
+    },
+    {
+      "leftId": "wrapped-stick",
+      "rightId": "warrior",
+      "outputIds": [],
+      "script": "if (count(Sharpened Stone) < 1) add Wrapped Stick; add Warrior; stop\nremove Sharpened Stone\nadd Warrior\nadd Primitive Axe"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "primitive-axe",
+      "outputIds": [],
+      "script": "if (count(Guard) < 1) add Warrior; add Primitive Axe; stop\nremove Guard\nadd Wounded Guard\nadd Enraged Guard\nremove Guard\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "enraged-guard",
+      "outputIds": [],
+      "script": "add Warrior\nadd Arm\nadd Head\nadd Chest"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "wounded-guard",
+      "outputIds": [],
+      "script": "if (count(Corpse) < 1) add Warrior; add Wounded Guard; stop\nadd Clear Path\nremove_all Corpse\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "chest",
+      "outputIds": [],
+      "script": "message \"You lunge for the guard’s chest. He slips aside, disarms you, and takes your head for the attempt.\"\nremove Head\nremove Arm\nadd Enraged Guard\nlose \"You lunge for the guard’s chest. He slips aside, disarms you, and takes your head for the attempt.\""
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "head",
+      "outputIds": [],
+      "script": "message \"The guard protects his head, disarms you, and drives his blade straight through your heart.\"\nremove Chest\nremove Arm\nadd Enraged Guard\nlose \"The guard protects his head, disarms you, and drives his blade straight through your heart.\""
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "arm",
+      "outputIds": [],
+      "script": "add Warrior\nadd Corpse\nremove Head\nremove Chest"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "clear-path",
+      "outputIds": [],
+      "script": "add Exit\nadd Warrior"
+    },
+    {
+      "leftId": "exit",
+      "rightId": "warrior",
+      "outputIds": [],
+      "script": "add Trees\nadd Warrior\nadd South\nadd West\nadd East\nadd North"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "west",
+      "outputIds": [],
+      "script": "add Thick Brush\nremove South\nremove East\nremove North\nadd Warrior\nadd Back to the Prison Exit"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "east",
+      "outputIds": [],
+      "script": "add Goblin Camp\nadd Warrior\nadd Back to the Prison Exit\nremove South\nremove West\nremove East"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "back-to-the-prison-exit",
+      "outputIds": [],
+      "script": "add Warrior\nadd South\nadd North\nadd West\nadd East\nremove Goblin Camp\nremove Bitter Cold\nremove Thick Brush"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "north",
+      "outputIds": [],
+      "script": "add Warrior\nadd Bitter Cold\nadd Back to the Prison Exit\nremove South\nremove West\nremove East"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "south",
+      "outputIds": [],
+      "script": "add Warrior\nremove West\nremove North\nremove East\nadd Path"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "path",
+      "outputIds": [],
+      "script": "add Town\nadd Warrior\nremove Trees"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "town",
+      "outputIds": [],
+      "script": "add Shop\nadd Forge\nadd Post Office\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "forge",
+      "outputIds": [],
+      "script": "remove Shop\nremove Post Office\nadd Warrior\nadd Blacksmith"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "exit-the-forge",
+      "outputIds": [],
+      "script": "if (count(Work Order) < 1) add Warrior; add Exit the Forge; stop\nremove Work Order\nremove Blacksmith\nadd Post Office\nadd Shop\nadd Forge\nadd Work Order\nadd Warrior"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "shop",
+      "outputIds": [],
+      "script": "if (count(Work Order) < 1) add Warrior; add Shop; stop\nremove Work Order\nremove Post Office\nremove Forge\nadd Work Order\nadd Warrior\nadd Merchant"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "blacksmith",
+      "outputIds": [],
+      "script": "add Warrior\nadd Work Order\nadd Exit the Forge\nadd Blacksmith"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "merchant",
+      "outputIds": [],
+      "script": "if (count(Work Order) < 1) add Warrior; add Merchant; stop\nremove Work Order\nadd Merchant\nadd Warrior\nadd Payment Due\nadd Exit the Shop"
+    },
+    {
+      "leftId": "warrior",
+      "rightId": "exit-the-shop",
+      "outputIds": [],
+      "script": "if (count(Payment Due) < 1) add Warrior; add Exit the Shop; stop\nremove Payment Due\nadd Warrior\nadd Shop\nadd Payment Due\nadd Post Office\nadd Forge\nremove Merchant"
+    },
+    {
+      "leftId": "payment-due",
+      "rightId": "forge",
+      "outputIds": [],
+      "script": "if (count(Warrior) < 1) add Payment Due; add Forge; stop\nremove Warrior\nadd Payment Due\nadd Warrior\nremove Post Office\nremove Shop\nadd Blacksmith"
+    },
+    {
+      "leftId": "payment-due",
+      "rightId": "blacksmith",
+      "outputIds": [],
+      "script": "if (count(Warrior) < 1) add Payment Due; add Blacksmith; stop\nremove Warrior\nadd Fighter\nadd Blacksmith\nadd Exit the Forge"
+    },
+    {
+      "leftId": "exit-the-forge",
+      "rightId": "fighter",
+      "outputIds": [],
+      "script": "add Shop\nadd Fair\nadd Forge\nadd Post Office\nadd Fighter\nremove Blacksmith"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "fair",
+      "outputIds": [],
+      "script": "add Best Invention Contest\nadd Fighter\nremove Forge\nremove Post Office\nremove Shop"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "log",
+      "outputIds": [],
+      "script": "if (count(Tools) < 1) add Fighter; add Log; stop\nremove Tools\nadd Board\nadd Board\nadd Board\nadd Fighter\nadd Tools\nadd Board"
+    },
+    {
+      "leftId": "tools",
+      "rightId": "board",
+      "outputIds": [],
+      "script": "if (count(Fighter) < 1) add Tools; add Board; stop\nremove Fighter\nadd Cabinet Door\nadd Fighter\nadd Tools"
+    },
+    {
+      "leftId": "tools",
+      "rightId": "nails",
+      "outputIds": [],
+      "script": "if (count(Fighter) < 1) add Tools; add Nails; stop\nif (count(Board) < 3) add Tools; add Nails; stop\nremove Fighter\nremove Board\nremove Board\nremove Board\nadd Fighter\nadd Tools\nadd Nails\nadd Doorless Cabinet"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "cabinet",
+      "outputIds": [],
+      "script": "if (count(Jury) < 1) add Fighter; add Cabinet; stop\nremove Jury\nadd Fighter\nadd Wait"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "wait",
+      "outputIds": [],
+      "script": "add Darkness\nadd Fighter"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "doorless-cabinet",
+      "outputIds": [],
+      "script": "if (count(Cabinet Door) < 1) add Fighter; add Doorless Cabinet; stop\nif (count(Nails) < 1) add Fighter; add Doorless Cabinet; stop\nif (count(Tools) < 1) add Fighter; add Doorless Cabinet; stop\nremove Cabinet Door\nremove Nails\nremove Tools\nadd Fighter\nadd Cabinet\nadd Jury"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "best-invention-contest",
+      "outputIds": [],
+      "script": "add Fighter\nadd Nails\nadd Tools\nadd Log"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "cabinet-door",
+      "outputIds": [],
+      "script": "if (count(Doorless Cabinet) < 1) add Fighter; add Cabinet Door; stop\nif (count(Nails) < 1) add Fighter; add Cabinet Door; stop\nif (count(Tools) < 1) add Fighter; add Cabinet Door; stop\nremove Doorless Cabinet\nremove Nails\nremove Tools\nadd Cabinet\nadd Fighter\nadd Jury"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "leave-the-fair",
+      "outputIds": [],
+      "script": "add Gate\nremove Draw Sword\nadd Tower\nadd Fighter"
+    },
+    {
+      "leftId": "darkness",
+      "rightId": "fighter",
+      "outputIds": [],
+      "script": "add Death Knights\nadd Leave the Fair\nadd Draw Sword\nadd Fighter"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "draw-sword",
+      "outputIds": [],
+      "script": "add Infantryman\nadd Infantryman\nadd Infantryman\nadd Infantryman\nadd Archer\nadd Archer\nadd Death Knight\nadd Death Knight\nadd Death Knight\nadd Death Knight\nadd Fighter\nremove Leave the Fair\nremove Death Knights\nremove Death Knights"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "death-knight",
+      "outputIds": [],
+      "script": "remove Infantryman\nremove Infantryman\nremove Death Knight\nremove Death Knight\nremove Archer\nadd Dark Mage\nadd Fighter\nadd Death Knight Corpses\nremove Death Knight"
+    },
+    {
+      "leftId": "dark-mage",
+      "rightId": "fighter",
+      "outputIds": [],
+      "script": "add Fighter\nremove Infantryman\nremove Infantryman\nremove Archer\nadd Skeleton Swordsman\nadd Skeleton Swordsman\nadd Skeleton Archer\nadd Dark Mage\nadd Fallen Soldiers"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "sword",
+      "outputIds": [],
+      "script": "if (count(Dark Mage) < 1) add Fighter; add Sword; stop\nremove Dark Mage\nadd Severe Wound\nadd Fighter\nadd House"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "skeleton-swordsman",
+      "outputIds": [],
+      "script": "if (count(Skeleton Swordsman) < 2) add Fighter; add Skeleton Swordsman; stop\nif (count(Skeleton Archer) < 1) add Fighter; add Skeleton Swordsman; stop\nremove Skeleton Swordsman\nremove Skeleton Archer\nadd Fighter\nadd Sword"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "gate",
+      "outputIds": [],
+      "script": "add Gate\nadd Fighter"
+    },
+    {
+      "leftId": "tower",
+      "rightId": "fighter",
+      "outputIds": [],
+      "script": "add Crossbow\nadd Fighter\nremove Gate"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "crossbow",
+      "outputIds": [],
+      "script": "remove Death Knights\nadd Mutant\nadd Crossbowman\nadd Crossbowman\nadd Crossbowman\nadd Fighter"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "mutant",
+      "outputIds": [],
+      "script": "remove Crossbowman\nadd Enraged Mutant\nadd Fighter"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "enraged-mutant",
+      "outputIds": [],
+      "script": "add Fighter\nadd Bleeding Mutant\nremove Crossbowman\nremove Crossbowman"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "bleeding-mutant",
+      "outputIds": [],
+      "script": "add Mutant in the Tower\nadd Fighter"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "mutant-in-the-tower",
+      "outputIds": [],
+      "script": "add Fighter\nadd Wounded Mutant\nadd Descent"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "descent",
+      "outputIds": [],
+      "script": "add Strange Basement\nadd Torch\nadd Fighter\nremove Wounded Mutant"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "torch",
+      "outputIds": [],
+      "script": "add Chest Crate\nadd Junk\nadd Hook\nadd Hole by the Door\nadd Fighter\nremove Strange Basement"
+    },
+    {
+      "leftId": "fighter",
+      "rightId": "house",
+      "outputIds": [],
+      "script": "popup \"You stumble into the house, bleeding badly. There are two rooms here. Somewhere inside should be a medkit, but the old story ends before you can find it.\"\nremove_all\nadd Room 2\nadd Room 1\nadd Severe Wound\nadd Fighter"
+    }
+  ],
+  "events": [],
+  "reactionComments": {
+    "byReaction": [],
+    "trailingComments": []
+  }
+}

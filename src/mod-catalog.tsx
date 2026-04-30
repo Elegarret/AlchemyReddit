@@ -14,9 +14,16 @@ import {
   IoEyeSharp,
   IoLayersSharp,
   IoPlaySharp,
+  IoStarOutline,
+  IoStarSharp,
   IoThumbsUpSharp,
+  IoTrophySharp,
 } from 'react-icons/io5';
-import type { AdminModListItem, ModListItem } from './modding/types';
+import type {
+  AdminModListItem,
+  ModListItem,
+  PaginatedResult,
+} from './modding/types';
 import { PLAYTEST_RULESET_STORAGE_KEY } from './modding/runtime';
 import { trpc } from './trpc';
 import {
@@ -48,29 +55,71 @@ const getSharePostUrl = (mod: ModListItem) => {
   return `https://www.reddit.com/comments/${mod.sharePostId.replace('t3_', '')}`;
 };
 
+const getBestScore = (mod: ModListItem) => {
+  if (typeof mod.bestScore === 'number') {
+    return mod.bestScore;
+  }
+
+  const voteScore = mod.upvotes ?? 0;
+  const playerCount = mod.playerCount ?? 0;
+  return (
+    voteScore / Math.sqrt(Math.max(playerCount, 1)) +
+    Math.log1p(playerCount) * 0.35
+  );
+};
+
+const getDisplayedRating = (mod: ModListItem) => Math.trunc(getBestScore(mod));
+
+const ratingTooltip =
+  "Mod's rating based on upvotes, downvotes and player's count";
+
+const renderFeaturedMarker = (mod: ModListItem) =>
+  mod.featuredAt ? (
+    <span
+      className="catalog-text-ink inline-flex items-center"
+      title="Editorial choice"
+      aria-label="Editorial choice"
+    >
+      <IoStarSharp className="text-[11px]" />
+    </span>
+  ) : null;
+
 export const Catalog = () => {
-  const [adminMods, setAdminMods] = useState<AdminModListItem[]>([]);
+  const [adminModsPage, setAdminModsPage] =
+    useState<PaginatedResult<AdminModListItem> | null>(null);
+  const [bestMods, setBestMods] = useState<ModListItem[]>([]);
   const [hasAdminTools, setHasAdminTools] = useState(false);
-  const [mods, setMods] = useState<ModListItem[]>([]);
   const [myMods, setMyMods] = useState<ModListItem[]>([]);
-  const [lastPlayedRealm, setLastPlayedRealmState] = useState(getLastPlayedRealm);
+  const [newMods, setNewMods] = useState<ModListItem[]>([]);
+  const [publishedModsPage, setPublishedModsPage] =
+    useState<PaginatedResult<ModListItem> | null>(null);
+  const [lastPlayedRealm, setLastPlayedRealmState] =
+    useState(getLastPlayedRealm);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [allPage, setAllPage] = useState(0);
+  const [featuredBusyModIds, setFeaturedBusyModIds] = useState<string[]>([]);
 
   useEffect(() => {
-    const fetchMods = async () => {
-      const [catalogResult, ownResult, adminResult] = await Promise.allSettled([
-        trpc.mods.listCatalog.query(),
+    const fetchStaticSections = async () => {
+      const [bestResult, newResult, ownResult] = await Promise.allSettled([
+        trpc.mods.listBest.query({ limit: 5 }),
+        trpc.mods.listNew.query({ limit: 5 }),
         trpc.mods.listMine.query(),
-        trpc.mods.listAllAdmin.query(),
       ]);
 
-      if (catalogResult.status === 'fulfilled') {
-        setMods(Array.isArray(catalogResult.value) ? catalogResult.value : []);
+      if (bestResult.status === 'fulfilled') {
+        setBestMods(Array.isArray(bestResult.value) ? bestResult.value : []);
       } else {
-        console.error('Failed to load mods catalog', catalogResult.reason);
-        setMods([]);
+        console.error('Failed to load best realms', bestResult.reason);
+        setBestMods([]);
+      }
+
+      if (newResult.status === 'fulfilled') {
+        setNewMods(Array.isArray(newResult.value) ? newResult.value : []);
+      } else {
+        console.error('Failed to load new realms', newResult.reason);
+        setNewMods([]);
       }
 
       if (ownResult.status === 'fulfilled') {
@@ -79,36 +128,65 @@ export const Catalog = () => {
         console.error('Failed to load your realms', ownResult.reason);
         setMyMods([]);
       }
+    };
+
+    void fetchStaticSections();
+  }, []);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    const fetchAllSection = async () => {
+      const [adminResult, publishedResult] = await Promise.allSettled([
+        trpc.mods.listAllAdmin.query({
+          page: allPage,
+          pageSize: ALL_PAGE_SIZE,
+          ...(searchQuery ? { query: searchQuery } : {}),
+        }),
+        trpc.mods.listAllPublished.query({
+          page: allPage,
+          pageSize: ALL_PAGE_SIZE,
+          ...(searchQuery ? { query: searchQuery } : {}),
+        }),
+      ]);
+
+      if (isDisposed) {
+        return;
+      }
 
       if (adminResult.status === 'fulfilled') {
-        setAdminMods(Array.isArray(adminResult.value) ? adminResult.value : []);
+        setAdminModsPage(adminResult.value);
         setHasAdminTools(true);
       } else {
-        setAdminMods([]);
+        setAdminModsPage(null);
         setHasAdminTools(false);
+      }
+
+      if (publishedResult.status === 'fulfilled') {
+        setPublishedModsPage(publishedResult.value);
+      } else {
+        console.error(
+          'Failed to load published realms page',
+          publishedResult.reason
+        );
+        setPublishedModsPage({
+          items: [],
+          page: allPage,
+          pageSize: ALL_PAGE_SIZE,
+          totalItems: 0,
+          totalPages: 0,
+        });
       }
 
       setLoading(false);
     };
 
-    void fetchMods();
-  }, []);
+    void fetchAllSection();
 
-  const sortedByUpvotes = useMemo(
-    () => [...mods].sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0)).slice(0, 5),
-    [mods]
-  );
-
-  const sortedByRecent = useMemo(
-    () =>
-      [...mods]
-        .sort(
-          (a, b) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        )
-        .slice(0, 5),
-    [mods]
-  );
+    return () => {
+      isDisposed = true;
+    };
+  }, [allPage, searchQuery]);
 
   const sortedMyMods = useMemo(
     () =>
@@ -119,42 +197,9 @@ export const Catalog = () => {
     [myMods]
   );
 
-  const allModsSource = useMemo(
-    () =>
-      [...(hasAdminTools ? adminMods : mods)].sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      ),
-    [adminMods, hasAdminTools, mods]
-  );
-
-  const allModsFiltered = useMemo(() => {
-    if (!searchQuery) {
-      return allModsSource;
-    }
-
-    const query = searchQuery.toLowerCase();
-    return allModsSource.filter(
-      (mod) =>
-        mod.title.toLowerCase().includes(query) ||
-        mod.ownerUsername.toLowerCase().includes(query) ||
-        ('draftOwnerUsername' in mod &&
-          typeof mod.draftOwnerUsername === 'string' &&
-          mod.draftOwnerUsername.toLowerCase().includes(query)) ||
-        mod.status.toLowerCase().includes(query)
-    );
-  }, [allModsSource, searchQuery]);
-
-  const allModsPage = useMemo(
-    () =>
-      allModsFiltered.slice(
-        allPage * ALL_PAGE_SIZE,
-        (allPage + 1) * ALL_PAGE_SIZE
-      ),
-    [allModsFiltered, allPage]
-  );
-
-  const totalPages = Math.ceil(allModsFiltered.length / ALL_PAGE_SIZE);
+  const activeAllPage = hasAdminTools ? adminModsPage : publishedModsPage;
+  const activeAllMods = activeAllPage?.items ?? [];
+  const totalPages = activeAllPage?.totalPages ?? 0;
 
   const allSearchPlaceholder = hasAdminTools
     ? 'Search realms, drafts, or authors...'
@@ -183,6 +228,78 @@ export const Catalog = () => {
     openEntry(event.nativeEvent, 'mod-editor');
   };
 
+  const updateFeaturedState = (updated: ModListItem) => {
+    const applyModUpdate = (mod: ModListItem): ModListItem => {
+      if (mod.id !== updated.id) {
+        return mod;
+      }
+
+      const { bestScore, featuredAt, featuredBy, ...rest } = mod;
+      return {
+        ...rest,
+        ...(updated.bestScore !== undefined
+          ? { bestScore: updated.bestScore }
+          : {}),
+        ...(updated.featuredAt ? { featuredAt: updated.featuredAt } : {}),
+        ...(updated.featuredBy ? { featuredBy: updated.featuredBy } : {}),
+      };
+    };
+    const applyAdminUpdate = (mod: AdminModListItem): AdminModListItem => {
+      if (mod.id !== updated.id) {
+        return mod;
+      }
+
+      const { bestScore, featuredAt, featuredBy, ...rest } = mod;
+      return {
+        ...rest,
+        ...(updated.bestScore !== undefined
+          ? { bestScore: updated.bestScore }
+          : {}),
+        ...(updated.featuredAt ? { featuredAt: updated.featuredAt } : {}),
+        ...(updated.featuredBy ? { featuredBy: updated.featuredBy } : {}),
+      };
+    };
+
+    setBestMods((current) => current.map(applyModUpdate));
+    setNewMods((current) => current.map(applyModUpdate));
+    setMyMods((current) => current.map(applyModUpdate));
+    setPublishedModsPage((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map(applyModUpdate),
+          }
+        : current
+    );
+    setAdminModsPage((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map(applyAdminUpdate),
+          }
+        : current
+    );
+  };
+
+  const toggleFeaturedRealm = async (mod: AdminModListItem) => {
+    if (mod.latestVersionStatus !== 'published') {
+      return;
+    }
+
+    setFeaturedBusyModIds((current) => [...current, mod.id]);
+    try {
+      const updated = await trpc.mods.setFeatured.mutate({
+        modId: mod.id,
+        featured: !mod.featuredAt,
+      });
+      updateFeaturedState(updated);
+    } catch (error) {
+      console.error('Failed to update featured realm', error);
+    } finally {
+      setFeaturedBusyModIds((current) => current.filter((id) => id !== mod.id));
+    }
+  };
+
   const renderCatalogWidget = (mod: ModListItem) => {
     const url = getSharePostUrl(mod);
     const realmSizeLabel = getRealmSizeLabel(mod.reactionCount);
@@ -190,8 +307,10 @@ export const Catalog = () => {
     const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
       ? 'text-[color:var(--realm-size-empty-text)]'
       : '';
-    const upvotesTooltip = `Upvotes: ${mod.upvotes || 0}`;
+    const displayedRating = getDisplayedRating(mod);
     const playerCountTooltip = `Users played: ${mod.playerCount || 0}`;
+    const showCompletionCount = typeof mod.completionCount === 'number';
+    const completionCountTooltip = `Users completed: ${mod.completionCount || 0}`;
 
     return (
       <div
@@ -219,14 +338,27 @@ export const Catalog = () => {
               {mod.summary || 'No description provided.'}
             </p>
             <div className="catalog-stat-text mt-1 flex items-center gap-3 text-[10px] font-semibold">
-              <div className="flex items-center gap-1" title={upvotesTooltip}>
+              {renderFeaturedMarker(mod)}
+              <div className="flex items-center gap-1" title={ratingTooltip}>
                 <IoThumbsUpSharp className="text-[11px]" />
-                <span>{mod.upvotes || 0}</span>
+                <span>{displayedRating}</span>
               </div>
-              <div className="flex items-center gap-1" title={playerCountTooltip}>
+              <div
+                className="flex items-center gap-1"
+                title={playerCountTooltip}
+              >
                 <IoEyeSharp className="text-[11px]" />
                 <span>{mod.playerCount || 0}</span>
               </div>
+              {showCompletionCount && (
+                <div
+                  className="flex items-center gap-1"
+                  title={completionCountTooltip}
+                >
+                  <IoTrophySharp className="text-[11px]" />
+                  <span>{mod.completionCount || 0}</span>
+                </div>
+              )}
               <div
                 className={`flex items-center gap-1 ${realmSizeClassName}`}
                 title={realmSizeTooltip}
@@ -258,14 +390,13 @@ export const Catalog = () => {
     const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
       ? 'text-[color:var(--realm-size-empty-text)]'
       : '';
-    const upvotesTooltip = `Upvotes: ${mod.upvotes || 0}`;
+    const displayedRating = getDisplayedRating(mod);
     const playerCountTooltip = `Users played: ${mod.playerCount || 0}`;
+    const showCompletionCount = typeof mod.completionCount === 'number';
+    const completionCountTooltip = `Users completed: ${mod.completionCount || 0}`;
 
     return (
-      <div
-        key={`mine-${mod.id}`}
-        className="catalog-card overflow-hidden"
-      >
+      <div key={`mine-${mod.id}`} className="catalog-card overflow-hidden">
         <span aria-hidden="true" className="catalog-corner-lily" />
         <div className="catalog-header-strip flex items-start justify-between gap-3 px-3 py-2.5">
           <button
@@ -286,9 +417,7 @@ export const Catalog = () => {
           </button>
           <span
             className={`catalog-title-font rounded-full border px-2 py-0.5 text-[9px] font-bold tracking-[0.16em] uppercase ${
-              isPublished
-                ? 'catalog-status-published'
-                : 'catalog-status-draft'
+              isPublished ? 'catalog-status-published' : 'catalog-status-draft'
             }`}
           >
             {mod.status}
@@ -299,14 +428,24 @@ export const Catalog = () => {
             {mod.summary || 'No description provided.'}
           </div>
           <div className="catalog-body-font catalog-stat-text mb-3 flex items-center gap-3 text-[11px] font-semibold">
-            <div className="flex items-center gap-1" title={upvotesTooltip}>
+            {renderFeaturedMarker(mod)}
+            <div className="flex items-center gap-1" title={ratingTooltip}>
               <IoThumbsUpSharp className="text-[11px]" />
-              <span>{mod.upvotes || 0}</span>
+              <span>{displayedRating}</span>
             </div>
             <div className="flex items-center gap-1" title={playerCountTooltip}>
               <IoEyeSharp className="text-[11px]" />
               <span>{mod.playerCount || 0}</span>
             </div>
+            {showCompletionCount && (
+              <div
+                className="flex items-center gap-1"
+                title={completionCountTooltip}
+              >
+                <IoTrophySharp className="text-[11px]" />
+                <span>{mod.completionCount || 0}</span>
+              </div>
+            )}
             <div
               className={`flex items-center gap-1 ${realmSizeClassName}`}
               title={realmSizeTooltip}
@@ -341,8 +480,10 @@ export const Catalog = () => {
 
   const renderAdminWidget = (mod: AdminModListItem) => {
     const shareUrl = getSharePostUrl(mod);
-    const upvotesTooltip = `Upvotes: ${mod.upvotes || 0}`;
+    const displayedRating = getDisplayedRating(mod);
     const playerCountTooltip = `Users played: ${mod.playerCount || 0}`;
+    const showCompletionCount = typeof mod.completionCount === 'number';
+    const completionCountTooltip = `Users completed: ${mod.completionCount || 0}`;
     const latestStatusLabel =
       mod.latestVersionStatus === null ? 'draft-only' : mod.latestVersionStatus;
     const realmSizeLabel = getRealmSizeLabel(mod.reactionCount);
@@ -350,6 +491,7 @@ export const Catalog = () => {
     const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
       ? 'text-[color:var(--realm-size-empty-text)]'
       : '';
+    const isFeaturedBusy = featuredBusyModIds.includes(mod.id);
 
     return (
       <div key={`admin-${mod.id}`} className="catalog-card overflow-hidden">
@@ -364,6 +506,15 @@ export const Catalog = () => {
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-1">
+            {mod.featuredAt && (
+              <span
+                className="catalog-title-font catalog-status-published flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold tracking-[0.16em] uppercase"
+                title="Editorial choice"
+              >
+                <IoStarSharp />
+                Featured
+              </span>
+            )}
             {mod.hasDraftVersion && (
               <span className="catalog-title-font catalog-status-draft rounded-full border px-2 py-0.5 text-[9px] font-bold tracking-[0.16em] uppercase">
                 Draft
@@ -393,14 +544,24 @@ export const Catalog = () => {
             <div>Latest update: {formatDate(mod.updatedAt)}</div>
           </div>
           <div className="catalog-body-font catalog-stat-text mb-3 flex items-center gap-3 text-[11px] font-semibold">
-            <div className="flex items-center gap-1" title={upvotesTooltip}>
+            {renderFeaturedMarker(mod)}
+            <div className="flex items-center gap-1" title={ratingTooltip}>
               <IoThumbsUpSharp className="text-[11px]" />
-              <span>{mod.upvotes || 0}</span>
+              <span>{displayedRating}</span>
             </div>
             <div className="flex items-center gap-1" title={playerCountTooltip}>
               <IoEyeSharp className="text-[11px]" />
               <span>{mod.playerCount || 0}</span>
             </div>
+            {showCompletionCount && (
+              <div
+                className="flex items-center gap-1"
+                title={completionCountTooltip}
+              >
+                <IoTrophySharp className="text-[11px]" />
+                <span>{mod.completionCount || 0}</span>
+              </div>
+            )}
             <div
               className={`flex items-center gap-1 ${realmSizeClassName}`}
               title={realmSizeTooltip}
@@ -410,6 +571,26 @@ export const Catalog = () => {
             </div>
           </div>
           <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={
+                mod.latestVersionStatus !== 'published' || isFeaturedBusy
+              }
+              onClick={() => {
+                void toggleFeaturedRealm(mod);
+              }}
+              className={`catalog-title-font catalog-action-button flex cursor-pointer items-center justify-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold tracking-[0.08em] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50`}
+              title={
+                mod.latestVersionStatus !== 'published'
+                  ? 'Only published realms can be featured.'
+                  : mod.featuredAt
+                    ? 'Remove editorial choice.'
+                    : 'Mark as editorial choice.'
+              }
+            >
+              {mod.featuredAt ? <IoStarSharp /> : <IoStarOutline />}
+              {mod.featuredAt ? 'Unfeature' : 'Feature'}
+            </button>
             <button
               type="button"
               onClick={(event) => openEditor(event, mod.id)}
@@ -438,7 +619,7 @@ export const Catalog = () => {
     <div className="catalog-parchment catalog-side-ornament relative flex min-h-screen w-full flex-col items-center overflow-y-auto py-4 sm:px-3">
       <div
         aria-hidden="true"
-        className="catalog-top-art pointer-events-none absolute top-0 left-1/2 h-[250px] w-screen -translate-x-1/2 bg-top bg-cover"
+        className="catalog-top-art pointer-events-none absolute top-0 left-1/2 h-[250px] w-screen -translate-x-1/2 bg-cover bg-top"
       />
       <div className="catalog-top-art-overlay pointer-events-none absolute inset-x-0 top-0 h-[250px]" />
 
@@ -489,34 +670,34 @@ export const Catalog = () => {
           </div>
         ) : (
           <>
-            {mods.length === 0 ? (
+            {bestMods.length === 0 && newMods.length === 0 ? (
               <div className="catalog-card catalog-text-muted p-6 text-center text-sm">
                 No realms published yet.
               </div>
             ) : (
-            <div className="grid grid-cols-2 gap-2 sm:gap-4">
-              {sortedByUpvotes.length > 0 && (
-                <div className="flex min-w-0 flex-col gap-3">
-                  <h2 className="catalog-title-font catalog-text-ink border-b border-[color:var(--catalog-soft-border)] px-1 pb-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
-                    Best
-                  </h2>
-                  <div className="flex flex-col gap-1.5 sm:gap-3">
-                    {sortedByUpvotes.map(renderCatalogWidget)}
+              <div className="grid grid-cols-2 gap-2 sm:gap-4">
+                {bestMods.length > 0 && (
+                  <div className="flex min-w-0 flex-col gap-3">
+                    <h2 className="catalog-title-font catalog-text-ink border-b border-[color:var(--catalog-soft-border)] px-1 pb-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
+                      Best
+                    </h2>
+                    <div className="flex flex-col gap-1.5 sm:gap-3">
+                      {bestMods.map(renderCatalogWidget)}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {sortedByRecent.length > 0 && (
-                <div className="flex min-w-0 flex-col gap-3">
-                  <h2 className="catalog-title-font catalog-text-ink border-b border-[color:var(--catalog-soft-border)] px-1 pb-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
-                    New
-                  </h2>
-                  <div className="flex flex-col gap-1.5 sm:gap-3">
-                    {sortedByRecent.map(renderCatalogWidget)}
+                {newMods.length > 0 && (
+                  <div className="flex min-w-0 flex-col gap-3">
+                    <h2 className="catalog-title-font catalog-text-ink border-b border-[color:var(--catalog-soft-border)] px-1 pb-1 text-center text-sm font-bold tracking-[0.22em] uppercase">
+                      New
+                    </h2>
+                    <div className="flex flex-col gap-1.5 sm:gap-3">
+                      {newMods.map(renderCatalogWidget)}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
             )}
 
             {sortedMyMods.length > 0 && (
@@ -553,7 +734,7 @@ export const Catalog = () => {
                 />
               </div>
 
-              {allModsFiltered.length === 0 ? (
+              {activeAllMods.length === 0 ? (
                 <div className="catalog-text-muted py-4 text-center text-sm">
                   No realms found matching "{searchQuery}"
                 </div>
@@ -561,12 +742,12 @@ export const Catalog = () => {
                 <>
                   <div className="grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3">
                     {hasAdminTools
-                      ? adminMods
-                          .filter((mod) => allModsPage.includes(mod))
-                          .map(renderAdminWidget)
-                      : mods
-                          .filter((mod) => allModsPage.includes(mod))
-                          .map(renderCatalogWidget)}
+                      ? activeAllMods.map((mod) =>
+                          renderAdminWidget(mod as AdminModListItem)
+                        )
+                      : activeAllMods.map((mod) =>
+                          renderCatalogWidget(mod as ModListItem)
+                        )}
                   </div>
                   {totalPages > 1 && (
                     <div className="mt-4 flex items-center justify-center gap-4">
@@ -578,7 +759,7 @@ export const Catalog = () => {
                         Prev
                       </button>
                       <span className="catalog-body-font catalog-text-muted text-xs font-medium">
-                        Page {allPage + 1} of {totalPages}
+                        Page {(activeAllPage?.page ?? allPage) + 1} of {totalPages}
                       </span>
                       <button
                         disabled={allPage === totalPages - 1}

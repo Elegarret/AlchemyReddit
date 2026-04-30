@@ -8,4 +8,7 @@ export default defineConfig({
 	define: {
 		__BUILD_NUMBER__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),
 	},
+	build: {
+		chunkSizeWarningLimit: 600,
+	},
 });

@@ -10,6 +10,7 @@ import { readPlaytestRuleset } from './playtest';
 const makeElement = (id: string, name: string): ModElement => ({
   id,
   name,
+  iconSource: 'emoji',
   emoji: name[0] ?? '?',
   bgColorToken: 'ice',
   frameColorToken: 'ocean',

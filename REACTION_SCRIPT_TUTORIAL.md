@@ -39,12 +39,19 @@ Open + Chest:
 
 In that example, the player gets the chest back either way. They receive the coin only if `Key` was found earlier; otherwise they see a failure message.
 
-If you want several actions to depend on `Key`, write the condition on each line. There are no multi-line `if` blocks.
+If you want several actions to depend on the same condition, put a colon after the condition and indent the actions below it.
 
 ```
-if (discovered(Key)) add Coin
-if (discovered(Key)) add Old Map
-if (discovered(Key)) message "The chest creaks open and you take out its contents."
+if (discovered(Key)):
+    add Coin
+    add Old Map
+    message "The chest creaks open and you take out its contents."
+```
+
+For short groups, you can also keep the actions on one line with semicolons:
+
+```
+if (discovered(Key)) add Coin; add Old Map; message "The chest creaks open."
 ```
 
 ### Autocomplete

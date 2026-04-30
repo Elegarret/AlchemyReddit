@@ -8,11 +8,13 @@ import {
   resolveReactionForRuleset,
   validateModDraft,
 } from './runtime';
+import { getReactionScriptEventId } from './reaction-script';
 import type { ModElement } from './types';
 
 const makeElement = (id: string, name: string): ModElement => ({
   id,
   name,
+  iconSource: 'emoji',
   emoji: name[0] ?? '?',
   bgColorToken: 'ice',
   frameColorToken: 'ocean',
@@ -139,6 +141,7 @@ describe('validateModDraft', () => {
     const result = buildRulesetFromDraft({
       title: 'Signal Realm',
       summary: 'A realm with custom element metadata.',
+      coverImageUrl: 'https://i.redd.it/signal-cover.png',
       intro: 'Read this before your first reaction.',
       startingElementIds: ['air', 'light'],
       counters: [
@@ -150,6 +153,7 @@ describe('validateModDraft', () => {
         },
       ],
       showPalette: false,
+      compactElements: true,
       elements: [
         makeElement('air', 'Air'),
         {
@@ -169,6 +173,7 @@ describe('validateModDraft', () => {
     });
 
     expect(result.intro).toBe('Read this before your first reaction.');
+    expect(result.coverImageUrl).toBe('https://i.redd.it/signal-cover.png');
     expect(result.elementMessages.light).toBe('This element glows with intent.');
     expect(result.elementEffects.light).toBe('light');
     expect(result.nonConsumableElementIds).toEqual(['light']);
@@ -184,6 +189,42 @@ describe('validateModDraft', () => {
     expect(result.counterNames).toEqual(['Lantern']);
     expect(result.startingCounterElementIds).toEqual(['light']);
     expect(result.showPalette).toBe(false);
+    expect(result.compactElements).toBe(true);
+  });
+
+  it('omits no-icon elements from runtime icon maps while preserving image URLs', () => {
+    const result = buildRulesetFromDraft({
+      title: 'Icon Realm',
+      summary: 'Icon sources should normalize into runtime values.',
+      intro: '',
+      startingElementIds: ['air', 'tablet'],
+      counters: [],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        {
+          ...makeElement('tablet', 'Tablet'),
+          iconSource: 'none',
+        },
+        {
+          ...makeElement('map', 'Map'),
+          iconSource: 'image',
+          emoji: undefined,
+          imageUrl: 'https://i.redd.it/map-icon.png',
+        },
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'tablet',
+          outputIds: ['map'],
+        },
+      ],
+    });
+
+    expect(result.elementIcons.air).toBe('A');
+    expect(result.elementIcons.tablet).toBeUndefined();
+    expect(result.elementIcons.map).toBe('https://i.redd.it/map-icon.png');
   });
 
   it('preserves optional counter bounds in the built ruleset', () => {
@@ -723,10 +764,165 @@ describe('validateModDraft', () => {
     }
 
     expect(resolved.result.messages).toEqual(['You died']);
-    expect(resolved.result.eventState).toEqual({
-      activeEventIds: ['0'],
-      firedEventIds: ['0'],
+    const eventId = getReactionScriptEventId({
+      condition: 'count(Health) <= 0',
+      mode: 'crossing',
+      script: 'message "You died"',
     });
+    expect(resolved.result.eventState).toEqual({
+      activeEventIds: [eventId],
+      firedEventIds: [eventId],
+    });
+  });
+
+  it('surfaces event messages alongside normal scripted reaction messages', () => {
+    const ruleset = buildRulesetFromDraft({
+      title: 'Noise Realm',
+      summary: 'Counter events and reaction messages both reach gameplay.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [
+        {
+          elementId: 'noise',
+          initial: 0,
+        },
+      ],
+      events: [
+        {
+          condition: 'count(Noise) >= 1',
+          mode: 'always',
+          script: 'message "Noise is loud."',
+        },
+      ],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        makeElement('noise', 'Noise'),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: [],
+          script: 'set Noise += 1\nmessage "Base reaction."',
+        },
+      ],
+    });
+
+    const resolved = resolveReactionForRuleset({
+      counterValues: {
+        Noise: 0,
+      },
+      currentTableElements: [
+        { elementId: 'air', id: 'table-1' },
+        { elementId: 'fire', id: 'table-2' },
+      ],
+      discoveredElementIds: ['air', 'fire'],
+      eventState: {
+        activeEventIds: [],
+        firedEventIds: [],
+      },
+      leftId: 'air',
+      rightId: 'fire',
+      ruleset,
+    });
+
+    expect(resolved?.ok).toBe(true);
+    if (!resolved || !resolved.ok) {
+      return;
+    }
+
+    expect(resolved.result.messages).toEqual([
+      'Noise is loud.',
+      'Base reaction.',
+    ]);
+  });
+
+  it('runs the exact Noise event sequence through ruleset reactions', () => {
+    const ruleset = buildRulesetFromDraft({
+      title: 'Noise Realm',
+      summary: 'Counter events should survive repeated gameplay reactions.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [
+        {
+          elementId: 'noise',
+          initial: 0,
+        },
+      ],
+      events: [
+        {
+          condition: 'count(Noise) >= 1',
+          mode: 'once',
+          script: 'message "Noise starts."',
+        },
+        {
+          condition: 'count(Noise) >= 3',
+          mode: 'always',
+          script: 'message "Noise is loud."',
+        },
+      ],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        makeElement('noise', 'Noise'),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: [],
+          script: 'set Noise += 1\nmessage "Base reaction."',
+        },
+      ],
+    });
+    let counterValues: Record<string, number> = {
+      Noise: 0,
+    };
+    let eventState = {
+      activeEventIds: [] as string[],
+      firedEventIds: [] as string[],
+    };
+    const runReaction = () => {
+      const resolved = resolveReactionForRuleset({
+        counterValues,
+        currentTableElements: [
+          { elementId: 'air', id: 'table-1' },
+          { elementId: 'fire', id: 'table-2' },
+        ],
+        discoveredElementIds: ['air', 'fire'],
+        eventState,
+        leftId: 'air',
+        rightId: 'fire',
+        ruleset,
+      });
+
+      expect(resolved?.ok).toBe(true);
+      if (!resolved || !resolved.ok) {
+        throw new Error('Expected reaction resolution to succeed.');
+      }
+      if (!resolved.result.eventState) {
+        throw new Error('Expected event state.');
+      }
+
+      counterValues = resolved.result.counterValues;
+      eventState = resolved.result.eventState;
+      return resolved.result.messages;
+    };
+
+    expect(runReaction()).toEqual(['Noise starts.', 'Base reaction.']);
+    expect(counterValues.Noise).toBe(1);
+
+    expect(runReaction()).toEqual(['Base reaction.']);
+    expect(counterValues.Noise).toBe(2);
+
+    expect(runReaction()).toEqual(['Noise is loud.', 'Base reaction.']);
+    expect(counterValues.Noise).toBe(3);
+
+    expect(runReaction()).toEqual(['Noise is loud.', 'Base reaction.']);
+    expect(counterValues.Noise).toBe(4);
   });
 
   it('allows counters as starters while still rejecting counter ingredients and outputs', () => {

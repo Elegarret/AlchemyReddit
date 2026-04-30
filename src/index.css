@@ -681,6 +681,11 @@
 	--editor-counter-text: #1d4ed8;
 	--editor-counter-remove: rgba(29, 78, 216, 0.72);
 	--editor-counter-remove-hover: #1e3a8a;
+	--editor-non-consumable-border: rgba(147, 51, 234, 0.22);
+	--editor-non-consumable-fill: rgba(168, 85, 247, 0.12);
+	--editor-non-consumable-text: #7e22ce;
+	--editor-non-consumable-remove: rgba(126, 34, 206, 0.72);
+	--editor-non-consumable-remove-hover: #581c87;
 	--editor-validation-ready-fill: rgba(16, 185, 129, 0.18);
 	--editor-validation-ready-text: #065f46;
 	--editor-validation-blocked-fill: rgba(244, 63, 94, 0.16);
@@ -729,6 +734,10 @@
 			rgba(244, 236, 216, 0.42) 42%,
 			rgba(255, 248, 232, 0) 100%
 		);
+}
+
+.realm-splash-cover-art {
+	opacity: 0.68;
 }
 
 .catalog-side-ornament::before,
@@ -1092,6 +1101,20 @@
 	color: var(--editor-counter-remove-hover);
 }
 
+.editor-non-consumable-chip {
+	border: 1px solid var(--editor-non-consumable-border);
+	background: var(--editor-non-consumable-fill);
+	color: var(--editor-non-consumable-text);
+}
+
+.editor-non-consumable-remove {
+	color: var(--editor-non-consumable-remove);
+}
+
+.editor-non-consumable-remove:hover {
+	color: var(--editor-non-consumable-remove-hover);
+}
+
 .editor-action-button {
 	border: 1px solid var(--catalog-soft-border);
 	line-height: 1.1;
@@ -1305,6 +1328,10 @@
 			);
 	}
 
+	.realm-splash-cover-art {
+		opacity: 0.48;
+	}
+
 	:root {
 		--catalog-page-bg:
 			linear-gradient(90deg,
@@ -1366,6 +1393,11 @@
 		--editor-counter-text: #dbeafe;
 		--editor-counter-remove: rgba(191, 219, 254, 0.8);
 		--editor-counter-remove-hover: #ffffff;
+		--editor-non-consumable-border: rgba(216, 180, 254, 0.38);
+		--editor-non-consumable-fill: rgba(126, 34, 206, 0.24);
+		--editor-non-consumable-text: #f3e8ff;
+		--editor-non-consumable-remove: rgba(233, 213, 255, 0.8);
+		--editor-non-consumable-remove-hover: #ffffff;
 		--editor-validation-ready-fill: rgba(16, 185, 129, 0.2);
 		--editor-validation-ready-text: #d1fae5;
 		--editor-validation-blocked-fill: rgba(244, 63, 94, 0.2);

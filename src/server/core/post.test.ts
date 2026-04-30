@@ -4,6 +4,7 @@ import { test } from '../test';
 import {
   createCatalogPost,
   createCompactCatalogPost,
+  createFeaturedCompactCatalogPost,
   createPost,
   getPostUrl,
 } from './post';
@@ -68,5 +69,25 @@ test('createCompactCatalogPost submits the compact catalog entrypoint', async ()
   });
   expect(post.url).toBe(
     'https://www.reddit.com/r/testsub/comments/compactcatalogpost/'
+  );
+});
+
+test('createFeaturedCompactCatalogPost submits the featured compact catalog entrypoint', async () => {
+  vi.spyOn(settings, 'get').mockResolvedValue('Alchemic Creations');
+  const submitCustomPostSpy = vi
+    .spyOn(reddit, 'submitCustomPost')
+    .mockResolvedValue({
+      id: 't3_featuredcompactcatalogpost',
+      title: 'Alchemic Creations',
+    } as never);
+
+  const post = await createFeaturedCompactCatalogPost();
+
+  expect(submitCustomPostSpy).toHaveBeenCalledWith({
+    title: 'Alchemic Creations',
+    entry: 'mod-catalog-compact-featured',
+  });
+  expect(post.url).toBe(
+    'https://www.reddit.com/r/testsub/comments/featuredcompactcatalogpost/'
   );
 });

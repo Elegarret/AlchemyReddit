@@ -15,6 +15,7 @@ import { getDefaultAppConfig } from '@devvit/shared-types/test/index.js';
  * ```
  */
 const appConfig = getDefaultAppConfig();
+appConfig.permissions.media = true;
 appConfig.permissions.reddit.asUser = [
   Scope.SUBMIT_POST,
   Scope.SUBMIT_COMMENT,

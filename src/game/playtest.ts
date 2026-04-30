@@ -30,6 +30,7 @@ type PersistedRuleset = {
   counterNames?: ActiveRuleset['counterNames'];
   counters?: ModCounterDefinition[];
   showPalette?: boolean;
+  compactElements?: boolean;
   sourceModId?: string;
   publishedHash?: string;
   ownerUsername?: string;
@@ -103,6 +104,7 @@ export const readPlaytestRuleset = (): ActiveRuleset | null => {
       counterDefinitions,
       counterNames: parsed.counterNames ?? counterDefinitions.map((counter) => counter.name),
       showPalette: parsed.showPalette ?? true,
+      compactElements: parsed.compactElements ?? false,
       ...(parsed.elementNames ? { elementNames: parsed.elementNames } : {}),
       ...(parsed.sourceModId ? { sourceModId: parsed.sourceModId } : {}),
       ...(parsed.publishedHash ? { publishedHash: parsed.publishedHash } : {}),

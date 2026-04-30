@@ -603,6 +603,230 @@ describe('ReactionScriptAutocompleteTextarea', () => {
     });
   });
 
+  it('inserts an indented line after an if block header in script mode', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState('if (count(health) < 10):');
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={['health']}
+          elementNames={elementNames}
+          mode="script"
+          onChange={setValue}
+          placeholder="Type a script"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    if (!textarea) {
+      throw new Error('Expected textarea to render.');
+    }
+
+    await act(async () => {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        })
+      );
+    });
+
+    expect(textarea.value).toBe('if (count(health) < 10):\n    ');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('adds one extra indent after an indented if block header in reaction-text mode', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState(
+        ['Dust + Key:', '    if (count(health) < 10):'].join('\n')
+      );
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={['health']}
+          elementNames={elementNames}
+          mode="reaction-text"
+          onChange={setValue}
+          placeholder="Type reactions"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    if (!textarea) {
+      throw new Error('Expected textarea to render.');
+    }
+
+    await act(async () => {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        })
+      );
+    });
+
+    expect(textarea.value).toBe(
+      ['Dust + Key:', '    if (count(health) < 10):', '        '].join('\n')
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('keeps the if block body indent on Enter in script mode', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState(
+        ['if (count(health) < 10):', '    add Amber'].join('\n')
+      );
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={['health']}
+          elementNames={elementNames}
+          mode="script"
+          onChange={setValue}
+          placeholder="Type a script"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    if (!textarea) {
+      throw new Error('Expected textarea to render.');
+    }
+
+    await act(async () => {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        })
+      );
+    });
+
+    expect(textarea.value).toBe(
+      ['if (count(health) < 10):', '    add Amber', '    '].join('\n')
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('keeps the extra if block body indent on Enter in reaction-text mode', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState(
+        ['Dust + Key:', '    if (count(health) < 10):', '        add Amber'].join(
+          '\n'
+        )
+      );
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={['health']}
+          elementNames={elementNames}
+          mode="reaction-text"
+          onChange={setValue}
+          placeholder="Type reactions"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    if (!textarea) {
+      throw new Error('Expected textarea to render.');
+    }
+
+    await act(async () => {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        })
+      );
+    });
+
+    expect(textarea.value).toBe(
+      ['Dust + Key:', '    if (count(health) < 10):', '        add Amber', '        '].join(
+        '\n'
+      )
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it('reports deduped missing element names on script paste', async () => {
     const onPasteMissingElements = vi.fn();
     const container = document.createElement('div');

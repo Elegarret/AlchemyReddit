@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   executeReactionScript,
   formatReactionScript,
+  getReactionScriptEventId,
   hasReactionScript,
   parseReactionScript,
   validateReactionScript,
@@ -189,6 +190,145 @@ describe('parseReactionScript', () => {
     expect(compact.ast).toEqual(spaced.ast);
   });
 
+  it('parses semicolon action groups on if lines', () => {
+    const parsed = parseReactionScript(
+      'if (count(Noise) >= 3) add key; set Noise += 1; stop'
+    );
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    expect(parsed.ast.statements).toEqual([
+      {
+        action: { elementRefs: ['key'], kind: 'add' },
+        conditionGroupId: 1,
+        conditions: [
+          {
+            counterName: 'Noise',
+            kind: 'count_compare',
+            operator: '>=',
+            value: 3,
+          },
+        ],
+        line: 1,
+      },
+      {
+        action: {
+          counterName: 'Noise',
+          kind: 'set',
+          operator: '+=',
+          value: 1,
+        },
+        conditionGroupId: 1,
+        conditions: [
+          {
+            counterName: 'Noise',
+            kind: 'count_compare',
+            operator: '>=',
+            value: 3,
+          },
+        ],
+        line: 1,
+      },
+      {
+        action: { kind: 'stop' },
+        conditionGroupId: 1,
+        conditions: [
+          {
+            counterName: 'Noise',
+            kind: 'count_compare',
+            operator: '>=',
+            value: 3,
+          },
+        ],
+        line: 1,
+      },
+    ]);
+  });
+
+  it('parses indented if blocks with spaces and tabs', () => {
+    const parsed = parseReactionScript(
+      [
+        'if (count(Noise) >= 3):',
+        '    add key',
+        '    set Noise += 1',
+        'if (count(Noise) >= 4):',
+        '\tadd bandage',
+      ].join('\n')
+    );
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    expect(parsed.ast.statements.map((statement) => statement.action)).toEqual([
+      { elementRefs: ['key'], kind: 'add' },
+      {
+        counterName: 'Noise',
+        kind: 'set',
+        operator: '+=',
+        value: 1,
+      },
+      { elementRefs: ['bandage'], kind: 'add' },
+    ]);
+    expect(
+      parsed.ast.statements.map((statement) => statement.conditionGroupId)
+    ).toEqual([1, 1, 2]);
+    expect(parsed.ast.statements.map((statement) => statement.line)).toEqual([
+      2, 3, 5,
+    ]);
+  });
+
+  it('keeps semicolons inside quoted text and before comments', () => {
+    const script = [
+      'if (count(Noise) >= 3): // loud enough',
+      '    message "a; b" // text semicolon',
+      '    add key',
+    ].join('\n');
+    const parsed = parseReactionScript(script);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    expect(parsed.ast.statements.map((statement) => statement.action)).toEqual([
+      { kind: 'message', text: 'a; b' },
+      { elementRefs: ['key'], kind: 'add' },
+    ]);
+    expect(formatReactionScript(parsed.ast)).toBe(script);
+  });
+
+  it('rejects empty if blocks and malformed semicolon lists', () => {
+    const emptyBlock = parseReactionScript('if (count(Noise) >= 3):');
+    const trailingSemicolon = parseReactionScript(
+      'if (count(Noise) >= 3) add key;'
+    );
+
+    expect(emptyBlock.ok).toBe(false);
+    if (!emptyBlock.ok) {
+      expect(emptyBlock.errors).toEqual([
+        {
+          line: 1,
+          message: 'If blocks must include an indented body.',
+        },
+      ]);
+    }
+
+    expect(trailingSemicolon.ok).toBe(false);
+    if (!trailingSemicolon.ok) {
+      expect(trailingSemicolon.errors).toEqual([
+        {
+          line: 1,
+          message: 'If action lists cannot contain empty actions.',
+        },
+      ]);
+    }
+  });
+
   it('ignores full-line and trailing comments while preserving them in formatted output', () => {
     const script = [
       '// boot note',
@@ -242,6 +382,21 @@ describe('parseReactionScript', () => {
         'message "Done."',
         'popup "A hidden clue appears.", key',
         'lose "The room collapses."',
+      ].join('\n')
+    );
+  });
+
+  it('formats multi-action if lines as blocks', () => {
+    const formatted = formatReactionScript(
+      'if(count(Noise)>=3)add key; message "a; b"; stop // done'
+    );
+
+    expect(formatted).toBe(
+      [
+        'if (count(Noise) >= 3):',
+        '    add key',
+        '    message "a; b"',
+        '    stop // done',
       ].join('\n')
     );
   });
@@ -484,6 +639,34 @@ describe('executeReactionScript', () => {
     });
   });
 
+  it('evaluates grouped if conditions once before running the group', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Noise'],
+      counters: {
+        Noise: 3,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      script: [
+        'if (count(Noise) >= 3):',
+        '    add key',
+        '    set Noise -= 10',
+        '    add bandage',
+      ].join('\n'),
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.counterValues).toEqual({
+      Noise: -7,
+    });
+    expect(execution.result.emittedElementIds).toEqual(['key', 'bandage']);
+  });
+
   it('queues popup events and stops on terminal win or lose actions', () => {
     const execution = executeReactionScript({
       counterNames: [],
@@ -711,6 +894,60 @@ describe('executeReactionScript', () => {
     expect(execution.result.shownCounterNames).toEqual([]);
   });
 
+  it('preserves non-consumable elements for bare remove_all', () => {
+    const execution = executeReactionScript({
+      counterNames: [],
+      counters: {},
+      discoveredElementIds: [],
+      elements: elementRefs,
+      nonConsumableElementIds: ['flashlight'],
+      script: 'remove_all',
+      tableElements: [
+        { elementId: 'flashlight', id: 'table-1' },
+        { elementId: 'dust', id: 'table-2' },
+        { elementId: 'key', id: 'table-3' },
+      ],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.removedTableElementIds).toEqual([
+      'table-2',
+      'table-3',
+    ]);
+    expect(execution.result.hiddenCounterNames).toEqual([]);
+    expect(execution.result.shownCounterNames).toEqual([]);
+  });
+
+  it('removes directly targeted non-consumables for remove_all element', () => {
+    const execution = executeReactionScript({
+      counterNames: [],
+      counters: {},
+      discoveredElementIds: [],
+      elements: elementRefs,
+      nonConsumableElementIds: ['flashlight'],
+      script: 'remove_all Flashlight',
+      tableElements: [
+        { elementId: 'flashlight', id: 'table-1' },
+        { elementId: 'flashlight', id: 'table-2' },
+        { elementId: 'dust', id: 'table-3' },
+      ],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.removedTableElementIds).toEqual([
+      'table-1',
+      'table-2',
+    ]);
+  });
+
   it('runs crossing events immediately after a matching counter change', () => {
     const execution = executeReactionScript({
       counterNames: ['Health'],
@@ -747,9 +984,14 @@ describe('executeReactionScript', () => {
       },
     ]);
     expect(execution.result.emittedElementIds).toEqual([]);
+    const eventId = getReactionScriptEventId({
+      condition: 'count(Health) <= 0',
+      mode: 'crossing',
+      script: 'message "You died"\nlose "You died."',
+    });
     expect(execution.result.eventState).toEqual({
-      activeEventIds: ['0'],
-      firedEventIds: ['0'],
+      activeEventIds: [eventId],
+      firedEventIds: [eventId],
     });
   });
 
@@ -784,6 +1026,11 @@ describe('executeReactionScript', () => {
   });
 
   it('supports once and always event repeat modes', () => {
+    const onceEventId = getReactionScriptEventId({
+      condition: 'count(Health) <= 0',
+      mode: 'once',
+      script: 'message "Once."',
+    });
     const onceExecution = executeReactionScript({
       counterNames: ['Health'],
       counters: {
@@ -793,7 +1040,7 @@ describe('executeReactionScript', () => {
       elements: elementRefs,
       eventState: {
         activeEventIds: ['0'],
-        firedEventIds: ['0'],
+        firedEventIds: [onceEventId],
       },
       events: [
         {
@@ -817,6 +1064,106 @@ describe('executeReactionScript', () => {
     }
 
     expect(onceExecution.result.messages).toEqual(['Always.']);
+  });
+
+  it('runs always counter events after another event on the same counter has fired', () => {
+    let counters: Record<string, number> = {
+      Noise: 0,
+    };
+    let activeEventIds: string[] = [];
+    let firedEventIds: string[] = [];
+    const runReaction = () => {
+      const execution = executeReactionScript({
+        counterNames: ['Noise'],
+        counters,
+        discoveredElementIds: [],
+        elements: elementRefs,
+        eventState: {
+          activeEventIds,
+          firedEventIds,
+        },
+        events: [
+          {
+            condition: 'count(Noise) >= 1',
+            mode: 'once',
+            script: 'message "Noise starts."',
+          },
+          {
+            condition: 'count(Noise) >= 3',
+            mode: 'always',
+            script: 'message "Noise is loud."',
+          },
+        ],
+        script: 'set Noise += 1\nmessage "Base reaction."',
+        tableElements: [],
+      });
+
+      expect(execution.ok).toBe(true);
+      if (!execution.ok) {
+        throw new Error('Reaction script execution failed.');
+      }
+      if (!execution.result.eventState) {
+        throw new Error('Expected event state.');
+      }
+
+      counters = execution.result.counterValues;
+      activeEventIds = execution.result.eventState.activeEventIds;
+      firedEventIds = execution.result.eventState.firedEventIds;
+      return execution.result.messages;
+    };
+
+    expect(runReaction()).toEqual(['Noise starts.', 'Base reaction.']);
+    expect(counters.Noise).toBe(1);
+
+    expect(runReaction()).toEqual(['Base reaction.']);
+    expect(counters.Noise).toBe(2);
+
+    expect(runReaction()).toEqual(['Noise is loud.', 'Base reaction.']);
+    expect(counters.Noise).toBe(3);
+
+    expect(runReaction()).toEqual(['Noise is loud.', 'Base reaction.']);
+    expect(counters.Noise).toBe(4);
+  });
+
+  it('evaluates event count conditions against counters instead of table elements', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Noise'],
+      counters: {
+        Noise: 0,
+      },
+      discoveredElementIds: [],
+      elements: [
+        ...elementRefs,
+        {
+          id: 'noise',
+          name: 'Noise',
+        },
+      ],
+      events: [
+        {
+          condition: 'count(Noise) >= 3',
+          mode: 'always',
+          script: 'message "Noise is loud."',
+        },
+      ],
+      script: 'set Noise += 0\nmessage "Base reaction."',
+      tableElements: [
+        { elementId: 'noise', id: 'table-1' },
+        { elementId: 'noise', id: 'table-2' },
+        { elementId: 'noise', id: 'table-3' },
+      ],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.messages).toEqual(['Base reaction.']);
+    expect(execution.result.eventState).toEqual({
+      activeEventIds: [],
+      firedEventIds: [],
+    });
   });
 
   it('reports recursive event loops instead of running forever', () => {

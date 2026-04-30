@@ -98,7 +98,9 @@ describe('ModSplash', () => {
     });
 
     await import('./mod-splash');
-    await waitFor(() => document.body.textContent?.includes('Continue...') ?? false);
+    await waitFor(
+      () => document.body.textContent?.includes('Continue...') ?? false
+    );
 
     expect(document.body.textContent).toContain('Continue...');
   });
@@ -125,25 +127,123 @@ describe('ModSplash', () => {
     });
 
     await import('./mod-splash');
-    await waitFor(() => document.body.textContent?.includes('Continue...') ?? false);
+    await waitFor(
+      () => document.body.textContent?.includes('Continue...') ?? false
+    );
 
     expect(document.body.textContent).toContain('Continue...');
+  });
+
+  it('renders a faded cover art layer when the active realm has a cover image', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    Object.assign(globalThis, { __BUILD_NUMBER__: 'test-build' });
+    initGetQueryMock.mockResolvedValue({
+      activeModListing: null,
+      activeRuleset: {
+        kind: 'mod',
+        coverImageUrl: 'https://i.redd.it/realm-cover.png',
+        ownerUsername: 'realm-author',
+        publishedAt: '2026-03-01T00:00:00.000Z',
+        publishedHash: 'hash-1',
+        sourceModId: 'realm-1',
+        storageScope: 'mod:realm-1:hash-1',
+        summary: 'Covered realm summary',
+        title: 'Covered Realm',
+      },
+      isModerator: false,
+      redditDiscovered: [],
+      rulesetUnavailableReason: null,
+      username: 'realm-author',
+    });
+
+    await import('./mod-splash');
+    await waitFor(
+      () => document.body.textContent?.includes('Covered Realm') ?? false
+    );
+
+    const cover = document.querySelector('.realm-splash-cover-art');
+    expect(cover).toBeTruthy();
+    expect(cover?.getAttribute('style')).toContain(
+      'https://i.redd.it/realm-cover.png'
+    );
+  });
+
+  it('does not render a cover art layer when the active realm has no cover image', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    Object.assign(globalThis, { __BUILD_NUMBER__: 'test-build' });
+    initGetQueryMock.mockResolvedValue({
+      activeModListing: null,
+      activeRuleset: {
+        kind: 'mod',
+        ownerUsername: 'realm-author',
+        publishedAt: '2026-03-01T00:00:00.000Z',
+        publishedHash: 'hash-1',
+        sourceModId: 'realm-1',
+        storageScope: 'mod:realm-1:hash-1',
+        summary: 'Plain realm summary',
+        title: 'Plain Realm',
+      },
+      isModerator: false,
+      redditDiscovered: [],
+      rulesetUnavailableReason: null,
+      username: 'realm-author',
+    });
+
+    await import('./mod-splash');
+    await waitFor(
+      () => document.body.textContent?.includes('Plain Realm') ?? false
+    );
+
+    expect(document.querySelector('.realm-splash-cover-art')).toBeNull();
+  });
+
+  it('shows the completion counter when the server includes it', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    Object.assign(globalThis, { __BUILD_NUMBER__: 'test-build' });
+    initGetQueryMock.mockResolvedValue({
+      activeModListing: {
+        completionCount: 6,
+        featuredAt: null,
+        ownerUsername: 'realm-author',
+        playerCount: 17,
+        reactionCount: 220,
+        upvotes: 9,
+      },
+      activeRuleset: {
+        kind: 'mod',
+        ownerUsername: 'realm-author',
+        publishedAt: '2026-03-01T00:00:00.000Z',
+        publishedHash: 'hash-1',
+        sourceModId: 'realm-1',
+        storageScope: 'mod:realm-1:hash-1',
+        summary: 'Realm summary',
+        title: 'Counter Realm',
+      },
+      isModerator: true,
+      redditDiscovered: [],
+      rulesetUnavailableReason: null,
+      username: 'realm-author',
+    });
+
+    await import('./mod-splash');
+    await waitFor(
+      () => document.body.textContent?.includes('Counter Realm') ?? false
+    );
+
+    expect(document.querySelector('[title="Users completed: 6"]')).toBeTruthy();
   });
 
   it('restores the cached realm view before the fresh load completes', async () => {
     document.body.innerHTML = '<div id="root"></div>';
     Object.assign(globalThis, { __BUILD_NUMBER__: 'test-build' });
-    window.history.replaceState(
-      {},
-      '',
-      '/src/mod-splash.html?token=realm'
-    );
+    window.history.replaceState({}, '', '/src/mod-splash.html?token=realm');
     window.sessionStorage.setItem(
       'alchemy:inline-view:mod-splash:/src/mod-splash.html?token=realm',
       JSON.stringify({
         status: 'ready',
         message: '',
         ruleset: {
+          coverImageUrl: 'https://i.redd.it/cached-cover.png',
           ownerUsername: 'realm-author',
           publishedAt: '2026-03-01T00:00:00.000Z',
           sourceModId: 'realm-1',
@@ -151,6 +251,8 @@ describe('ModSplash', () => {
           title: 'Cached Realm',
         },
         modListing: {
+          completionCount: 6,
+          featuredAt: '2026-04-01T00:00:00.000Z',
           ownerUsername: 'realm-author',
           playerCount: 17,
           reactionCount: 220,
@@ -164,14 +266,20 @@ describe('ModSplash', () => {
     initGetQueryMock.mockImplementation(() => new Promise(() => {}));
 
     await import('./mod-splash');
-    await waitFor(() => document.body.textContent?.includes('Cached Realm') ?? false);
+    await waitFor(
+      () => document.body.textContent?.includes('Cached Realm') ?? false
+    );
 
     expect(document.body.textContent).toContain('Cached Realm');
     expect(document.body.textContent).toContain('Cached realm summary');
     expect(document.body.textContent).toContain('Continue...');
+    expect(document.querySelector('.realm-splash-cover-art')).toBeTruthy();
     expect(document.body.textContent).toContain('mega');
-    expect(document.querySelector('[title="Upvotes: 9"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('Editorial choice');
+    expect(document.querySelector('[title="Net vote score: 9"]')).toBeTruthy();
+    expect(document.querySelector('[title="Editorial choice"]')).toBeTruthy();
     expect(document.querySelector('[title="Users played: 17"]')).toBeTruthy();
+    expect(document.querySelector('[title="Users completed: 6"]')).toBeNull();
     expect(
       document.querySelector('[title="Realm size: 220 reactions"]')
     ).toBeTruthy();

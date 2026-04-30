@@ -243,6 +243,78 @@ describe('getReactionScriptAutocomplete', () => {
     });
   });
 
+  it('does not suggest nested if inside indented script lines', () => {
+    const result = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: '    '.length,
+      elementNames,
+      value: '    ',
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).not.toContain(
+      'if'
+    );
+  });
+
+  it('offers end if-block first at the start of an indented block line', () => {
+    const value = '    ';
+    const result = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions[0]?.label).toBe('end if-block');
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'end if-block',
+      'add',
+      'remove',
+      'remove_all',
+      'set',
+      'message',
+      'popup',
+      'win',
+      'lose',
+      'stop',
+    ]);
+
+    const endSuggestion = result.suggestions[0];
+    expect(endSuggestion).toBeDefined();
+    if (!endSuggestion) {
+      return;
+    }
+
+    expect(
+      applyReactionScriptAutocompleteSuggestion({
+        suggestion: endSuggestion,
+        value,
+      })
+    ).toEqual({
+      cursor: 0,
+      value: '',
+    });
+  });
+
+  it('hides a single reserved-word suggestion when the cursor is inside the full word', () => {
+    const setResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: 'se'.length,
+      elementNames,
+      value: 'set',
+    });
+    const countValue = 'if (count)';
+    const countResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: 'if (cou'.length,
+      elementNames,
+      value: countValue,
+    });
+
+    expect(setResult.suggestions).toEqual([]);
+    expect(countResult.suggestions).toEqual([]);
+  });
+
   it('replaces the full token when accepting a script name suggestion mid-word', () => {
     const value = 'add sand';
     const result = getReactionScriptAutocomplete({
@@ -273,6 +345,33 @@ describe('getReactionScriptAutocomplete', () => {
 });
 
 describe('getReactionTextAutocomplete', () => {
+  it('offers end if-block first inside extra-indented reaction script blocks', () => {
+    const value = ['Dust + Key:', '        '].join('\n');
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions[0]?.label).toBe('end if-block');
+    const suggestion = result.suggestions[0];
+    expect(suggestion).toBeDefined();
+    if (!suggestion) {
+      return;
+    }
+
+    expect(
+      applyReactionScriptAutocompleteSuggestion({
+        suggestion,
+        value,
+      })
+    ).toEqual({
+      cursor: 'Dust + Key:\n    '.length,
+      value: 'Dust + Key:\n    ',
+    });
+  });
+
   it('suggests top-level left and right reaction ingredients', () => {
     const leftValue = 'Du';
     const leftResult = getReactionTextAutocomplete({

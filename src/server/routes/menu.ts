@@ -3,6 +3,7 @@ import type { UiResponse } from '@devvit/web/shared';
 import {
   createCatalogPost,
   createCompactCatalogPost,
+  createFeaturedCompactCatalogPost,
   createPost,
 } from '../core/post';
 
@@ -65,6 +66,27 @@ menu.post('/catalog-compact-create', async (c) => {
     return c.json<UiResponse>(
       {
         showToast: 'Failed to create compact catalog post',
+      },
+      400
+    );
+  }
+});
+
+menu.post('/catalog-compact-featured-create', async (c) => {
+  try {
+    const post = await createFeaturedCompactCatalogPost();
+
+    return c.json<UiResponse>(
+      {
+        navigateTo: post.url,
+      },
+      200
+    );
+  } catch (error) {
+    console.error(`Error creating featured compact catalog post: ${error}`);
+    return c.json<UiResponse>(
+      {
+        showToast: 'Failed to create featured compact catalog post',
       },
       400
     );

@@ -20,9 +20,8 @@ import type {
 	SaveDraftInput,
 	ValidationResult,
 } from './types';
+import { getModElementActiveIconValue, MAX_MOD_ELEMENTS, MAX_MOD_REACTIONS } from './types';
 
-export const MAX_MOD_ELEMENTS = 128;
-export const MAX_MOD_REACTIONS = 512;
 export const MAX_REACTION_OUTPUTS = 8;
 export const PLAYTEST_RULESET_STORAGE_KEY = 'alchemy-playtest-ruleset';
 export const DEFAULT_MOD_TITLE = 'Unknown Realm';
@@ -404,6 +403,7 @@ export const resolveReactionForRuleset = (params: {
 			events: ruleset.events,
 			eventState,
 			nonGameplayElementIds: getRulesetCounterElementIds(ruleset),
+			nonConsumableElementIds: ruleset.nonConsumableElementIds,
 			script,
 			tableElements: currentTableElements,
 		});
@@ -499,10 +499,12 @@ export const createModFingerprint = (
 		ModDoc,
 		| 'title'
 		| 'summary'
+		| 'coverImageUrl'
 		| 'intro'
 		| 'startingElementIds'
 		| 'counters'
 		| 'showPalette'
+		| 'compactElements'
 		| 'elements'
 		| 'reactions'
 		| 'events'
@@ -511,10 +513,12 @@ export const createModFingerprint = (
 	const source = JSON.stringify({
 		title: mod.title,
 		summary: mod.summary,
+		...(mod.coverImageUrl ? { coverImageUrl: mod.coverImageUrl } : {}),
 		intro: mod.intro,
 		startingElementIds: mod.startingElementIds,
 		counters: mod.counters,
 		showPalette: mod.showPalette,
+		compactElements: mod.compactElements ?? false,
 		elements: mod.elements,
 		reactions: mod.reactions,
 		events: mod.events ?? [],
@@ -889,7 +893,10 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 			element.bgColorToken ?? DEFAULT_MOD_BG_COLOR_TOKEN,
 			element.frameColorToken ?? DEFAULT_MOD_FRAME_COLOR_TOKEN
 		);
-		elementIcons[element.id] = element.emoji;
+		const iconValue = getModElementActiveIconValue(element);
+		if (iconValue) {
+			elementIcons[element.id] = iconValue;
+		}
 		if (element.effect !== 'none') {
 			elementEffects[element.id] = element.effect;
 		}
@@ -916,6 +923,7 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 		rulesetId: `mod:${mod.id}`,
 		title: mod.title,
 		summary: mod.summary,
+		...(mod.coverImageUrl ? { coverImageUrl: mod.coverImageUrl } : {}),
 		intro: mod.intro,
 		storageScope: `mod:${mod.id}:${mod.publishedHash ?? createModFingerprint(mod)}`,
 		startingElements,
@@ -934,6 +942,7 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 		counterDefinitions,
 		counterNames: counterDefinitions.map((counter) => counter.name),
 		showPalette: mod.showPalette,
+		compactElements: mod.compactElements ?? false,
 		sourceModId: mod.id,
 		ownerUsername: mod.ownerUsername,
 		...(mod.publishedHash ? { publishedHash: mod.publishedHash } : {}),
@@ -946,12 +955,14 @@ export const buildRulesetFromDraft = (draft: SaveDraftInput): ActiveRuleset =>
 		id: draft.id ?? 'draft',
 		title: draft.title,
 		summary: draft.summary,
+		...(draft.coverImageUrl ? { coverImageUrl: draft.coverImageUrl } : {}),
 		intro: draft.intro,
 		ownerUserId: 'draft-user',
 		ownerUsername: 'draft-user',
 		startingElementIds: draft.startingElementIds,
 		counters: draft.counters,
 		showPalette: draft.showPalette,
+		compactElements: draft.compactElements ?? false,
 		elements: draft.elements,
 		reactions: draft.reactions,
 		events: draft.events ?? [],
@@ -960,10 +971,12 @@ export const buildRulesetFromDraft = (draft: SaveDraftInput): ActiveRuleset =>
 		publishedHash: createModFingerprint({
 			title: draft.title,
 			summary: draft.summary,
+			...(draft.coverImageUrl ? { coverImageUrl: draft.coverImageUrl } : {}),
 			intro: draft.intro,
 			startingElementIds: draft.startingElementIds,
 			counters: draft.counters,
 			showPalette: draft.showPalette,
+			compactElements: draft.compactElements ?? false,
 			elements: draft.elements,
 			reactions: draft.reactions,
 			events: draft.events ?? [],

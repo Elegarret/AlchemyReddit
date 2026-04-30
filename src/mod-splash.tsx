@@ -11,7 +11,9 @@ import {
   IoCreateOutline,
   IoEyeSharp,
   IoLayersSharp,
+  IoStarSharp,
   IoThumbsUpSharp,
+  IoTrophySharp,
 } from 'react-icons/io5';
 import {
   getInlineViewCacheKey,
@@ -26,9 +28,14 @@ import {
 } from './mod-size';
 import { getLocalStorageKeys } from './modding/runtime';
 import { trpc } from './trpc';
-import { openEntry, setEditorTargetModId, setLastPlayedRealm } from './webview-navigation';
+import {
+  openEntry,
+  setEditorTargetModId,
+  setLastPlayedRealm,
+} from './webview-navigation';
 
 type ModSplashRulesetPreview = {
+  coverImageUrl: string | null;
   ownerUsername: string | null;
   publishedAt: string | null;
   sourceModId: string | null;
@@ -37,6 +44,8 @@ type ModSplashRulesetPreview = {
 };
 
 type ModSplashListingPreview = {
+  completionCount?: number;
+  featuredAt: string | null;
   ownerUsername: string | null;
   playerCount: number;
   reactionCount?: number;
@@ -79,6 +88,8 @@ const isModSplashRulesetPreview = (
   return (
     typeof Reflect.get(value, 'title') === 'string' &&
     typeof Reflect.get(value, 'summary') === 'string' &&
+    (Reflect.get(value, 'coverImageUrl') === undefined ||
+      isStringOrNull(Reflect.get(value, 'coverImageUrl'))) &&
     isStringOrNull(Reflect.get(value, 'sourceModId')) &&
     isStringOrNull(Reflect.get(value, 'ownerUsername')) &&
     isStringOrNull(Reflect.get(value, 'publishedAt'))
@@ -94,8 +105,12 @@ const isModSplashListingPreview = (
 
   return (
     isStringOrNull(Reflect.get(value, 'ownerUsername')) &&
+    (Reflect.get(value, 'featuredAt') === undefined ||
+      isStringOrNull(Reflect.get(value, 'featuredAt'))) &&
     isNumber(Reflect.get(value, 'upvotes')) &&
     isNumber(Reflect.get(value, 'playerCount')) &&
+    (Reflect.get(value, 'completionCount') === undefined ||
+      isNumber(Reflect.get(value, 'completionCount'))) &&
     (Reflect.get(value, 'reactionCount') === undefined ||
       isNumber(Reflect.get(value, 'reactionCount')))
   );
@@ -107,11 +122,7 @@ const isModSplashState = (value: unknown): value is ModSplashState => {
   }
 
   const status = Reflect.get(value, 'status');
-  if (
-    status !== 'loading' &&
-    status !== 'unavailable' &&
-    status !== 'ready'
-  ) {
+  if (status !== 'loading' && status !== 'unavailable' && status !== 'ready') {
     return false;
   }
 
@@ -131,6 +142,14 @@ const isModSplashState = (value: unknown): value is ModSplashState => {
 
 const getModSplashCacheKey = () => getInlineViewCacheKey('mod-splash');
 
+const stripListingCompletionCount = (
+  listing: ModSplashListingPreview
+): ModSplashListingPreview => {
+  const { completionCount, ...cacheableListing } = listing;
+  void completionCount;
+  return cacheableListing;
+};
+
 const readCachedModSplashState = () =>
   readInlineViewCache(getModSplashCacheKey(), (value) => {
     if (!isModSplashState(value)) {
@@ -140,8 +159,27 @@ const readCachedModSplashState = () =>
     return {
       ...value,
       hasProgress: value.hasProgress ?? false,
+      ruleset: value.ruleset
+        ? {
+            ...value.ruleset,
+            coverImageUrl: value.ruleset.coverImageUrl ?? null,
+          }
+        : null,
+      modListing: value.modListing
+        ? stripListingCompletionCount({
+            ...value.modListing,
+            featuredAt: value.modListing.featuredAt ?? null,
+          })
+        : null,
     };
   });
+
+const stripCompletionCount = (state: ModSplashState): ModSplashState => ({
+  ...state,
+  modListing: state.modListing
+    ? stripListingCompletionCount(state.modListing)
+    : null,
+});
 
 const getLocalProgressCount = (
   ruleset: Awaited<ReturnType<typeof trpc.init.get.query>>['activeRuleset']
@@ -169,9 +207,7 @@ const resolveHasProgress = (
   response: Awaited<ReturnType<typeof trpc.init.get.query>>
 ) => {
   const localProgressCount = getLocalProgressCount(response.activeRuleset);
-  return (
-    localProgressCount > 0 || (response.redditDiscovered?.length ?? 0) > 0
-  );
+  return localProgressCount > 0 || (response.redditDiscovered?.length ?? 0) > 0;
 };
 
 const toRulesetPreview = (
@@ -185,19 +221,26 @@ const toRulesetPreview = (
     ownerUsername: ruleset.ownerUsername ?? null,
     publishedAt: ruleset.publishedAt ?? null,
     sourceModId: ruleset.sourceModId ?? null,
+    coverImageUrl: ruleset.coverImageUrl ?? null,
     summary: ruleset.summary,
     title: ruleset.title,
   };
 };
 
 const toModListingPreview = (
-  modListing: Awaited<ReturnType<typeof trpc.init.get.query>>['activeModListing']
+  modListing: Awaited<
+    ReturnType<typeof trpc.init.get.query>
+  >['activeModListing']
 ): ModSplashListingPreview | null => {
   if (!modListing) {
     return null;
   }
 
   return {
+    ...(typeof modListing.completionCount === 'number'
+      ? { completionCount: modListing.completionCount }
+      : {}),
+    featuredAt: modListing.featuredAt ?? null,
     ownerUsername: modListing.ownerUsername,
     playerCount: modListing.playerCount ?? 0,
     reactionCount: modListing.reactionCount,
@@ -214,8 +257,7 @@ const resolveModSplashState = (
     return {
       hasProgress: resolveHasProgress(response),
       status: 'unavailable',
-      message:
-        response.rulesetUnavailableReason ?? 'Failed to load the Realm.',
+      message: response.rulesetUnavailableReason ?? 'Failed to load the Realm.',
       ruleset: null,
       modListing: null,
       username: response.username ?? null,
@@ -257,7 +299,7 @@ export const ModSplash = () => {
         }
 
         const nextState = resolveModSplashState(response);
-        writeInlineViewCache(getModSplashCacheKey(), nextState);
+        writeInlineViewCache(getModSplashCacheKey(), stripCompletionCount(nextState));
         setState(nextState);
       } catch (error) {
         console.error(error);
@@ -317,7 +359,7 @@ export const ModSplash = () => {
       (state.isModerator ||
         (!!state.username && state.username === state.ruleset.ownerUsername));
     setEditorTargetModId(
-      canEditCurrentRealm ? state.ruleset?.sourceModId ?? null : null
+      canEditCurrentRealm ? (state.ruleset?.sourceModId ?? null) : null
     );
     openEntry(event.nativeEvent, 'mod-editor');
   };
@@ -330,7 +372,7 @@ export const ModSplash = () => {
     return (
       <div className="realm-page flex h-screen items-center justify-center overflow-hidden px-4 py-4">
         <div className="realm-panel animate-pulse rounded-3xl px-6 py-8 text-center backdrop-blur-xl">
-          <div className="catalog-title-font mt-2 text-lg font-black realm-text-ink">
+          <div className="catalog-title-font realm-text-ink mt-2 text-lg font-black">
             Summoning Realm...
           </div>
         </div>
@@ -375,11 +417,25 @@ export const ModSplash = () => {
   const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
     ? 'text-[color:var(--realm-size-empty-text)]'
     : 'realm-text-soft';
-  const upvotesTooltip = `Upvotes: ${state.modListing?.upvotes || 0}`;
+  const upvotesTooltip = `Net vote score: ${state.modListing?.upvotes || 0}`;
   const playerCountTooltip = `Users played: ${state.modListing?.playerCount || 0}`;
+  const showCompletionCount =
+    typeof state.modListing?.completionCount === 'number';
+  const completionCountTooltip = `Users completed: ${state.modListing?.completionCount || 0}`;
 
   return (
     <div className="realm-page relative flex h-screen flex-col items-center justify-center gap-4 overflow-hidden px-4 py-4">
+      {state.ruleset.coverImageUrl && (
+        <>
+          <div
+            className="catalog-top-art realm-splash-cover-art pointer-events-none absolute top-0 left-1/2 h-[250px] w-screen -translate-x-1/2 bg-cover bg-top"
+            style={{
+              backgroundImage: `url(${state.ruleset.coverImageUrl})`,
+            }}
+          />
+          <div className="catalog-top-art-overlay pointer-events-none absolute inset-x-0 top-0 h-[250px]" />
+        </>
+      )}
       <div className="pointer-events-none absolute top-1/2 left-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color:var(--catalog-ink)]/8 blur-3xl" />
       <div className="pointer-events-none absolute top-1/4 left-1/4 h-32 w-32 rounded-full bg-[color:var(--catalog-ink)]/6 blur-2xl" />
       <div className="pointer-events-none absolute right-1/4 bottom-1/4 h-48 w-48 rounded-full bg-[color:var(--catalog-ink)]/5 blur-2xl" />
@@ -388,6 +444,16 @@ export const ModSplash = () => {
         <div className="catalog-title-font realm-text-muted mb-2 text-sm font-bold tracking-[0.24em] uppercase drop-shadow-md">
           User&apos;s Realm
         </div>
+        {state.modListing?.featuredAt && (
+          <div
+            className="catalog-title-font flex h-6 translate-y-[1px] items-center gap-1 rounded-full border border-[color:var(--catalog-soft-border)] bg-[color:var(--catalog-play-hover)] px-4 text-[10px] leading-none font-bold tracking-[0.16em] text-[color:var(--catalog-play-hover-text)] uppercase"
+            title="Editorial choice"
+          >
+            <span className="block translate-y-[0.1em] leading-none">
+              ★ Editorial choice
+            </span>
+          </div>
+        )}
         <h1 className="catalog-title-font realm-text-ink mb-1 px-4 text-4xl leading-tight font-black tracking-tight drop-shadow-xl sm:text-5xl">
           {state.ruleset.title}
         </h1>
@@ -400,6 +466,15 @@ export const ModSplash = () => {
 
         <div className="realm-panel mb-2 flex w-full max-w-[320px] flex-col items-center gap-1 rounded-2xl px-6 py-4 shadow-xl backdrop-blur-md">
           <div className="catalog-body-font flex items-center gap-4 text-sm font-semibold">
+            {state.modListing?.featuredAt && (
+              <div
+                className="realm-text-ink flex items-center gap-1"
+                title="Editorial choice"
+                aria-label="Editorial choice"
+              >
+                <IoStarSharp className="text-[14px]" />
+              </div>
+            )}
             <div
               className="realm-text-ink flex items-center gap-1"
               title={upvotesTooltip}
@@ -414,6 +489,15 @@ export const ModSplash = () => {
               <IoEyeSharp className="text-[14px]" />
               <span>{state.modListing?.playerCount || 0}</span>
             </div>
+            {showCompletionCount && (
+              <div
+                className="realm-text-soft flex items-center gap-1"
+                title={completionCountTooltip}
+              >
+                <IoTrophySharp className="text-[14px]" />
+                <span>{state.modListing?.completionCount || 0}</span>
+              </div>
+            )}
             <div
               className={`${realmSizeClassName} flex items-center gap-1`}
               title={realmSizeTooltip}

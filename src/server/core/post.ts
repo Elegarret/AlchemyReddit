@@ -52,3 +52,18 @@ export const createCompactCatalogPost = async () => {
     url: getPostUrl(post.id, context.subredditName),
   };
 };
+
+export const createFeaturedCompactCatalogPost = async () => {
+  const postTitle =
+    (await settings.get<string>('compactCatalogPostTitle')) ||
+    'Alchemic Creations';
+  const post = await reddit.submitCustomPost({
+    title: postTitle,
+    entry: 'mod-catalog-compact-featured',
+  });
+
+  return {
+    ...post,
+    url: getPostUrl(post.id, context.subredditName),
+  };
+};

@@ -3,12 +3,31 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModEditorApp } from './ModEditorApp';
 
-const { getEditorSettingsQueryMock, listMineQueryMock } = vi.hoisted(() => ({
+const {
+  getEditorSettingsQueryMock,
+  listMineQueryMock,
+  uploadElementIconMutateMock,
+  uploadRealmCoverMutateMock,
+  normalizeElementIconFileMock,
+  normalizeRealmCoverFileMock,
+} = vi.hoisted(() => ({
   getEditorSettingsQueryMock: vi.fn().mockResolvedValue({
     authorsHelpPageUrl: null,
     scriptingHelpPageUrl: null,
   }),
   listMineQueryMock: vi.fn().mockResolvedValue([]),
+  uploadElementIconMutateMock: vi.fn().mockResolvedValue({
+    url: 'https://i.redd.it/test-icon.png',
+  }),
+  uploadRealmCoverMutateMock: vi.fn().mockResolvedValue({
+    url: 'https://i.redd.it/test-cover.png',
+  }),
+  normalizeElementIconFileMock: vi
+    .fn()
+    .mockResolvedValue('data:image/png;base64,icon'),
+  normalizeRealmCoverFileMock: vi
+    .fn()
+    .mockResolvedValue('data:image/png;base64,cover'),
 }));
 
 vi.mock('@devvit/web/client', () => ({
@@ -26,8 +45,19 @@ vi.mock('../trpc', () => ({
       listMine: {
         query: listMineQueryMock,
       },
+      uploadElementIcon: {
+        mutate: uploadElementIconMutateMock,
+      },
+      uploadRealmCover: {
+        mutate: uploadRealmCoverMutateMock,
+      },
     },
   },
+}));
+
+vi.mock('./images', () => ({
+  normalizeElementIconFile: normalizeElementIconFileMock,
+  normalizeRealmCoverFile: normalizeRealmCoverFileMock,
 }));
 
 vi.mock('../webview-navigation', () => ({
@@ -108,6 +138,32 @@ const renderApp = async () => {
   };
 };
 
+const waitFor = async (predicate: () => boolean, timeoutMs: number = 500) => {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  throw new Error('Timed out waiting for test condition');
+};
+
+const updateInputValue = async (input: HTMLInputElement, value: string) => {
+  const valueSetter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value'
+  )?.set;
+
+  await act(async () => {
+    valueSetter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+};
+
 afterEach(() => {
   document.body.innerHTML = '';
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: false });
@@ -118,6 +174,18 @@ afterEach(() => {
     authorsHelpPageUrl: null,
     scriptingHelpPageUrl: null,
   });
+  uploadElementIconMutateMock.mockReset();
+  uploadElementIconMutateMock.mockResolvedValue({
+    url: 'https://i.redd.it/test-icon.png',
+  });
+  uploadRealmCoverMutateMock.mockReset();
+  uploadRealmCoverMutateMock.mockResolvedValue({
+    url: 'https://i.redd.it/test-cover.png',
+  });
+  normalizeElementIconFileMock.mockReset();
+  normalizeElementIconFileMock.mockResolvedValue('data:image/png;base64,icon');
+  normalizeRealmCoverFileMock.mockReset();
+  normalizeRealmCoverFileMock.mockResolvedValue('data:image/png;base64,cover');
 });
 
 describe('ModEditorApp', () => {
@@ -196,6 +264,112 @@ describe('ModEditorApp', () => {
     });
 
     expect(container.textContent).toContain('Import failed: invalid JSON.');
+
+    await unmount();
+  });
+
+  it('uploads and clears a realm cover image from the realm info panel', async () => {
+    const { container, unmount } = await renderApp();
+    const file = new File(['cover'], 'cover.jpg', { type: 'image/jpeg' });
+    const uploadInput = container.querySelector(
+      'input[aria-label="Upload realm cover image"]'
+    );
+    expect(uploadInput).toBeTruthy();
+
+    await act(async () => {
+      if (uploadInput instanceof HTMLInputElement) {
+        Object.defineProperty(uploadInput, 'files', {
+          configurable: true,
+          value: [file],
+        });
+        uploadInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+
+    await waitFor(() => uploadRealmCoverMutateMock.mock.calls.length === 1);
+
+    expect(normalizeRealmCoverFileMock).toHaveBeenCalledWith(file);
+    expect(uploadRealmCoverMutateMock).toHaveBeenCalledWith(
+      'data:image/png;base64,cover'
+    );
+    expect(container.innerHTML).toContain('https://i.redd.it/test-cover.png');
+
+    const clearButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Clear')
+    );
+    expect(clearButton).toBeTruthy();
+
+    await act(async () => {
+      clearButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.innerHTML).not.toContain('https://i.redd.it/test-cover.png');
+    expect(container.textContent).toContain('Realm Cover');
+
+    await unmount();
+  });
+
+  it('shows compact elements in advanced realm options', async () => {
+    const { container, unmount } = await renderApp();
+
+    const advancedTab = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Advanced Options')
+    );
+    expect(advancedTab).toBeTruthy();
+
+    await act(async () => {
+      advancedTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('compact elements');
+
+    await unmount();
+  });
+
+  it('adds and removes non-consumables in advanced realm options', async () => {
+    const { container, unmount } = await renderApp();
+
+    const advancedTab = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Advanced Options')
+    );
+    expect(advancedTab).toBeTruthy();
+
+    await act(async () => {
+      advancedTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const input = container.querySelector<HTMLInputElement>(
+      'input[placeholder="Add non-consumable"]'
+    );
+    expect(input).toBeTruthy();
+
+    if (!input) {
+      throw new Error('Missing non-consumable input');
+    }
+
+    await updateInputValue(input, 'Furnace');
+
+    const addButton = input.nextElementSibling;
+    expect(addButton).toBeTruthy();
+
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('Non-consumables (1)');
+    expect(container.textContent).toContain('Furnace');
+
+    const removeButton = container.querySelector(
+      '.editor-non-consumable-remove'
+    );
+    expect(removeButton).toBeTruthy();
+
+    await act(async () => {
+      removeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('Non-consumables (0)');
+    expect(container.textContent).not.toContain('Furnace');
 
     await unmount();
   });

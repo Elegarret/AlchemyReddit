@@ -22,6 +22,10 @@ import {
   IoTrashSharp,
 } from 'react-icons/io5';
 import {
+  normalizeElementIconFile,
+  normalizeRealmCoverFile,
+} from './images';
+import {
   PLAYTEST_RULESET_STORAGE_KEY,
   buildRulesetFromDraft,
   createModFingerprint,
@@ -31,6 +35,7 @@ import {
   validateModDraft,
 } from '../modding/runtime';
 import {
+  getModElementActiveIconValue,
   MAX_REALM_INTRO_LENGTH,
   MAX_REALM_SUMMARY_LENGTH,
   normalizeModCounterDefinition,
@@ -132,6 +137,79 @@ const removeElementsFromDraft = (
   elementIds: string[]
 ) => elementIds.reduce(removeElementFromDraft, current);
 
+const setElementIconToEmoji = (element: ModElement, emoji: string): ModElement => ({
+  ...element,
+  iconSource: 'emoji',
+  emoji,
+  imageUrl: undefined,
+});
+
+const setElementIconToImage = (
+  element: ModElement,
+  imageUrl: string
+): ModElement => ({
+  ...element,
+  iconSource: 'image',
+  emoji: undefined,
+  imageUrl,
+});
+
+const setElementIconToNone = (element: ModElement): ModElement => {
+  if (element.iconSource === 'none') {
+    return element;
+  }
+
+  if (element.iconSource === 'image') {
+    return {
+      ...element,
+      iconSource: 'none',
+      emoji: undefined,
+    };
+  }
+
+  return {
+    ...element,
+    iconSource: 'none',
+    emoji: element.emoji ?? deriveElementGlyph(element.name),
+  };
+};
+
+const restoreElementIcon = (
+  element: ModElement,
+  fallbackName: string
+): ModElement => {
+  if (element.imageUrl) {
+    return {
+      ...element,
+      iconSource: 'image',
+      emoji: undefined,
+    };
+  }
+
+  return {
+    ...element,
+    iconSource: 'emoji',
+    emoji: element.emoji ?? deriveElementGlyph(fallbackName),
+    imageUrl: undefined,
+  };
+};
+
+const storesDerivedEmoji = (element: ModElement, name: string) =>
+  !element.imageUrl && element.emoji === deriveElementGlyph(name);
+
+const renderElementInlineIcon = (element: ModElement) => {
+  const iconValue = getModElementActiveIconValue(element);
+  if (!iconValue) {
+    return null;
+  }
+
+  if (iconValue.startsWith('/') || iconValue.startsWith('http')) {
+    return <img src={iconValue} alt="" className="h-4 w-4 object-contain" />;
+  }
+
+  return <span className="text-base leading-none">{iconValue}</span>;
+};
+
 type LoadedRealmMeta = Pick<
   ModListItem,
   | 'hasDraftVersion'
@@ -152,6 +230,8 @@ export const ModEditorApp = () => {
   const [draft, setDraft] = useState<SaveDraftInput>(createEmptyDraft);
   const [myMods, setMyMods] = useState<ModListItem[]>([]);
   const [isBusy, setIsBusy] = useState(false);
+  const [uploadingElementId, setUploadingElementId] = useState<string | null>(null);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
   const [elementSearch, setElementSearch] = useState('');
   const [reactionSearch, setReactionSearch] = useState('');
@@ -163,6 +243,7 @@ export const ModEditorApp = () => {
   >(null);
   const [activeMetaTab, setActiveMetaTab] = useState<EditorMetaTab>('starters');
   const [newCounterText, setNewCounterText] = useState('');
+  const [newNonConsumableText, setNewNonConsumableText] = useState('');
   const [newStartingText, setNewStartingText] = useState('');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [pasteMissingElements, setPasteMissingElements] = useState<string[] | null>(
@@ -197,6 +278,7 @@ export const ModEditorApp = () => {
     {}
   );
   const utilityMenuRef = useRef<HTMLDivElement | null>(null);
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
 
   const reactionTextParse = useMemo(
     () =>
@@ -282,6 +364,10 @@ export const ModEditorApp = () => {
         .filter((name) => name.length > 0),
     [counterElements]
   );
+  const nonConsumableElements = useMemo(
+    () => draft.elements.filter((element) => element.nonConsumable),
+    [draft.elements]
+  );
   const gameplayElementNames = useMemo(
     () =>
       draft.elements
@@ -301,10 +387,14 @@ export const ModEditorApp = () => {
       createModFingerprint({
         title: draftWithTextChanges.title,
         summary: draftWithTextChanges.summary,
+        ...(draftWithTextChanges.coverImageUrl
+          ? { coverImageUrl: draftWithTextChanges.coverImageUrl }
+          : {}),
         intro: draftWithTextChanges.intro,
         startingElementIds: draftWithTextChanges.startingElementIds,
         counters: draftWithTextChanges.counters,
         showPalette: draftWithTextChanges.showPalette,
+        compactElements: draftWithTextChanges.compactElements ?? false,
         elements: draftWithTextChanges.elements,
         reactions: draftWithTextChanges.reactions,
         events: draftWithTextChanges.events ?? [],
@@ -557,9 +647,80 @@ export const ModEditorApp = () => {
     updateDraft((current) => ({
       ...current,
       elements: current.elements.map((element) =>
-        element.id === elementId ? { ...element, emoji } : element
+        element.id === elementId ? setElementIconToEmoji(element, emoji) : element
       ),
     }));
+  };
+
+  const toggleElementNoIcon = (elementId: string, checked: boolean) => {
+    updateDraft((current) => ({
+      ...current,
+      elements: current.elements.map((element) => {
+        if (element.id !== elementId) {
+          return element;
+        }
+
+        return checked
+          ? setElementIconToNone(element)
+          : restoreElementIcon(element, element.name);
+      }),
+    }));
+  };
+
+  const uploadElementImage = async (elementId: string, file: File) => {
+    setUploadingElementId(elementId);
+
+    try {
+      const normalizedImage = await normalizeElementIconFile(file);
+      const uploaded = await trpc.mods.uploadElementIcon.mutate(normalizedImage);
+
+      updateDraft((current) => ({
+        ...current,
+        elements: current.elements.map((element) =>
+          element.id === elementId
+            ? setElementIconToImage(element, uploaded.url)
+            : element
+        ),
+      }));
+      showToast('Icon uploaded');
+    } catch (error) {
+      console.error(error);
+      showToast(
+        error instanceof Error ? error.message : 'Failed to upload icon'
+      );
+    } finally {
+      setUploadingElementId(null);
+    }
+  };
+
+  const uploadRealmCover = async (file: File) => {
+    setIsUploadingCover(true);
+
+    try {
+      const normalizedImage = await normalizeRealmCoverFile(file);
+      const uploaded = await trpc.mods.uploadRealmCover.mutate(normalizedImage);
+
+      updateDraft((current) => ({
+        ...current,
+        coverImageUrl: uploaded.url,
+      }));
+      showToast('Cover uploaded');
+    } catch (error) {
+      console.error(error);
+      showToast(
+        error instanceof Error ? error.message : 'Failed to upload cover'
+      );
+    } finally {
+      setIsUploadingCover(false);
+    }
+  };
+
+  const clearRealmCover = () => {
+    updateDraft((current) => {
+      const nextDraft = { ...current };
+      delete nextDraft.coverImageUrl;
+      return nextDraft;
+    });
   };
 
   const updateElementColors = (
@@ -600,22 +761,20 @@ export const ModEditorApp = () => {
             return {
               ...element,
               name: fallbackName,
-              emoji:
-                element.emoji === deriveElementGlyph(element.name)
-                  ? deriveElementGlyph(fallbackName)
-                  : element.emoji,
+              ...(storesDerivedEmoji(element, element.name)
+                ? { emoji: deriveElementGlyph(fallbackName) }
+                : {}),
             };
           }
 
-          const shouldRefreshEmoji =
-            element.emoji === deriveElementGlyph(element.name);
+          const shouldRefreshEmoji = storesDerivedEmoji(element, element.name);
 
           return {
             ...element,
             name: nextName,
-            emoji: shouldRefreshEmoji
-              ? deriveElementGlyph(nextName)
-              : element.emoji,
+            ...(shouldRefreshEmoji
+              ? { emoji: deriveElementGlyph(nextName) }
+              : {}),
           };
         }),
       };
@@ -687,6 +846,40 @@ export const ModEditorApp = () => {
       ...current,
       counters: current.counters.filter(
         (counter) => counter.elementId !== elementId
+      ),
+    }));
+  };
+
+  const addNonConsumableElement = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    updateDraft((current) => {
+      const resolved = ensureElementInDraft(current, trimmed);
+      if (!resolved.elementId) {
+        return current;
+      }
+
+      return {
+        ...resolved.draft,
+        elements: resolved.draft.elements.map((element) =>
+          element.id === resolved.elementId
+            ? { ...element, nonConsumable: true }
+            : element
+        ),
+      };
+    });
+  };
+
+  const removeNonConsumableElement = (elementId: string) => {
+    updateDraft((current) => ({
+      ...current,
+      elements: current.elements.map((element) =>
+        element.id === elementId
+          ? { ...element, nonConsumable: false }
+          : element
       ),
     }));
   };
@@ -1276,10 +1469,12 @@ export const ModEditorApp = () => {
           id: loaded.id,
           title: loaded.title,
           summary: clampRealmSummary(loaded.summary),
+          ...(loaded.coverImageUrl ? { coverImageUrl: loaded.coverImageUrl } : {}),
           intro: loaded.intro,
           startingElementIds: loaded.startingElementIds,
           counters: loaded.counters,
           showPalette: loaded.showPalette,
+          compactElements: loaded.compactElements ?? false,
           elements: loaded.elements,
           reactions: loaded.reactions,
           events: loaded.events ?? [],
@@ -1791,6 +1986,59 @@ export const ModEditorApp = () => {
                       {draft.summary.length}/{MAX_REALM_SUMMARY_LENGTH}
                     </div>
                   </div>
+                  <div className="realm-panel-soft mt-3 overflow-hidden rounded-2xl">
+                    {draft.coverImageUrl ? (
+                      <div
+                        className="h-28 bg-cover bg-center"
+                        style={{
+                          backgroundImage: `url(${draft.coverImageUrl})`,
+                        }}
+                      />
+                    ) : (
+                      <div className="realm-text-soft flex h-24 items-center justify-center px-4 text-center text-sm">
+                        Realm Cover<br></br>
+                        Shown at the top of the realm splash.<br></br>
+                        Recommended: 16:9, 1280x720 or larger.
+                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isUploadingCover}
+                          onClick={() => coverInputRef.current?.click()}
+                          className="realm-button-muted catalog-title-font flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-bold disabled:cursor-wait disabled:opacity-60"
+                        >
+                          <IoCloudUploadOutline />
+                          {isUploadingCover ? 'Uploading' : 'Upload'}
+                        </button>
+                        {draft.coverImageUrl && (
+                          <button
+                            type="button"
+                            onClick={clearRealmCover}
+                            className="realm-button-muted catalog-title-font flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-bold"
+                          >
+                            <IoCloseSharp />
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <input
+                      ref={coverInputRef}
+                      aria-label="Upload realm cover image"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) {
+                          void uploadRealmCover(file);
+                        }
+                        event.target.value = '';
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div className="min-w-0">
@@ -2015,9 +2263,7 @@ export const ModEditorApp = () => {
                               key={`starting-${id}-${index}`}
                               className="editor-starter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
                             >
-                              <span className="text-base leading-none">
-                                {el.emoji}
-                              </span>
+                              {renderElementInlineIcon(el)}
                               <span>{el.name}</span>
                               <button
                                 onClick={() => removeStartingElement(index)}
@@ -2083,63 +2329,140 @@ export const ModEditorApp = () => {
                         </span>
                       </label>
 
-                      <div>
-                        <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
-                          Counters ({draft.counters.length})
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {counterElements.map(({ counter, element }) => (
-                            <div
-                              key={`counter-${counter.elementId}`}
-                              className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
-                            >
-                              <span className="text-base leading-none">
-                                {element.emoji}
-                              </span>
-                              <span>
-                                {element.name}({counter.initial})
-                              </span>
-                              <button
-                                onClick={() =>
-                                  removeCounterElement(counter.elementId)
-                                }
-                                className="editor-counter-remove ml-0.5"
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={draft.compactElements ?? false}
+                          onChange={(event) =>
+                            updateDraft((current) => ({
+                              ...current,
+                              compactElements: event.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4"
+                        />
+                        <span>
+                          compact elements
+                          <span className="realm-text-soft">
+                            {' '}
+                            (board elements use palette tile size)
+                          </span>
+                        </span>
+                      </label>
+
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div>
+                          <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                            Counters ({draft.counters.length})
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {counterElements.map(({ counter, element }) => (
+                              <div
+                                key={`counter-${counter.elementId}`}
+                                className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
                               >
-                                <IoCloseSharp size={16} />
-                              </button>
-                            </div>
-                          ))}
+                                {renderElementInlineIcon(element)}
+                                <span>
+                                  {element.name}({counter.initial})
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    removeCounterElement(counter.elementId)
+                                  }
+                                  className="editor-counter-remove ml-0.5"
+                                >
+                                  <IoCloseSharp size={16} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-3 flex items-center">
+                            <DroppableInput
+                              value={newCounterText}
+                              onChange={setNewCounterText}
+                              onDropValue={(value) => {
+                                addCounterElement(value);
+                                setNewCounterText('');
+                              }}
+                              onClear={
+                                newCounterText
+                                  ? () => setNewCounterText('')
+                                  : undefined
+                              }
+                              placeholder="Add counter"
+                              className="realm-input w-32 rounded-l-lg border sm:w-40"
+                              onEnter={() => {
+                                addCounterElement(newCounterText);
+                                setNewCounterText('');
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                addCounterElement(newCounterText);
+                                setNewCounterText('');
+                              }}
+                              className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
+                            >
+                              <IoAddSharp size={20} />
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="mt-3 flex items-center">
-                          <DroppableInput
-                            value={newCounterText}
-                            onChange={setNewCounterText}
-                            onDropValue={(value) => {
-                              addCounterElement(value);
-                              setNewCounterText('');
-                            }}
-                            onClear={
-                              newCounterText
-                                ? () => setNewCounterText('')
-                                : undefined
-                            }
-                            placeholder="Add counter"
-                            className="realm-input w-32 rounded-l-lg border sm:w-40"
-                            onEnter={() => {
-                              addCounterElement(newCounterText);
-                              setNewCounterText('');
-                            }}
-                          />
-                          <button
-                            onClick={() => {
-                              addCounterElement(newCounterText);
-                              setNewCounterText('');
-                            }}
-                            className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
-                          >
-                            <IoAddSharp size={20} />
-                          </button>
+                        <div>
+                          <div className="catalog-title-font realm-text-muted mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+                            Non-consumables ({nonConsumableElements.length})
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {nonConsumableElements.map((element) => (
+                              <div
+                                key={`non-consumable-${element.id}`}
+                                className="editor-non-consumable-chip flex items-center gap-1 rounded-full py-1 pr-1 pl-2 text-sm font-bold"
+                              >
+                                {renderElementInlineIcon(element)}
+                                <span>{element.name}</span>
+                                <button
+                                  onClick={() =>
+                                    removeNonConsumableElement(element.id)
+                                  }
+                                  className="editor-non-consumable-remove ml-0.5"
+                                >
+                                  <IoCloseSharp size={16} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-3 flex items-center">
+                            <DroppableInput
+                              value={newNonConsumableText}
+                              onChange={setNewNonConsumableText}
+                              onDropValue={(value) => {
+                                addNonConsumableElement(value);
+                                setNewNonConsumableText('');
+                              }}
+                              onClear={
+                                newNonConsumableText
+                                  ? () => setNewNonConsumableText('')
+                                  : undefined
+                              }
+                              placeholder="Add non-consumable"
+                              className="realm-input w-40 rounded-l-lg border sm:w-48"
+                              onEnter={() => {
+                                addNonConsumableElement(newNonConsumableText);
+                                setNewNonConsumableText('');
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                addNonConsumableElement(newNonConsumableText);
+                                setNewNonConsumableText('');
+                              }}
+                              className="realm-button-accent cursor-pointer rounded-r-lg px-2 py-1.5"
+                            >
+                              <IoAddSharp size={20} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2355,9 +2678,7 @@ export const ModEditorApp = () => {
                                 key={`elements-counter-${counter.elementId}`}
                                 className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-2 pl-2 text-sm font-bold"
                               >
-                                <span className="text-base leading-none">
-                                  {element.emoji}
-                                </span>
+                                {renderElementInlineIcon(element)}
                                 <span>
                                   {element.name}({counter.initial})
                                 </span>
@@ -2383,6 +2704,13 @@ export const ModEditorApp = () => {
                               onChangeEmoji={(val) =>
                                 updateElementEmoji(element.id, val)
                               }
+                              onSelectImage={(file) =>
+                                void uploadElementImage(element.id, file)
+                              }
+                              onToggleNoIcon={(checked) =>
+                                toggleElementNoIcon(element.id, checked)
+                              }
+                              isUploading={uploadingElementId === element.id}
                               draggable={true}
                             />
                             <div className="flex min-w-[12rem] flex-1 items-center gap-1.5 pr-1 sm:min-w-0">
@@ -2451,9 +2779,7 @@ export const ModEditorApp = () => {
                                 key={`compact-counter-${counter.elementId}`}
                                 className="editor-counter-chip flex items-center gap-1 rounded-full py-1 pr-2 pl-2 text-sm font-bold"
                               >
-                                <span className="text-base leading-none">
-                                  {element.emoji}
-                                </span>
+                                {renderElementInlineIcon(element)}
                                 <span>
                                   {element.name}({counter.initial})
                                 </span>
@@ -2482,6 +2808,13 @@ export const ModEditorApp = () => {
                             onChangeEmoji={(emoji) =>
                               updateElementEmoji(element.id, emoji)
                             }
+                            onSelectImage={(file) =>
+                              void uploadElementImage(element.id, file)
+                            }
+                            onToggleNoIcon={(checked) =>
+                              toggleElementNoIcon(element.id, checked)
+                            }
+                            isUploading={uploadingElementId === element.id}
                             onChangeBgColor={(value) =>
                               updateElementColors(element.id, {
                                 bgColorToken: value,

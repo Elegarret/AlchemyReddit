@@ -83,6 +83,7 @@ export const createStarterElement = (
 ): ModElement => ({
   id,
   name,
+  iconSource: 'emoji',
   emoji,
   bgColorToken,
   frameColorToken,
@@ -99,6 +100,7 @@ export const createEmptyDraft = (): SaveDraftInput => ({
   counters: [],
   events: [],
   showPalette: true,
+  compactElements: false,
   elements: DEFAULT_STARTER_ELEMENTS.map((element) =>
     createStarterElement(
       element.id,
@@ -125,11 +127,13 @@ const toImportedDraft = (
 ): SaveDraftInput => ({
   title: draft.title,
   summary: clampRealmSummary(draft.summary),
+  ...(draft.coverImageUrl ? { coverImageUrl: draft.coverImageUrl } : {}),
   intro: draft.intro,
   startingElementIds: draft.startingElementIds,
   counters: draft.counters,
   events: draft.events,
   showPalette: draft.showPalette,
+  compactElements: draft.compactElements ?? false,
   elements: draft.elements,
   reactions: draft.reactions,
   reactionComments: normalizeReactionComments(draft),
@@ -353,6 +357,54 @@ const getDraftCounterNames = (draft: SaveDraftInput) =>
 
     return element?.name ? [element.name] : [];
   });
+
+type EmptyReactionHeaderPair = {
+  leftName: string;
+  rightName: string;
+};
+
+const parseEmptyReactionHeaderSegment = (
+  rawSegment: string
+): EmptyReactionHeaderPair | null => {
+  const segment = rawSegment.trim();
+  const equalIndex = segment.indexOf('=');
+  if (
+    equalIndex <= 0 ||
+    equalIndex !== segment.length - 1 ||
+    equalIndex !== segment.lastIndexOf('=')
+  ) {
+    return null;
+  }
+
+  const plusIndex = segment.indexOf('+');
+  if (plusIndex <= 0 || plusIndex > equalIndex) {
+    return null;
+  }
+
+  const leftName = segment.slice(0, plusIndex).trim();
+  const rightName = segment.slice(plusIndex + 1, equalIndex).trim();
+  if (!leftName || !rightName) {
+    return null;
+  }
+
+  return { leftName, rightName };
+};
+
+const parseGroupedEmptyReactionHeaders = (
+  line: string
+): EmptyReactionHeaderPair[] | null => {
+  const segments = line.split(',');
+  if (segments.length < 2) {
+    return null;
+  }
+
+  const pairs = segments.map(parseEmptyReactionHeaderSegment);
+  if (pairs.some((pair) => pair === null)) {
+    return null;
+  }
+
+  return pairs.filter((pair): pair is EmptyReactionHeaderPair => pair !== null);
+};
 
 export const getReactionTextMissingElementNames = (
   issues: ReactionTextIssue[]
@@ -837,6 +889,112 @@ const parseReactionBodyToDraft = (
         message:
           'Declarations are only allowed at the top of the full text editor before the first blank line.',
       });
+      continue;
+    }
+
+    const groupedReactionHeaders = parseGroupedEmptyReactionHeaders(line);
+    if (groupedReactionHeaders) {
+      const scriptLines: string[] = [];
+      while (index + 1 < bodyLines.length) {
+        const nextLine = bodyLines[index + 1] ?? '';
+        if (nextLine.startsWith('    ')) {
+          scriptLines.push(nextLine.slice(4));
+          index += 1;
+          continue;
+        }
+
+        if (nextLine.startsWith('\t')) {
+          scriptLines.push(nextLine.slice(1));
+          index += 1;
+          continue;
+        }
+
+        break;
+      }
+
+      const script =
+        formatReactionScript(scriptLines.join('\n')) ?? scriptLines.join('\n');
+      const scriptValidation = validateReactionScript(script, {
+        counterNames: getDraftCounterNames(nextDraft),
+        elements: nextDraft.elements.map((element) => ({
+          id: element.id,
+          name: element.name,
+        })),
+        nonGameplayElementIds: nextDraft.counters.map(
+          (counter) => counter.elementId
+        ),
+      });
+
+      if (!scriptValidation.ok) {
+        scriptValidation.errors.forEach((error) => {
+          if (!error.message.startsWith('Unknown element "')) {
+            return;
+          }
+
+          const missingElementName =
+            error.message.match(/^Unknown element "(.+)"\.$/)?.[1] ?? null;
+          errors.push({
+            line: absoluteLine + error.line,
+            message: error.message,
+            ...(missingElementName ? { missingElementName } : {}),
+          });
+        });
+      }
+
+      let didPushReaction = false;
+      groupedReactionHeaders.forEach((header, headerIndex) => {
+        const leftResolved = resolveExistingElementInDraft(
+          nextDraft,
+          header.leftName
+        );
+        const rightResolved = resolveExistingElementInDraft(
+          nextDraft,
+          header.rightName
+        );
+
+        if (!leftResolved.normalizedName || !rightResolved.normalizedName) {
+          return;
+        }
+
+        if (!leftResolved.elementId) {
+          errors.push(
+            createReactionTextMissingElementIssue(
+              absoluteLine,
+              leftResolved.normalizedName
+            )
+          );
+        }
+
+        if (!rightResolved.elementId) {
+          errors.push(
+            createReactionTextMissingElementIssue(
+              absoluteLine,
+              rightResolved.normalizedName
+            )
+          );
+        }
+
+        if (!leftResolved.elementId || !rightResolved.elementId) {
+          return;
+        }
+
+        reactions.push({
+          leftId: leftResolved.elementId,
+          rightId: rightResolved.elementId,
+          outputIds: [],
+          script,
+        });
+        commentBlocks.push({
+          headerComment:
+            headerIndex === 0 ? (splitLine.commentText ?? undefined) : undefined,
+          leadingComments: headerIndex === 0 ? pendingLeadingComments : [],
+        });
+        didPushReaction = true;
+      });
+
+      if (didPushReaction) {
+        pendingLeadingComments = [];
+      }
       continue;
     }
 

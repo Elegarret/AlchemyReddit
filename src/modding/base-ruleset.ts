@@ -32,4 +32,5 @@ export const BASE_RULESET: ActiveRuleset = {
 	counterDefinitions: [],
 	counterNames: [],
 	showPalette: true,
+	compactElements: false,
 };

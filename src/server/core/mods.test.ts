@@ -9,12 +9,20 @@ import {
   getPublishedMod,
   hidePublishedMod,
   listAllAdminMods,
+  listAllAdminModsPage,
+  listAllPublishedMods,
+  listBestMods,
   listCatalogMods,
+  listFeaturedMods,
+  listNewMods,
   listModsForUser,
+  recordUniqueModPlayer,
   publishDraftForUser,
+  recordUniqueModCompletion,
   removeModForUser,
   resolveRulesetFromPostData,
   saveDraftForUser,
+  setFeaturedModForUser,
   unpublishModForUser,
 } from './mods';
 import { appRouter } from '../trpc';
@@ -22,6 +30,7 @@ import { appRouter } from '../trpc';
 const makeElement = (id: string, name: string): ModElement => ({
   id,
   name,
+  iconSource: 'emoji',
   emoji: name[0] ?? '?',
   bgColorToken: 'ice',
   frameColorToken: 'ocean',
@@ -41,6 +50,35 @@ const saveStormLabDraft = async (
     title: 'Storm Lab',
     summary,
     intro: 'Welcome to the storm lab.',
+    startingElementIds: ['air', 'water'],
+    counters: [],
+    showPalette: true,
+    elements: [
+      makeElement('air', 'Air'),
+      makeElement('water', 'Water'),
+      makeElement('storm', 'Storm'),
+    ],
+    reactions: [
+      {
+        leftId: 'air',
+        rightId: 'water',
+        outputIds: ['storm'],
+      },
+    ],
+  });
+
+const saveRealmDraft = async (
+  userId: string,
+  username: string,
+  title: string,
+  summary: string,
+  modId?: string
+) =>
+  await saveDraftForUser(userId, username, {
+    ...(modId ? { id: modId } : {}),
+    title,
+    summary,
+    intro: `Welcome to ${title}.`,
     startingElementIds: ['air', 'water'],
     counters: [],
     showPalette: true,
@@ -134,12 +172,89 @@ test('republishing reuses the existing share post and updates its custom post da
   expect(await getPublishedMod(saved.id)).toBeNull();
 
   const mineAfterUnpublish = await listModsForUser(userId);
-  const modAfterUnpublish = mineAfterUnpublish.find((mod) => mod.id === saved.id);
+  const modAfterUnpublish = mineAfterUnpublish.find(
+    (mod) => mod.id === saved.id
+  );
   expect(modAfterUnpublish?.status).toBe('draft');
   expect(modAfterUnpublish?.sharePostId).toBeUndefined();
 
   const catalogAfterUnpublish = await listCatalogMods();
   expect(catalogAfterUnpublish.map((mod) => mod.id)).not.toContain(saved.id);
+});
+
+test('republishing preserves the original New catalog position', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  vi.useFakeTimers();
+  try {
+    mocks.reddit.linksAndComments.addPost({
+      id: 't3_firstpublish',
+      title: "Storm Lab (testuser's realm)",
+    });
+    mocks.reddit.linksAndComments.addPost({
+      id: 't3_secondpublish',
+      title: "Storm Lab (testuser's realm)",
+    });
+    const firstPost = await reddit.getPostById('t3_firstpublish');
+    const secondPost = await reddit.getPostById('t3_secondpublish');
+    vi.spyOn(reddit, 'submitCustomPost')
+      .mockResolvedValueOnce(firstPost)
+      .mockResolvedValueOnce(secondPost);
+
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const firstSaved = await saveStormLabDraft(
+      userId,
+      username,
+      'First realm.'
+    );
+    const firstPublish = await publishDraftForUser(
+      userId,
+      username,
+      firstSaved.id
+    );
+
+    vi.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
+    const secondSaved = await saveStormLabDraft(
+      userId,
+      username,
+      'Second realm.'
+    );
+    const secondPublish = await publishDraftForUser(
+      userId,
+      username,
+      secondSaved.id
+    );
+
+    expect((await listCatalogMods()).map((mod) => mod.id)).toEqual([
+      secondSaved.id,
+      firstSaved.id,
+    ]);
+
+    vi.setSystemTime(new Date('2026-01-03T00:00:00.000Z'));
+    await saveStormLabDraft(
+      userId,
+      username,
+      'First realm, updated.',
+      firstSaved.id
+    );
+    const republished = await publishDraftForUser(
+      userId,
+      username,
+      firstSaved.id
+    );
+
+    expect(republished.mod.publishedAt).toBe(firstPublish.mod.publishedAt);
+    expect(republished.mod.updatedAt).toBe('2026-01-03T00:00:00.000Z');
+    expect(secondPublish.mod.publishedAt).toBe('2026-01-02T00:00:00.000Z');
+    expect((await listCatalogMods()).map((mod) => mod.id)).toEqual([
+      secondSaved.id,
+      firstSaved.id,
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('shared post resolves the latest published realm data by mod id after republish', async ({
@@ -337,7 +452,9 @@ test("moderators can load and save another user's published realm", async ({
   expect(moderatorSaved.ownerUserId).toBe(ownerUserId);
   expect(moderatorSaved.ownerUsername).toBe(ownerUsername);
   expect(moderatorSaved.summary).toBe('Moderator summary.');
-  expect(await redis.get(`mod:${ownerSaved.id}:draft:${userId}`)).toBeUndefined();
+  expect(
+    await redis.get(`mod:${ownerSaved.id}:draft:${userId}`)
+  ).toBeUndefined();
   expect(
     (await redis.zRange(`mod:${ownerSaved.id}:draft-owners`, 0, 9)).map(
       ({ member }) => member
@@ -356,7 +473,9 @@ test("moderators can load and save another user's published realm", async ({
   });
 
   const adminItems = await listAllAdminMods();
-  const matchingAdminItems = adminItems.filter((mod) => mod.id === ownerSaved.id);
+  const matchingAdminItems = adminItems.filter(
+    (mod) => mod.id === ownerSaved.id
+  );
   expect(matchingAdminItems).toHaveLength(1);
   expect(matchingAdminItems[0]).toMatchObject({
     draftOwnerUsername: ownerUsername,
@@ -471,21 +590,72 @@ test("deleting another user's realm removes latest data, drafts, and indexes", a
     member: 'player',
     score: 0,
   });
+  await redis.zAdd(`mod:${ownerSaved.id}:completions`, {
+    member: 'player',
+    score: 0,
+  });
 
   await removeModForUser(userId, username, ownerSaved.id);
 
-  await expect(getEditableModForUser(ownerUserId, ownerUsername, ownerSaved.id))
-    .resolves.toBeNull();
-  await expect(getEditableModForUser(userId, username, ownerSaved.id)).resolves.toBeNull();
+  await expect(
+    getEditableModForUser(ownerUserId, ownerUsername, ownerSaved.id)
+  ).resolves.toBeNull();
+  await expect(
+    getEditableModForUser(userId, username, ownerSaved.id)
+  ).resolves.toBeNull();
   expect(await redis.get(`mod:${ownerSaved.id}:latest`)).toBeUndefined();
   expect(await redis.get(`mod:${ownerSaved.id}:meta`)).toBeUndefined();
-  expect(await redis.get(`mod:${ownerSaved.id}:draft:${ownerUserId}`)).toBeUndefined();
-  expect(await redis.get(`mod:${ownerSaved.id}:draft:${userId}`)).toBeUndefined();
+  expect(
+    await redis.get(`mod:${ownerSaved.id}:draft:${ownerUserId}`)
+  ).toBeUndefined();
+  expect(
+    await redis.get(`mod:${ownerSaved.id}:draft:${userId}`)
+  ).toBeUndefined();
   expect(await redis.zRange(`mods:owner:${ownerUserId}`, 0, 9)).toEqual([]);
   expect(await redis.zRange(`mods:owner:${userId}`, 0, 9)).toEqual([]);
-  expect(await redis.zRange(`mod:${ownerSaved.id}:draft-owners`, 0, 9)).toEqual([]);
+  expect(await redis.zRange(`mod:${ownerSaved.id}:draft-owners`, 0, 9)).toEqual(
+    []
+  );
   expect(await redis.zRange('mods:all', 0, 9)).toEqual([]);
   expect(await redis.zCard(`mod:${ownerSaved.id}:players`)).toBe(0);
+  expect(await redis.zCard(`mod:${ownerSaved.id}:completions`)).toBe(0);
+});
+
+test('completion count records each user once for published realms', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  const sharePostId = 't3_sharepost-complete';
+  mocks.reddit.linksAndComments.addPost({
+    id: sharePostId,
+    title: "Storm Lab (testuser's realm)",
+  });
+  const sharePost = await reddit.getPostById(sharePostId);
+  Object.defineProperty(sharePost, 'id', {
+    configurable: true,
+    value: 'sharepost-complete',
+    writable: true,
+  });
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(sharePost);
+
+  const saved = await saveStormLabDraft(
+    userId,
+    username,
+    'Completion summary.'
+  );
+  await publishDraftForUser(userId, username, saved.id);
+
+  await recordUniqueModCompletion(saved.id, userId);
+  await recordUniqueModCompletion(saved.id, userId);
+
+  const hiddenCatalog = await listCatalogMods();
+  expect(
+    hiddenCatalog.find((mod) => mod.id === saved.id)?.completionCount
+  ).toBeUndefined();
+
+  const catalog = await listCatalogMods({ includeCompletionCount: true });
+  expect(catalog.find((mod) => mod.id === saved.id)?.completionCount).toBe(1);
 });
 
 test('admin listing includes draft-only, published, and hidden realms', async ({
@@ -527,24 +697,18 @@ test('admin listing includes draft-only, published, and hidden realms', async ({
   expect(adminItems.map((item) => item.id)).toEqual(
     expect.arrayContaining([draftOnly.id, published.id, hidden.id])
   );
-  expect(
-    adminItems.find((item) => item.id === draftOnly.id)
-  ).toMatchObject({
+  expect(adminItems.find((item) => item.id === draftOnly.id)).toMatchObject({
     hasDraftVersion: true,
     hasPublishedVersion: false,
     latestVersionStatus: null,
     status: 'draft',
   });
-  expect(
-    adminItems.find((item) => item.id === published.id)
-  ).toMatchObject({
+  expect(adminItems.find((item) => item.id === published.id)).toMatchObject({
     hasDraftVersion: true,
     hasPublishedVersion: true,
     latestVersionStatus: 'published',
   });
-  expect(
-    adminItems.find((item) => item.id === hidden.id)
-  ).toMatchObject({
+  expect(adminItems.find((item) => item.id === hidden.id)).toMatchObject({
     hasDraftVersion: true,
     hasPublishedVersion: false,
     latestVersionStatus: 'hidden',
@@ -586,6 +750,434 @@ test('admin listing still includes published realms that predate the global admi
   });
 });
 
+test('best listing refreshes stale cached scores and reorders realms', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  mocks.reddit.linksAndComments.addPost({
+    id: 't3_best_a',
+    title: "Aurora Archive (testuser's realm)",
+  });
+  mocks.reddit.linksAndComments.addPost({
+    id: 't3_best_b',
+    title: "Blaze Basin (testuser's realm)",
+  });
+
+  const firstPost = await reddit.getPostById('t3_best_a');
+  const secondPost = await reddit.getPostById('t3_best_b');
+  const originalGetPostById = reddit.getPostById.bind(reddit);
+  Object.defineProperty(firstPost, 'id', {
+    configurable: true,
+    value: 'best_a',
+    writable: true,
+  });
+  Object.defineProperty(secondPost, 'id', {
+    configurable: true,
+    value: 'best_b',
+    writable: true,
+  });
+  Object.defineProperty(firstPost, 'score', {
+    configurable: true,
+    value: 1,
+    writable: true,
+  });
+  Object.defineProperty(secondPost, 'score', {
+    configurable: true,
+    value: 5,
+    writable: true,
+  });
+  vi.spyOn(reddit, 'getPostById').mockImplementation(async (postId) => {
+    if (postId === 't3_best_a') {
+      return firstPost;
+    }
+
+    if (postId === 't3_best_b') {
+      return secondPost;
+    }
+
+    return await originalGetPostById(postId);
+  });
+  vi.spyOn(reddit, 'submitCustomPost')
+    .mockResolvedValueOnce(firstPost)
+    .mockResolvedValueOnce(secondPost);
+
+  const firstSaved = await saveRealmDraft(
+    userId,
+    username,
+    'Aurora Archive',
+    'Cold-light experiments.'
+  );
+  const secondSaved = await saveRealmDraft(
+    userId,
+    username,
+    'Blaze Basin',
+    'Heat-first experiments.'
+  );
+  await publishDraftForUser(userId, username, firstSaved.id);
+  await publishDraftForUser(userId, username, secondSaved.id);
+
+  const initialBest = await listBestMods(2);
+  expect(initialBest.map((mod) => mod.id)).toEqual([
+    secondSaved.id,
+    firstSaved.id,
+  ]);
+
+  Object.defineProperty(firstPost, 'score', {
+    configurable: true,
+    value: 12,
+    writable: true,
+  });
+  Object.defineProperty(secondPost, 'score', {
+    configurable: true,
+    value: 0,
+    writable: true,
+  });
+
+  for (const modId of [firstSaved.id, secondSaved.id]) {
+    const rawCache = await redis.get(`mod:${modId}:rank-cache`);
+    expect(rawCache).toBeDefined();
+    const parsedCache = JSON.parse(rawCache ?? '{}') as {
+      bestScore: number;
+      playerCount: number;
+      upvotes: number;
+    };
+    await redis.set(
+      `mod:${modId}:rank-cache`,
+      JSON.stringify({
+        ...parsedCache,
+        lastSyncedAt: '2025-01-01T00:00:00.000Z',
+      })
+    );
+  }
+
+  const refreshedBest = await listBestMods(2);
+  expect(refreshedBest.map((mod) => mod.id)).toEqual([
+    firstSaved.id,
+    secondSaved.id,
+  ]);
+  expect(refreshedBest[0]?.upvotes).toBe(12);
+  expect(refreshedBest[1]?.upvotes).toBe(0);
+});
+
+test('recording a unique player updates cached player counts and best score', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  const sharePostId = 't3_rank_cache_player';
+  mocks.reddit.linksAndComments.addPost({
+    id: sharePostId,
+    title: "Storm Lab (testuser's realm)",
+  });
+  const sharePost = await reddit.getPostById(sharePostId);
+  const originalGetPostById = reddit.getPostById.bind(reddit);
+  Object.defineProperty(sharePost, 'id', {
+    configurable: true,
+    value: 'rank_cache_player',
+    writable: true,
+  });
+  Object.defineProperty(sharePost, 'score', {
+    configurable: true,
+    value: 9,
+    writable: true,
+  });
+  vi.spyOn(reddit, 'getPostById').mockImplementation(async (postId) => {
+    if (postId === sharePostId) {
+      return sharePost;
+    }
+
+    return await originalGetPostById(postId);
+  });
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(sharePost);
+
+  const saved = await saveStormLabDraft(userId, username, 'Player cache sync.');
+  await publishDraftForUser(userId, username, saved.id);
+
+  const before = await listBestMods(1);
+  expect(before[0]?.playerCount ?? 0).toBe(0);
+
+  await recordUniqueModPlayer(saved.id, 't2_player_a');
+
+  const after = await listBestMods(1);
+  expect(after[0]?.playerCount).toBe(1);
+  expect(after[0]?.bestScore).toBeCloseTo(
+    9 / Math.sqrt(1) +
+      Math.log1p(1) * 0.35 -
+      Math.min(
+        (Date.now() - Date.parse(after[0]?.publishedAt ?? '')) / 86_400_000,
+        90
+      ) *
+        0.001,
+    5
+  );
+});
+
+test('published listing paginates and applies prefix search server-side', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  vi.useFakeTimers();
+  try {
+    mocks.reddit.linksAndComments.addPost({
+      id: 't3_crystal',
+      title: "Crystal Cove (testuser's realm)",
+    });
+    mocks.reddit.linksAndComments.addPost({
+      id: 't3_forest',
+      title: "Forest Forge (testuser's realm)",
+    });
+    mocks.reddit.linksAndComments.addPost({
+      id: 't3_desert',
+      title: "Desert Dawn (testuser's realm)",
+    });
+    const crystalPost = await reddit.getPostById('t3_crystal');
+    const forestPost = await reddit.getPostById('t3_forest');
+    const desertPost = await reddit.getPostById('t3_desert');
+    Object.defineProperty(crystalPost, 'id', {
+      configurable: true,
+      value: 'crystal',
+      writable: true,
+    });
+    Object.defineProperty(forestPost, 'id', {
+      configurable: true,
+      value: 'forest',
+      writable: true,
+    });
+    Object.defineProperty(desertPost, 'id', {
+      configurable: true,
+      value: 'desert',
+      writable: true,
+    });
+    vi.spyOn(reddit, 'submitCustomPost')
+      .mockResolvedValueOnce(crystalPost)
+      .mockResolvedValueOnce(forestPost)
+      .mockResolvedValueOnce(desertPost);
+
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const crystal = await saveRealmDraft(
+      userId,
+      username,
+      'Crystal Cove',
+      'Frozen surf.'
+    );
+    await publishDraftForUser(userId, username, crystal.id);
+
+    vi.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
+    const forest = await saveRealmDraft(
+      userId,
+      username,
+      'Forest Forge',
+      'Hot roots.'
+    );
+    await publishDraftForUser(userId, username, forest.id);
+
+    vi.setSystemTime(new Date('2026-01-03T00:00:00.000Z'));
+    const desert = await saveRealmDraft(
+      userId,
+      username,
+      'Desert Dawn',
+      'Dry light.'
+    );
+    await publishDraftForUser(userId, username, desert.id);
+
+    const firstPage = await listAllPublishedMods({
+      page: 0,
+      pageSize: 2,
+    });
+    expect(firstPage.totalItems).toBe(3);
+    expect(firstPage.totalPages).toBe(2);
+    expect(firstPage.items.map((item) => item.id)).toEqual([
+      desert.id,
+      forest.id,
+    ]);
+
+    const newest = await listNewMods(2);
+    expect(newest.map((item) => item.id)).toEqual([desert.id, forest.id]);
+
+    const secondPage = await listAllPublishedMods({
+      page: 1,
+      pageSize: 2,
+    });
+    expect(secondPage.items.map((item) => item.id)).toEqual([crystal.id]);
+
+    const titleSearch = await listAllPublishedMods({
+      page: 0,
+      pageSize: 10,
+      query: 'for',
+    });
+    expect(titleSearch.items.map((item) => item.id)).toEqual([forest.id]);
+
+    const ownerSearch = await listAllPublishedMods({
+      page: 0,
+      pageSize: 10,
+      query: 'tes',
+    });
+    expect(ownerSearch.totalItems).toBe(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('featured listing only returns featured published realms', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  mocks.reddit.linksAndComments.addPost({
+    id: 't3_featured_alpha',
+    title: "Alpha (testuser's realm)",
+  });
+  mocks.reddit.linksAndComments.addPost({
+    id: 't3_featured_beta',
+    title: "Beta (testuser's realm)",
+  });
+  mocks.reddit.linksAndComments.addPost({
+    id: 't3_featured_gamma',
+    title: "Gamma (testuser's realm)",
+  });
+  const alphaPost = await reddit.getPostById('t3_featured_alpha');
+  const betaPost = await reddit.getPostById('t3_featured_beta');
+  const gammaPost = await reddit.getPostById('t3_featured_gamma');
+  Object.defineProperty(alphaPost, 'id', {
+    configurable: true,
+    value: 'featured_alpha',
+    writable: true,
+  });
+  Object.defineProperty(betaPost, 'id', {
+    configurable: true,
+    value: 'featured_beta',
+    writable: true,
+  });
+  Object.defineProperty(gammaPost, 'id', {
+    configurable: true,
+    value: 'featured_gamma',
+    writable: true,
+  });
+  vi.spyOn(reddit, 'submitCustomPost')
+    .mockResolvedValueOnce(alphaPost)
+    .mockResolvedValueOnce(betaPost)
+    .mockResolvedValueOnce(gammaPost);
+
+  const alpha = await saveRealmDraft(userId, username, 'Alpha', 'Featured.');
+  const beta = await saveRealmDraft(userId, username, 'Beta', 'Featured.');
+  const gamma = await saveRealmDraft(userId, username, 'Gamma', 'Standard.');
+  await publishDraftForUser(userId, username, alpha.id);
+  await publishDraftForUser(userId, username, beta.id);
+  await publishDraftForUser(userId, username, gamma.id);
+
+  const moderators = reddit.getModerators({
+    subredditName: 'testsub',
+    username,
+    limit: 1,
+  });
+  const moderatorUser = await reddit.getUserByUsername(username);
+  expect(moderatorUser).toBeDefined();
+  if (!moderatorUser) {
+    throw new Error('Expected moderator user to exist in the test harness.');
+  }
+  vi.spyOn(moderators, 'all').mockResolvedValue([moderatorUser]);
+  vi.spyOn(reddit, 'getModerators').mockReturnValue(moderators);
+
+  await setFeaturedModForUser(userId, username, alpha.id, true);
+  await setFeaturedModForUser(userId, username, beta.id, true);
+
+  const featured = await listFeaturedMods(10);
+  expect(featured).toHaveLength(2);
+  expect(featured.map((item) => item.id)).toEqual(
+    expect.arrayContaining([alpha.id, beta.id])
+  );
+  expect(featured.map((item) => item.id)).not.toContain(gamma.id);
+});
+
+test('admin paginated listing keeps published realms first and supports admin-only search fields', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  vi.useFakeTimers();
+  try {
+    mocks.reddit.linksAndComments.addPost({
+      id: 't3_admin_published',
+      title: "Published Peak (testuser's realm)",
+    });
+    mocks.reddit.linksAndComments.addPost({
+      id: 't3_admin_hidden',
+      title: "Veiled Vault (testuser's realm)",
+    });
+    const publishedPost = await reddit.getPostById('t3_admin_published');
+    const hiddenPost = await reddit.getPostById('t3_admin_hidden');
+    Object.defineProperty(publishedPost, 'id', {
+      configurable: true,
+      value: 'admin_published',
+      writable: true,
+    });
+    Object.defineProperty(hiddenPost, 'id', {
+      configurable: true,
+      value: 'admin_hidden',
+      writable: true,
+    });
+    vi.spyOn(reddit, 'submitCustomPost')
+      .mockResolvedValueOnce(publishedPost)
+      .mockResolvedValueOnce(hiddenPost);
+
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const published = await saveRealmDraft(
+      userId,
+      username,
+      'Published Peak',
+      'Visible realm.'
+    );
+    await publishDraftForUser(userId, username, published.id);
+
+    vi.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
+    const draftOnly = await saveRealmDraft(
+      userId,
+      username,
+      'Draft Delta',
+      'Draft realm.'
+    );
+
+    vi.setSystemTime(new Date('2026-01-03T00:00:00.000Z'));
+    const hidden = await saveRealmDraft(
+      userId,
+      username,
+      'Veiled Vault',
+      'Hidden realm.'
+    );
+    await publishDraftForUser(userId, username, hidden.id);
+    await hidePublishedMod(userId, username, hidden.id);
+
+    const adminPage = await listAllAdminModsPage({
+      page: 0,
+      pageSize: 10,
+    });
+    expect(adminPage.items[0]?.id).toBe(published.id);
+    expect(adminPage.items.map((item) => item.id)).toEqual([
+      published.id,
+      hidden.id,
+      draftOnly.id,
+    ]);
+
+    const hiddenSearch = await listAllAdminModsPage({
+      page: 0,
+      pageSize: 10,
+      query: 'hid',
+    });
+    expect(hiddenSearch.items.map((item) => item.id)).toEqual([hidden.id]);
+
+    const draftSearch = await listAllAdminModsPage({
+      page: 0,
+      pageSize: 10,
+      query: 'del',
+    });
+    expect(draftSearch.items.map((item) => item.id)).toEqual([draftOnly.id]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('non-moderators cannot access the admin realm listing query', async ({
   headers,
   username,
@@ -604,6 +1196,228 @@ test('non-moderators cannot access the admin realm listing query', async ({
       return await caller.mods.listAllAdmin();
     })
   ).rejects.toThrow('You are not allowed to view all realms.');
+});
+
+test('non-moderators cannot feature realms', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  const sharePostId = 't3_sharepost-feature-forbidden';
+  mocks.reddit.linksAndComments.addPost({
+    id: sharePostId,
+    title: "Storm Lab (testuser's realm)",
+  });
+  const sharePost = await reddit.getPostById(sharePostId);
+  Object.defineProperty(sharePost, 'id', {
+    configurable: true,
+    value: 'sharepost-feature-forbidden',
+    writable: true,
+  });
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(sharePost);
+
+  const saved = await saveStormLabDraft(
+    userId,
+    username,
+    'Feature forbidden summary.'
+  );
+  await publishDraftForUser(userId, username, saved.id);
+
+  const moderators = reddit.getModerators({
+    subredditName: 'testsub',
+    username,
+    limit: 1,
+  });
+  vi.spyOn(moderators, 'all').mockResolvedValue([]);
+  vi.spyOn(reddit, 'getModerators').mockReturnValue(moderators);
+
+  await expect(
+    setFeaturedModForUser(userId, username, saved.id, true)
+  ).rejects.toThrow('You are not allowed to feature this mod.');
+});
+
+test('moderators can feature and unfeature published realms', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  const sharePostId = 't3_sharepost-featured';
+  mocks.reddit.linksAndComments.addPost({
+    id: sharePostId,
+    title: "Storm Lab (testuser's realm)",
+  });
+  const sharePost = await reddit.getPostById(sharePostId);
+  Object.defineProperty(sharePost, 'id', {
+    configurable: true,
+    value: 'sharepost-featured',
+    writable: true,
+  });
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(sharePost);
+
+  const saved = await saveStormLabDraft(userId, username, 'Featured summary.');
+  await publishDraftForUser(userId, username, saved.id);
+
+  const moderators = reddit.getModerators({
+    subredditName: 'testsub',
+    username,
+    limit: 1,
+  });
+  const moderatorUser = await reddit.getUserByUsername(username);
+  expect(moderatorUser).toBeDefined();
+  if (!moderatorUser) {
+    throw new Error('Expected moderator user to exist in the test harness.');
+  }
+  vi.spyOn(moderators, 'all').mockResolvedValue([moderatorUser]);
+  vi.spyOn(reddit, 'getModerators').mockReturnValue(moderators);
+
+  const featured = await setFeaturedModForUser(
+    userId,
+    username,
+    saved.id,
+    true
+  );
+  expect(featured.featuredAt).toBeTruthy();
+  expect(featured.featuredBy).toBe(username);
+
+  const catalogAfterFeature = await listCatalogMods();
+  expect(catalogAfterFeature.find((mod) => mod.id === saved.id)).toMatchObject({
+    featuredBy: username,
+  });
+
+  await saveStormLabDraft(
+    userId,
+    username,
+    'Featured summary after edit.',
+    saved.id
+  );
+  await publishDraftForUser(userId, username, saved.id);
+
+  const catalogAfterRepublish = await listCatalogMods();
+  expect(
+    catalogAfterRepublish.find((mod) => mod.id === saved.id)?.featuredBy
+  ).toBe(username);
+
+  const unfeatured = await setFeaturedModForUser(
+    userId,
+    username,
+    saved.id,
+    false
+  );
+  expect(unfeatured.featuredAt).toBeUndefined();
+  expect(unfeatured.featuredBy).toBeUndefined();
+});
+
+test('image uploads require a logged-in user and return Reddit-hosted URLs', async ({
+  headers,
+  mocks,
+}) => {
+  const dataUrl =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlH0l8AAAAASUVORK5CYII=';
+  const anonymousHeaders = { ...headers };
+  delete anonymousHeaders[Header.User];
+  delete anonymousHeaders[Header.Username];
+
+  await expect(
+    runWithContext(Context(anonymousHeaders), async () => {
+      const caller = appRouter.createCaller({});
+      return await caller.mods.uploadElementIcon(dataUrl);
+    })
+  ).rejects.toThrow('You must be logged in.');
+  await expect(
+    runWithContext(Context(anonymousHeaders), async () => {
+      const caller = appRouter.createCaller({});
+      return await caller.mods.uploadRealmCover(dataUrl);
+    })
+  ).rejects.toThrow('You must be logged in.');
+
+  const uploadedIcon = await runWithContext(Context(headers), async () => {
+    const caller = appRouter.createCaller({});
+    return await caller.mods.uploadElementIcon(dataUrl);
+  });
+  const uploadedCover = await runWithContext(Context(headers), async () => {
+    const caller = appRouter.createCaller({});
+    return await caller.mods.uploadRealmCover(dataUrl);
+  });
+
+  expect(uploadedIcon.url).toContain('https://i.redd.it/');
+  expect(uploadedCover.url).toContain('https://i.redd.it/');
+  expect(mocks.media.uploads).toHaveLength(2);
+  expect(mocks.media.uploads[0]?.url).toBe(dataUrl);
+  expect(mocks.media.uploads[0]?.type).toBe('image');
+  expect(mocks.media.uploads[1]?.url).toBe(dataUrl);
+  expect(mocks.media.uploads[1]?.type).toBe('image');
+});
+
+test('saving and publishing preserve realm cover image URLs and include them in hashes', async ({
+  mocks,
+  userId,
+  username,
+}) => {
+  const sharePostId = 't3_coverhash';
+  mocks.reddit.linksAndComments.addPost({
+    id: sharePostId,
+    title: "Storm Lab (testuser's realm)",
+  });
+  const sharePost = await reddit.getPostById(sharePostId);
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(sharePost);
+
+  const saved = await saveDraftForUser(userId, username, {
+    title: 'Storm Lab',
+    summary: 'Cover persistence check.',
+    coverImageUrl: 'https://i.redd.it/cover-a.png',
+    intro: 'Welcome to the storm lab.',
+    startingElementIds: ['air', 'water'],
+    counters: [],
+    showPalette: true,
+    elements: [
+      makeElement('air', 'Air'),
+      makeElement('water', 'Water'),
+      makeElement('storm', 'Storm'),
+    ],
+    reactions: [
+      {
+        leftId: 'air',
+        rightId: 'water',
+        outputIds: ['storm'],
+      },
+    ],
+  });
+
+  expect(saved.coverImageUrl).toBe('https://i.redd.it/cover-a.png');
+
+  const firstPublish = await publishDraftForUser(userId, username, saved.id);
+  expect(firstPublish.mod.coverImageUrl).toBe('https://i.redd.it/cover-a.png');
+  const firstHash = firstPublish.mod.publishedHash;
+
+  await saveDraftForUser(userId, username, {
+    id: saved.id,
+    title: 'Storm Lab',
+    summary: 'Cover persistence check.',
+    coverImageUrl: 'https://i.redd.it/cover-b.png',
+    intro: 'Welcome to the storm lab.',
+    startingElementIds: ['air', 'water'],
+    counters: [],
+    showPalette: true,
+    elements: [
+      makeElement('air', 'Air'),
+      makeElement('water', 'Water'),
+      makeElement('storm', 'Storm'),
+    ],
+    reactions: [
+      {
+        leftId: 'air',
+        rightId: 'water',
+        outputIds: ['storm'],
+      },
+    ],
+  });
+
+  const secondPublish = await publishDraftForUser(userId, username, saved.id);
+  const latest = await getPublishedMod(saved.id);
+
+  expect(secondPublish.mod.coverImageUrl).toBe('https://i.redd.it/cover-b.png');
+  expect(latest?.coverImageUrl).toBe('https://i.redd.it/cover-b.png');
+  expect(secondPublish.mod.publishedHash).not.toBe(firstHash);
 });
 
 test('draft save and load preserve editor-only reaction comments', async ({

@@ -67,6 +67,84 @@ describe('applyReactionTextToDraft', () => {
     ]);
   });
 
+  it('expands grouped empty reaction headers into shared scripted reactions', () => {
+    const result = parseReactionTextToDraft(
+      createDraftWithElements('Steam'),
+      [
+        'starters: Air, Fire, Earth, Water',
+        '',
+        'Air+Fire=, Water+Fire=',
+        '    add Steam',
+        '    message "The room fills with mist."',
+      ].join('\n')
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.draft.reactions).toEqual([
+      {
+        leftId: 'air',
+        rightId: 'fire',
+        outputIds: [],
+        script: 'add Steam\nmessage "The room fills with mist."',
+      },
+      {
+        leftId: 'water',
+        rightId: 'fire',
+        outputIds: [],
+        script: 'add Steam\nmessage "The room fills with mist."',
+      },
+    ]);
+  });
+
+  it('allows optional comments on grouped reaction headers', () => {
+    const result = parseReactionTextToDraft(
+      createDraftWithElements('Steam'),
+      [
+        'starters: Air, Fire, Earth, Water',
+        '',
+        'Air+Fire=, Water+Fire= // shared result',
+        '    Steam',
+      ].join('\n')
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.draft.reactions).toEqual([
+      {
+        leftId: 'air',
+        rightId: 'fire',
+        outputIds: [],
+        script: 'add Steam',
+      },
+      {
+        leftId: 'water',
+        rightId: 'fire',
+        outputIds: [],
+        script: 'add Steam',
+      },
+    ]);
+    expect(normalizeReactionComments(result.draft)).toEqual({
+      byReaction: [
+        {
+          headerComment: ' shared result',
+          leadingComments: [],
+        },
+        {
+          headerComment: undefined,
+          leadingComments: [],
+        },
+      ],
+      trailingComments: [],
+    });
+  });
+
   it('preserves standalone and header comments through text parsing and formatting', () => {
     const draft = applyReactionTextToDraft(
       createDraftWithElements('Steam'),
@@ -419,6 +497,7 @@ describe('applyReactionTextToDraft', () => {
       id: 'mod-123',
       title: 'Storm Lab',
       summary: 'A custom realm.',
+      coverImageUrl: 'https://i.redd.it/storm-cover.png',
       intro: 'Hello **realm**',
       reactions: [
         {
@@ -442,11 +521,13 @@ describe('applyReactionTextToDraft', () => {
     expect(parseImportedDraftText(serializeDraftForExport(draft))).toEqual({
       title: 'Storm Lab',
       summary: 'A custom realm.',
+      coverImageUrl: 'https://i.redd.it/storm-cover.png',
       intro: 'Hello **realm**',
       startingElementIds: ['air', 'fire', 'earth', 'water'],
       counters: [],
       events: [],
       showPalette: true,
+      compactElements: false,
       elements: draft.elements,
       reactions: draft.reactions,
       reactionComments: draft.reactionComments,
@@ -459,6 +540,7 @@ describe('applyReactionTextToDraft', () => {
         id: 'mod-999',
         title: 'Imported Realm',
         summary: 'Pulled from a published mod.',
+        coverImageUrl: 'https://i.redd.it/imported-cover.png',
         intro: 'Welcome back',
         ownerUserId: 't2_owner',
         ownerUsername: 'realmowner',
@@ -482,11 +564,13 @@ describe('applyReactionTextToDraft', () => {
     expect(imported).toEqual({
       title: 'Imported Realm',
       summary: 'Pulled from a published mod.',
+      coverImageUrl: 'https://i.redd.it/imported-cover.png',
       intro: 'Welcome back',
       startingElementIds: ['air', 'fire'],
       counters: [],
       events: [],
       showPalette: true,
+      compactElements: false,
       elements: createEmptyDraft().elements,
       reactions: [],
       reactionComments: {

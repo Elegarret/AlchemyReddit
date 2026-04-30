@@ -14,6 +14,8 @@ export const MAX_REALM_SUMMARY_LENGTH = 128;
 export const MAX_REALM_INTRO_LENGTH = 512;
 export const MAX_ELEMENT_MESSAGE_LENGTH = 512;
 export const MAX_REACTION_SCRIPT_LENGTH = 4096;
+export const MAX_MOD_ELEMENTS = 1024;
+export const MAX_MOD_REACTIONS = 4096;
 export const MOD_ELEMENT_EFFECT_VALUES = [
   'none',
   'explode',
@@ -25,6 +27,15 @@ export const MOD_ELEMENT_EFFECT_VALUES = [
 ] as const;
 export const modElementEffectSchema = z.enum(MOD_ELEMENT_EFFECT_VALUES);
 export type ModElementEffect = z.infer<typeof modElementEffectSchema>;
+export const MOD_ELEMENT_ICON_SOURCE_VALUES = [
+  'emoji',
+  'image',
+  'none',
+] as const;
+export const modElementIconSourceSchema = z.enum(
+  MOD_ELEMENT_ICON_SOURCE_VALUES
+);
+export type ModElementIconSource = z.infer<typeof modElementIconSourceSchema>;
 export const LEGACY_ELEMENT_EFFECTS: Record<string, ModElementEffect> = {
   computer: 'computer',
   earthquake: 'earthquake',
@@ -38,7 +49,9 @@ export const modElementSchema = z
   .object({
     id: z.string().min(1).max(48),
     name: z.string().min(1).max(32),
-    emoji: z.string().min(1).max(16),
+    iconSource: modElementIconSourceSchema.optional(),
+    emoji: z.string().min(1).max(16).optional(),
+    imageUrl: z.string().url().max(4096).optional(),
     bgColorToken: z.string().min(1).max(32).optional(),
     frameColorToken: z.string().min(1).max(32).optional(),
     colorToken: z.string().min(1).max(32).optional(),
@@ -46,13 +59,68 @@ export const modElementSchema = z
     effect: modElementEffectSchema.optional(),
     nonConsumable: z.boolean().optional(),
   })
+  .superRefine((element, ctx) => {
+    const iconSource = element.iconSource ?? 'emoji';
+
+    if (iconSource === 'emoji') {
+      if (!element.emoji) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Emoji icons require an emoji value.',
+          path: ['emoji'],
+        });
+      }
+
+      if (element.imageUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Emoji icons cannot include an image URL.',
+          path: ['imageUrl'],
+        });
+      }
+
+      return;
+    }
+
+    if (iconSource === 'image') {
+      if (!element.imageUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Image icons require an image URL.',
+          path: ['imageUrl'],
+        });
+      }
+
+      if (element.emoji) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Image icons cannot include an emoji value.',
+          path: ['emoji'],
+        });
+      }
+
+      return;
+    }
+
+    if (element.emoji && element.imageUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'No-icon elements may preserve at most one previous icon.',
+        path: ['imageUrl'],
+      });
+    }
+  })
   .transform((element) => ({
     normalizedLegacyEffect:
       LEGACY_ELEMENT_EFFECTS[element.id] ??
-      LEGACY_ELEMENT_EFFECTS[element.name.trim().toLowerCase().replace(/\s+/g, '-')],
+      LEGACY_ELEMENT_EFFECTS[
+        element.name.trim().toLowerCase().replace(/\s+/g, '-')
+      ],
     id: element.id,
     name: element.name,
-    emoji: element.emoji,
+    iconSource: element.iconSource ?? 'emoji',
+    ...(element.emoji ? { emoji: element.emoji } : {}),
+    ...(element.imageUrl ? { imageUrl: element.imageUrl.trim() } : {}),
     bgColorToken:
       element.bgColorToken ?? element.colorToken ?? DEFAULT_MOD_BG_COLOR_TOKEN,
     frameColorToken:
@@ -69,6 +137,20 @@ export const modElementSchema = z
   }));
 
 export type ModElement = z.infer<typeof modElementSchema>;
+
+export const getModElementActiveIconValue = (
+  element: Pick<ModElement, 'emoji' | 'iconSource' | 'imageUrl'>
+) => {
+  if (element.iconSource === 'emoji') {
+    return element.emoji ?? null;
+  }
+
+  if (element.iconSource === 'image') {
+    return element.imageUrl ?? null;
+  }
+
+  return null;
+};
 
 export const modReactionSchema = z.object({
   leftId: z.string().min(1).max(48),
@@ -100,7 +182,11 @@ export const reactionCommentBlockSchema = z.object({
 export type ReactionCommentBlock = z.infer<typeof reactionCommentBlockSchema>;
 
 export const reactionCommentsSchema = z.object({
-  byReaction: z.array(reactionCommentBlockSchema).max(512).optional().default([]),
+  byReaction: z
+    .array(reactionCommentBlockSchema)
+    .max(512)
+    .optional()
+    .default([]),
   trailingComments: z.array(reactionCommentLineSchema).optional().default([]),
 });
 
@@ -156,6 +242,7 @@ export const modDocSchema = z.object({
   id: z.string().min(1).max(64),
   title: z.string().min(1).max(80),
   summary: z.string().max(280),
+  coverImageUrl: z.string().url().max(4096).optional(),
   intro: z
     .string()
     .max(MAX_REALM_INTRO_LENGTH)
@@ -166,8 +253,9 @@ export const modDocSchema = z.object({
   startingElementIds: z.array(z.string().min(1).max(48)).min(2).max(8),
   counters: z.array(modCounterSchema).max(128).optional().default([]),
   showPalette: z.boolean().optional().default(true),
-  elements: z.array(modElementSchema).max(128),
-  reactions: z.array(modReactionSchema).max(512),
+  compactElements: z.boolean().optional().default(false),
+  elements: z.array(modElementSchema).max(MAX_MOD_ELEMENTS),
+  reactions: z.array(modReactionSchema).max(MAX_MOD_REACTIONS),
   events: z.array(modEventSchema).max(128).optional().default([]),
   reactionComments: reactionCommentsSchema.optional().default({
     byReaction: [],
@@ -178,10 +266,16 @@ export const modDocSchema = z.object({
   publishedAt: z.string().min(1).max(64).optional(),
   publishedHash: z.string().min(1).max(64).optional(),
   sharePostId: z.string().min(1).max(64).optional(),
+  featuredAt: z.string().min(1).max(64).optional(),
+  featuredBy: z.string().min(1).max(64).optional(),
 });
 
 type ParsedModDoc = z.infer<typeof modDocSchema>;
-export type ModDoc = Omit<ParsedModDoc, 'events' | 'reactionComments'> & {
+export type ModDoc = Omit<
+  ParsedModDoc,
+  'compactElements' | 'events' | 'reactionComments'
+> & {
+  compactElements?: boolean;
   events?: ModEvent[];
   reactionComments?: ReactionComments;
 };
@@ -200,8 +294,12 @@ export const modListItemSchema = z.object({
   hasPublishedVersion: z.boolean().optional().default(false),
   elementCount: z.number().int().nonnegative(),
   reactionCount: z.number().int().nonnegative(),
+  featuredAt: z.string().min(1).max(64).optional(),
+  featuredBy: z.string().min(1).max(64).optional(),
+  bestScore: z.number().optional(),
   upvotes: z.number().int().optional(),
   playerCount: z.number().int().nonnegative().optional(),
+  completionCount: z.number().int().nonnegative().optional(),
 });
 
 export type ModListItem = z.infer<typeof modListItemSchema>;
@@ -213,6 +311,25 @@ export const adminModListItemSchema = modListItemSchema.extend({
 });
 
 export type AdminModListItem = z.infer<typeof adminModListItemSchema>;
+
+export const paginatedResultSchema = <T extends z.ZodTypeAny>(
+  itemSchema: T
+) =>
+  z.object({
+    items: z.array(itemSchema),
+    page: z.number().int().nonnegative(),
+    pageSize: z.number().int().positive(),
+    totalItems: z.number().int().nonnegative(),
+    totalPages: z.number().int().nonnegative(),
+  });
+
+export type PaginatedResult<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+};
 
 export const sharePostDataSchema = z.object({
   modId: z.string().min(1).max(64),
@@ -241,6 +358,7 @@ export type ActiveRuleset = {
   rulesetId: string;
   title: string;
   summary: string;
+  coverImageUrl?: string;
   intro: string;
   storageScope: string;
   startingElements: string[];
@@ -259,6 +377,7 @@ export type ActiveRuleset = {
   counterDefinitions: ActiveCounterDefinition[];
   counterNames: string[];
   showPalette: boolean;
+  compactElements: boolean;
   sourceModId?: string;
   publishedHash?: string;
   ownerUsername?: string;
@@ -278,6 +397,7 @@ export const saveDraftInputSchema = z.object({
   id: z.string().min(1).max(64).optional(),
   title: z.string().min(1).max(80),
   summary: z.string().max(MAX_REALM_SUMMARY_LENGTH),
+  coverImageUrl: z.string().url().max(4096).optional(),
   intro: z
     .string()
     .max(MAX_REALM_INTRO_LENGTH)
@@ -286,8 +406,9 @@ export const saveDraftInputSchema = z.object({
   startingElementIds: z.array(z.string().min(1).max(48)).min(2).max(8),
   counters: z.array(modCounterSchema).max(128).optional().default([]),
   showPalette: z.boolean().optional().default(true),
-  elements: z.array(modElementSchema).max(128),
-  reactions: z.array(modReactionSchema).max(512),
+  compactElements: z.boolean().optional().default(false),
+  elements: z.array(modElementSchema).max(MAX_MOD_ELEMENTS),
+  reactions: z.array(modReactionSchema).max(MAX_MOD_REACTIONS),
   events: z.array(modEventSchema).max(128).optional().default([]),
   reactionComments: reactionCommentsSchema.optional().default({
     byReaction: [],
@@ -298,8 +419,9 @@ export const saveDraftInputSchema = z.object({
 type ParsedSaveDraftInput = z.infer<typeof saveDraftInputSchema>;
 export type SaveDraftInput = Omit<
   ParsedSaveDraftInput,
-  'events' | 'reactionComments'
+  'compactElements' | 'events' | 'reactionComments'
 > & {
+  compactElements?: boolean;
   events?: ModEvent[];
   reactionComments?: ReactionComments;
 };

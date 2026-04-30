@@ -22,6 +22,18 @@
         "inline": true,
         "entry": "src/mod-catalog-compact.html"
       },
+      "mod-catalog-compact-featured": {
+        "inline": true,
+        "entry": "src/mod-catalog-compact-featured.html"
+      },
+      "mod-catalog-compact-best": {
+        "inline": true,
+        "entry": "src/mod-catalog-compact-best.html"
+      },
+      "mod-catalog-compact-new": {
+        "inline": true,
+        "entry": "src/mod-catalog-compact-new.html"
+      },
       "mod-splash": {
         "inline": true,
         "entry": "src/mod-splash.html"
@@ -53,10 +65,17 @@
       },
       {
         "label": "Create compact catalog post",
-        "description": "Creates a compact catalog post with tabbed best and new realms",
+        "description": "Creates a compact catalog post with tabbed featured, best, and new realms",
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/catalog-compact-create"
+      },
+      {
+        "label": "Create featured compact catalog post",
+        "description": "Creates a compact catalog post that opens on the featured realms tab",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/catalog-compact-featured-create"
       }
     ]
   },
@@ -86,18 +105,21 @@
         "type": "string",
         "label": "Scripting Help Page URL",
         "defaultValue": ""
+      },
+      "completionCountersPublic": {
+        "type": "boolean",
+        "label": "Show completion counters to everybody",
+        "helpText": "When disabled, completion counters are only returned to moderators.",
+        "defaultValue": false
       }
     }
   },
   "permissions": {
+    "media": true,
     "redis": true,
     "reddit": {
       "enable": true,
-      "asUser": [
-        "SUBMIT_POST",
-        "SUBMIT_COMMENT",
-        "SUBSCRIBE_TO_SUBREDDIT"
-      ]
+      "asUser": ["SUBMIT_POST", "SUBMIT_COMMENT", "SUBSCRIBE_TO_SUBREDDIT"]
     }
   },
   "triggers": {

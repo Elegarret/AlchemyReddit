@@ -8,8 +8,10 @@ A bare element name is shorthand for `add elementName`, but canonical formatting
 
 ## Grammar
 
-- `line := action | if_line`
+- `line := action | if_line | if_block`
 - `if_line := if ( condition_list ) action`
+- `if_line := if ( condition_list ) action; action; ...`
+- `if_block := if ( condition_list ):` followed by indented action lines
 - `condition_list := condition (and condition)*`
 - full reaction-text editor only: `event [crossing|once|always]: counter_condition_list` followed by indented script lines
 - `// comment` starts a line comment outside double-quoted strings and runs to end of line
@@ -110,6 +112,23 @@ Use `if (...) action` for a single conditional action. Conditions are flat and A
 - `if (not_on_table(key)) stop`
 
 Bracketed tokens are whitespace-tolerant on input, so `if(count(health)<10)add bandage` also parses, but canonical output uses one space where needed.
+
+For several actions with the same condition, use an indented block:
+
+```txt
+if (count(Noise) >= 3):
+    add Door
+    set Noise += 1
+    stop
+```
+
+Short grouped conditionals can also be written on one line with semicolons:
+
+```txt
+if (count(Noise) >= 3) add Door; set Noise += 1; stop
+```
+
+The condition is checked once before the grouped actions run. Semicolons inside quoted text, such as `message "a; b"`, do not split actions.
 
 ## Notes
 

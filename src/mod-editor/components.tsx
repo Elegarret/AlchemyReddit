@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
 import {
+  type ChangeEvent,
   type CSSProperties,
   type DragEvent,
   type ReactNode,
@@ -13,9 +14,13 @@ import {
   IoChevronDownSharp,
   IoCloseSharp,
   IoCodeSlash,
+  IoCloudUploadOutline,
   IoColorPaletteSharp,
   IoEllipsisHorizontal,
   IoHelpCircleOutline,
+  IoImageOutline,
+  IoRadioButtonOffOutline,
+  IoHappyOutline,
 } from 'react-icons/io5';
 import {
   getModElementClasses,
@@ -31,6 +36,7 @@ import {
 } from '../modding/reaction-script';
 import {
   MAX_ELEMENT_MESSAGE_LENGTH,
+  getModElementActiveIconValue,
   normalizeModCounterDefinition,
   type ModCounterDefinition,
   type ModElement,
@@ -99,6 +105,10 @@ const getColorOptionSwatchStyle = (
     borderColor: 'rgba(255,255,255,0.2)',
   };
 };
+
+// Temporary editor gate: keep custom image/no-icon plumbing in the codebase
+// while restoring the legacy emoji-only editing flow in the UI.
+const SHOW_CUSTOM_ELEMENT_ICON_EDITOR = false;
 
 const EmojiDropdown = ({
   emoji,
@@ -205,13 +215,217 @@ const EmojiDropdown = ({
   );
 };
 
+const renderElementIconPreview = (
+  element: Pick<ModElement, 'emoji' | 'iconSource' | 'imageUrl'>,
+  className?: string
+) => {
+  const iconValue = getModElementActiveIconValue(element);
+  if (!iconValue) {
+    return null;
+  }
+
+  if (iconValue.startsWith('/') || iconValue.startsWith('http')) {
+    return (
+      <img
+        src={iconValue}
+        alt=""
+        className={className ?? 'h-8 w-8 object-contain'}
+      />
+    );
+  }
+
+  return <span className={className ?? 'text-[26px] leading-none'}>{iconValue}</span>;
+};
+
+const renderLegacyEmojiPreview = (element: ModElement, className?: string) => {
+  const preview =
+    renderElementIconPreview(element, className) ?? (
+      <span className={className ?? 'text-[26px] leading-none'}>
+        {element.emoji ?? '🙂'}
+      </span>
+    );
+
+  return preview;
+};
+
+const ElementIconEditor = ({
+  children,
+  element,
+  isUploading = false,
+  onChangeEmoji,
+  onSelectImage,
+  onToggleNoIcon,
+  triggerClassName,
+  triggerContentClassName,
+  title,
+}: {
+  children?: ReactNode;
+  element: ModElement;
+  isUploading?: boolean;
+  onChangeEmoji: (emoji: string) => void;
+  onSelectImage: (file: File) => void;
+  onToggleNoIcon: (checked: boolean) => void;
+  triggerClassName: string;
+  triggerContentClassName?: string;
+  title: string;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      onSelectImage(file);
+      setIsOpen(false);
+    }
+
+    event.target.value = '';
+  };
+
+  return (
+    <div className="pointer-events-auto absolute inset-0 z-20" ref={ref}>
+      <button
+        type="button"
+        title={title}
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsOpen((current) => !current);
+        }}
+        className={triggerClassName}
+      >
+        <div
+          className={
+            triggerContentClassName ??
+            'relative flex h-full w-full items-center justify-center'
+          }
+        >
+          {children ?? (
+            <>
+              {renderElementIconPreview(element, 'h-full w-full object-contain')}
+              {!getModElementActiveIconValue(element) && (
+                <span className="pointer-events-none text-[9px] font-bold uppercase tracking-[0.16em] text-white/75">
+                  No icon
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </button>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {isOpen && (
+        <div className="realm-panel-soft absolute top-full left-1/2 z-40 mt-2 flex w-56 -translate-x-1/2 flex-col gap-3 rounded-2xl border p-3 shadow-2xl">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/15">
+              {renderElementIconPreview(element, 'h-9 w-9 object-contain') ?? (
+                <IoRadioButtonOffOutline
+                  size={24}
+                  className="text-white/45"
+                />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="catalog-title-font text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--catalog-ink)]">
+                Icon
+              </div>
+              <div className="truncate text-xs text-[color:var(--catalog-soft)]">
+                {element.iconSource === 'image'
+                  ? 'Uploaded image'
+                  : element.iconSource === 'emoji'
+                    ? 'Emoji'
+                    : 'No icon'}
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs font-semibold text-[color:var(--catalog-ink)]">
+            <input
+              type="checkbox"
+              checked={element.iconSource === 'none'}
+              onChange={(event) => onToggleNoIcon(event.target.checked)}
+              className="h-4 w-4"
+            />
+            <span>No icon</span>
+          </label>
+
+          {element.iconSource !== 'none' && (
+            <div className="grid grid-cols-2 gap-2">
+              <EmojiDropdown
+                emoji={element.emoji ?? '🙂'}
+                name={element.name}
+                onChange={(emoji) => {
+                  onChangeEmoji(emoji);
+                  setIsOpen(false);
+                }}
+                containerClassName="relative h-full w-full"
+                buttonClassName="realm-button-muted flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold"
+                title={`Choose ${element.name || 'element'} emoji`}
+              >
+                <span className="flex items-center gap-2">
+                  <IoHappyOutline size={15} />
+                  <span>Emoji</span>
+                </span>
+              </EmojiDropdown>
+
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  inputRef.current?.click();
+                }}
+                disabled={isUploading}
+                className="realm-button-muted flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold disabled:cursor-wait disabled:opacity-60"
+              >
+                {isUploading ? (
+                  <IoCloudUploadOutline size={15} />
+                ) : (
+                  <IoImageOutline size={15} />
+                )}
+                <span>{isUploading ? 'Uploading' : 'Upload image'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ElementPreview = ({
   element,
   onChangeEmoji,
+  onSelectImage,
+  onToggleNoIcon,
+  isUploading = false,
   draggable,
 }: {
   element: ModElement;
   onChangeEmoji?: (emoji: string) => void;
+  onSelectImage?: (file: File) => void;
+  onToggleNoIcon?: (checked: boolean) => void;
+  isUploading?: boolean;
   draggable?: boolean;
 }) => {
   const handleDragStart = (e: DragEvent) => {
@@ -227,15 +441,33 @@ export const ElementPreview = ({
       className={`relative flex flex-col items-center justify-end overflow-hidden rounded-xl border-2 ${getModElementClasses(element.bgColorToken, element.frameColorToken)} h-12 w-12 shrink-0 ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
       style={getElementPreviewStyle(element)}
     >
-      {onChangeEmoji ? (
+      {SHOW_CUSTOM_ELEMENT_ICON_EDITOR &&
+      onChangeEmoji &&
+      onSelectImage &&
+      onToggleNoIcon ? (
+        <ElementIconEditor
+          element={element}
+          isUploading={isUploading}
+          onChangeEmoji={onChangeEmoji}
+          onSelectImage={onSelectImage}
+          onToggleNoIcon={onToggleNoIcon}
+          title={`Edit ${element.name || 'element'} icon`}
+          triggerClassName="flex h-full w-full cursor-pointer items-center justify-center bg-transparent outline-none hover:bg-white/10"
+        />
+      ) : onChangeEmoji ? (
         <EmojiDropdown
-          emoji={element.emoji}
+          emoji={element.emoji ?? '🙂'}
           name={element.name}
           onChange={onChangeEmoji}
-        />
+          title={`Choose ${element.name || 'element'} emoji`}
+        >
+          <div className="realm-text-ink flex h-full w-full items-center justify-center pb-0.5 text-[26px] font-black">
+            {renderLegacyEmojiPreview(element)}
+          </div>
+        </EmojiDropdown>
       ) : (
         <div className="realm-text-ink flex flex-1 items-center justify-center pb-0.5 text-[26px] font-black">
-          {element.emoji}
+          {renderElementIconPreview(element)}
         </div>
       )}
       <div className="z-0 flex h-3 w-full items-center justify-center bg-black/25 text-center text-[7px] leading-none font-bold tracking-[0.1em] text-white uppercase">
@@ -780,6 +1012,9 @@ export const CompactElementTile = ({
   onRename,
   onBlurName,
   onChangeEmoji,
+  onSelectImage,
+  onToggleNoIcon,
+  isUploading = false,
   onChangeBgColor,
   onChangeFrameColor,
   scriptingHelpPageUrl,
@@ -794,6 +1029,9 @@ export const CompactElementTile = ({
   onRename: (name: string) => void;
   onBlurName: () => void;
   onChangeEmoji: (emoji: string) => void;
+  onSelectImage: (file: File) => void;
+  onToggleNoIcon: (checked: boolean) => void;
+  isUploading?: boolean;
   onChangeBgColor: (value: string) => void;
   onChangeFrameColor: (value: string) => void;
   scriptingHelpPageUrl: string | null;
@@ -875,22 +1113,51 @@ export const CompactElementTile = ({
           <IoCloseSharp size={10} />
         </button>
 
-        <EmojiDropdown
-          emoji={element.emoji}
-          name={element.name}
-          onChange={onChangeEmoji}
-          title={`Edit ${element.name} icon`}
-          containerClassName="pointer-events-none absolute inset-0 z-20 h-[calc(100%-18px)] w-full"
-          buttonClassName="group/emoji pointer-events-auto absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-[58%] cursor-pointer appearance-none items-center justify-center rounded-xl border border-transparent bg-transparent text-[32px] font-black text-[color:var(--catalog-ink)] outline-none transition-all hover:scale-105 hover:bg-transparent focus-visible:scale-105 focus-visible:bg-transparent active:bg-transparent"
-        >
-          <div className="relative flex h-full w-full items-center justify-center">
-            <span className="pointer-events-none absolute inset-0 rounded-xl border border-transparent transition-all group-focus-within/emoji:border-white group-focus-within/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)] group-hover/emoji:border-white group-hover/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)]" />
-            <span className="leading-none">{element.emoji}</span>
-            <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/70 p-[1px] text-white opacity-0 transition-opacity group-hover/emoji:opacity-100">
-              <IoChevronDownSharp size={8} />
-            </span>
-          </div>
-        </EmojiDropdown>
+        {SHOW_CUSTOM_ELEMENT_ICON_EDITOR ? (
+          <ElementIconEditor
+            element={element}
+            isUploading={isUploading}
+            onChangeEmoji={onChangeEmoji}
+            onSelectImage={onSelectImage}
+            onToggleNoIcon={onToggleNoIcon}
+            title={`Edit ${element.name} icon`}
+            triggerClassName="group/emoji pointer-events-auto absolute top-1/2 left-1/2 z-20 flex h-11 w-11 -translate-x-1/2 -translate-y-[58%] cursor-pointer appearance-none items-center justify-center rounded-xl border border-transparent bg-transparent text-[32px] font-black text-[color:var(--catalog-ink)] outline-none transition-all hover:scale-105 hover:bg-transparent focus-visible:scale-105 focus-visible:bg-transparent active:bg-transparent"
+            triggerContentClassName="relative flex h-full w-full items-center justify-center"
+          >
+            <div className="relative flex h-full w-full items-center justify-center">
+              <span className="absolute inset-0 rounded-xl border border-transparent transition-all group-focus-within/emoji:border-white group-focus-within/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)] group-hover/emoji:border-white group-hover/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)]" />
+              {renderElementIconPreview(
+                element,
+                'max-h-full max-w-full object-contain'
+              )}
+              {!getModElementActiveIconValue(element) && (
+                <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-white/75">
+                  No icon
+                </span>
+              )}
+              <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/70 p-[1px] text-white opacity-0 transition-opacity group-hover/emoji:opacity-100">
+                <IoChevronDownSharp size={8} />
+              </span>
+            </div>
+          </ElementIconEditor>
+        ) : (
+          <EmojiDropdown
+            emoji={element.emoji ?? '🙂'}
+            name={element.name}
+            onChange={onChangeEmoji}
+            title={`Choose ${element.name} emoji`}
+            buttonClassName="group/emoji pointer-events-auto absolute top-1/2 left-1/2 z-20 flex h-11 w-11 -translate-x-1/2 -translate-y-[58%] cursor-pointer appearance-none items-center justify-center rounded-xl border border-transparent bg-transparent text-[32px] font-black text-[color:var(--catalog-ink)] outline-none transition-all hover:scale-105 hover:bg-transparent focus-visible:scale-105 focus-visible:bg-transparent active:bg-transparent"
+            containerClassName="pointer-events-auto absolute inset-0 z-20"
+          >
+            <div className="relative flex h-full w-full items-center justify-center">
+              <span className="absolute inset-0 rounded-xl border border-transparent transition-all group-focus-within/emoji:border-white group-focus-within/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)] group-hover/emoji:border-white group-hover/emoji:shadow-[0_0_0_1px_rgba(255,255,255,0.95)]" />
+              {renderLegacyEmojiPreview(
+                element,
+                'max-h-full max-w-full object-contain'
+              )}
+            </div>
+          </EmojiDropdown>
+        )}
       </div>
       <input
         ref={inputRef}
