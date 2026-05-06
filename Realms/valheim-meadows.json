@@ -1,11 +1,12 @@
 {
+  "id": "mod-jw3tmcv0h08n",
   "title": "Valheim: Meadows",
-  "summary": "Awaken in the Meadows, gather what the land offers, survive the first boar, and raise a first camp from wood and stone.",
-  "intro": "A raven leaves you by an old runestone in the Meadows. Before thoughts of glory or monsters, you need food, tools, and a camp that can survive the night.",
+  "summary": "Welcome to the tenth world",
+  "coverImageUrl": "https://i.redd.it/a0ky5981rlyg1.png",
+  "intro": "A raven leaves you by an old runestone in the Meadows. Before thoughts of glory or monsters, you need to at least  survive the night.",
   "startingElementIds": [
     "viking",
-    "hugin",
-    "runestone",
+    "sacrificial-stone",
     "health"
   ],
   "counters": [
@@ -32,6 +33,12 @@
       "initial": 0,
       "max": 999,
       "min": 0
+    },
+    {
+      "elementId": "location",
+      "initial": 0,
+      "max": 99,
+      "min": 0
     }
   ],
   "showPalette": false,
@@ -40,96 +47,84 @@
     {
       "id": "viking",
       "name": "Viking",
-      "emoji": "🛡️",
+      "iconSource": "emoji",
+      "emoji": "🧔",
       "bgColorToken": "stone",
       "frameColorToken": "sun",
-      "message": "A newly fallen warrior with little to his name but stubbornness.",
+      "message": "",
       "effect": "none",
       "nonConsumable": true
     },
     {
       "id": "hugin",
       "name": "Hugin",
-      "emoji": "🐦",
+      "iconSource": "emoji",
+      "emoji": "🐦‍⬛",
       "bgColorToken": "shadow",
       "frameColorToken": "sun",
-      "message": "Odin's raven circles close enough to judge every mistake.",
-      "effect": "none",
-      "nonConsumable": false
-    },
-    {
-      "id": "runestone",
-      "name": "Runestone",
-      "emoji": "🪨",
-      "bgColorToken": "stone",
-      "frameColorToken": "shadow",
-      "message": "An old stone covered in weathered runes greets the dead who arrive in Valheim.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "meadow",
       "name": "Meadow",
+      "iconSource": "emoji",
       "emoji": "🌿",
       "bgColorToken": "forest",
       "frameColorToken": "mint",
-      "message": "The first safe-looking stretch of Valheim is never as safe as it pretends to be.",
-      "effect": "none",
-      "nonConsumable": false
-    },
-    {
-      "id": "forest",
-      "name": "Forest",
-      "emoji": "🌲",
-      "bgColorToken": "forest",
-      "frameColorToken": "mint",
-      "message": "Beech trees, berry bushes, boars, and deer hide among the trunks.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "stream",
       "name": "Stream",
-      "emoji": "💧",
+      "iconSource": "emoji",
+      "emoji": "💦",
       "bgColorToken": "ocean",
       "frameColorToken": "ice",
-      "message": "Cold water cuts through the meadow and leaves useful stone in its banks.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "glade",
       "name": "Glade",
+      "iconSource": "emoji",
       "emoji": "🌤️",
       "bgColorToken": "sun",
       "frameColorToken": "forest",
-      "message": "Flat ground and open sky make this the first place worth calling yours.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "my-camp",
       "name": "My Camp",
+      "iconSource": "emoji",
       "emoji": "🏕️",
       "bgColorToken": "stone",
       "frameColorToken": "sun",
-      "message": "A rough camp, but a real beginning.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "sacrificial-stone",
-      "name": "Sacrificial Stone",
-      "emoji": "🪵",
+      "name": "Rune Stone",
+      "iconSource": "emoji",
+      "emoji": "🔅",
       "bgColorToken": "stone",
       "frameColorToken": "ember",
-      "message": "An old altar waits in silence for a trial you are not yet ready to answer.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "back",
       "name": "Back",
+      "iconSource": "emoji",
       "emoji": "↩️",
       "bgColorToken": "sand",
       "frameColorToken": "stone",
@@ -140,87 +135,85 @@
     {
       "id": "branch",
       "name": "Branch",
+      "iconSource": "emoji",
       "emoji": "🪵",
       "bgColorToken": "forest",
       "frameColorToken": "mint",
-      "message": "Dry enough to use, light enough to carry.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "beech",
       "name": "Beech",
+      "iconSource": "emoji",
       "emoji": "🌳",
       "bgColorToken": "forest",
       "frameColorToken": "mint",
-      "message": "A proper tree. You need a proper tool for it.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "berry-bush",
       "name": "Berry Bush",
+      "iconSource": "emoji",
       "emoji": "🫐",
       "bgColorToken": "rose",
       "frameColorToken": "sun",
-      "message": "A few berries can keep your legs under you a little longer.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "deer",
       "name": "Deer",
+      "iconSource": "emoji",
       "emoji": "🦌",
       "bgColorToken": "forest",
       "frameColorToken": "sun",
-      "message": "Beautiful, quick, and absolutely out of reach without a bow.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "boar",
       "name": "Boar",
+      "iconSource": "emoji",
       "emoji": "🐗",
       "bgColorToken": "ember",
       "frameColorToken": "stone",
-      "message": "A low, angry brute that can gut the careless.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "stone-pile",
       "name": "Stone Pile",
+      "iconSource": "emoji",
       "emoji": "🪨",
       "bgColorToken": "stone",
       "frameColorToken": "shadow",
-      "message": "Loose stone lies among the wet bank and roots.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "flint-deposit",
       "name": "Flint Deposit",
+      "iconSource": "emoji",
       "emoji": "🔹",
       "bgColorToken": "ice",
       "frameColorToken": "ocean",
-      "message": "Sharp pale stones glint where the stream runs low.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "workbench-site",
       "name": "Workbench Site",
-      "emoji": "🪚",
-      "bgColorToken": "sand",
-      "frameColorToken": "stone",
-      "message": "The glade is wide enough for a first workbench if you can spare the materials.",
-      "effect": "none",
-      "nonConsumable": false
-    },
-    {
-      "id": "build",
-      "name": "Build",
-      "emoji": "🪵",
+      "iconSource": "emoji",
+      "emoji": "⚒️",
       "bgColorToken": "sand",
       "frameColorToken": "stone",
       "message": "",
@@ -228,11 +221,12 @@
       "nonConsumable": false
     },
     {
-      "id": "craft",
-      "name": "Craft",
-      "emoji": "⚒️",
-      "bgColorToken": "stone",
-      "frameColorToken": "sun",
+      "id": "build",
+      "name": "Build",
+      "iconSource": "emoji",
+      "emoji": "🪵",
+      "bgColorToken": "sand",
+      "frameColorToken": "stone",
       "message": "",
       "effect": "none",
       "nonConsumable": false
@@ -240,6 +234,7 @@
     {
       "id": "craft-club",
       "name": "Craft Club",
+      "iconSource": "emoji",
       "emoji": "🔨",
       "bgColorToken": "sand",
       "frameColorToken": "ember",
@@ -250,6 +245,7 @@
     {
       "id": "craft-stone-axe",
       "name": "Craft Stone Axe",
+      "iconSource": "emoji",
       "emoji": "🪓",
       "bgColorToken": "stone",
       "frameColorToken": "sun",
@@ -260,6 +256,7 @@
     {
       "id": "build-house",
       "name": "Build House",
+      "iconSource": "emoji",
       "emoji": "🏠",
       "bgColorToken": "stone",
       "frameColorToken": "forest",
@@ -270,6 +267,7 @@
     {
       "id": "build-palisade",
       "name": "Build Palisade",
+      "iconSource": "emoji",
       "emoji": "🪵",
       "bgColorToken": "sand",
       "frameColorToken": "ember",
@@ -280,6 +278,7 @@
     {
       "id": "build-campfire",
       "name": "Build Campfire",
+      "iconSource": "emoji",
       "emoji": "🔥",
       "bgColorToken": "ember",
       "frameColorToken": "sun",
@@ -290,6 +289,7 @@
     {
       "id": "build-bed",
       "name": "Build Bed",
+      "iconSource": "emoji",
       "emoji": "🛏️",
       "bgColorToken": "ice",
       "frameColorToken": "stone",
@@ -300,116 +300,117 @@
     {
       "id": "club",
       "name": "Club",
+      "iconSource": "emoji",
       "emoji": "🔨",
       "bgColorToken": "sand",
       "frameColorToken": "ember",
-      "message": "Crude, heavy, and enough to stop charging a boar.",
+      "message": "",
       "effect": "none",
       "nonConsumable": true
     },
     {
       "id": "stone-axe",
       "name": "Stone Axe",
+      "iconSource": "emoji",
       "emoji": "🪓",
       "bgColorToken": "stone",
       "frameColorToken": "sun",
-      "message": "A rough axe, but the first real answer to Valheim's trees.",
-      "effect": "none",
-      "nonConsumable": true
-    },
-    {
-      "id": "hammer",
-      "name": "Hammer",
-      "emoji": "🔨",
-      "bgColorToken": "stone",
-      "frameColorToken": "sun",
-      "message": "A builder's tool. Suddenly the glade feels possible.",
+      "message": "",
       "effect": "none",
       "nonConsumable": true
     },
     {
       "id": "workbench",
       "name": "Workbench",
-      "emoji": "🪚",
+      "iconSource": "emoji",
+      "emoji": "⚒️",
       "bgColorToken": "sand",
       "frameColorToken": "stone",
-      "message": "The first bench where thought becomes craft.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "house",
       "name": "House",
+      "iconSource": "emoji",
       "emoji": "🏠",
       "bgColorToken": "stone",
       "frameColorToken": "forest",
-      "message": "It is only a small house, but the walls make the night feel farther away.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "palisade",
       "name": "Palisade",
+      "iconSource": "emoji",
       "emoji": "🪵",
       "bgColorToken": "sand",
       "frameColorToken": "ember",
-      "message": "A rough ring of sharpened wood turns open ground into defended ground.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "campfire",
       "name": "Campfire",
+      "iconSource": "emoji",
       "emoji": "🔥",
       "bgColorToken": "ember",
       "frameColorToken": "sun",
-      "message": "Warmth, smoke, and the promise of cooked food.",
+      "message": "",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "bed",
       "name": "Bed",
+      "iconSource": "emoji",
       "emoji": "🛏️",
       "bgColorToken": "ice",
       "frameColorToken": "stone",
-      "message": "A place to wake up instead of collapsing where you stand.",
+      "message": ".",
       "effect": "none",
       "nonConsumable": false
     },
     {
       "id": "berries",
       "name": "Berries",
+      "iconSource": "emoji",
       "emoji": "🫐",
       "bgColorToken": "rose",
       "frameColorToken": "sun",
-      "message": "A handful of berries. Not much, but enough to steady the body.",
+      "message": "",
       "effect": "none",
       "nonConsumable": true
     },
     {
       "id": "raw-meat",
       "name": "Raw Meat",
+      "iconSource": "emoji",
       "emoji": "🥩",
       "bgColorToken": "ember",
       "frameColorToken": "rose",
-      "message": "Fresh boar meat. Better cooked than swallowed raw.",
+      "message": "",
       "effect": "none",
       "nonConsumable": true
     },
     {
       "id": "cooked-meat",
       "name": "Cooked Meat",
+      "iconSource": "emoji",
       "emoji": "🍖",
       "bgColorToken": "sun",
       "frameColorToken": "ember",
-      "message": "Properly cooked food finally feels like strength instead of luck.",
+      "message": "",
       "effect": "none",
       "nonConsumable": true
     },
     {
       "id": "health",
       "name": "Health",
+      "iconSource": "emoji",
       "emoji": "❤️",
       "bgColorToken": "rose",
       "frameColorToken": "ember",
@@ -420,6 +421,7 @@
     {
       "id": "wood-counter",
       "name": "Wood",
+      "iconSource": "emoji",
       "emoji": "🪵",
       "bgColorToken": "sand",
       "frameColorToken": "stone",
@@ -430,6 +432,7 @@
     {
       "id": "stone-counter",
       "name": "Stone",
+      "iconSource": "emoji",
       "emoji": "🪨",
       "bgColorToken": "stone",
       "frameColorToken": "shadow",
@@ -440,8 +443,130 @@
     {
       "id": "flint-counter",
       "name": "Flint",
+      "iconSource": "emoji",
       "emoji": "🔹",
       "bgColorToken": "ice",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "forest-edge",
+      "name": "Forest edge",
+      "iconSource": "emoji",
+      "emoji": "🌳",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "greydwarf",
+      "name": "Greydwarf",
+      "iconSource": "emoji",
+      "emoji": "👹",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "spear",
+      "name": "Spear",
+      "iconSource": "emoji",
+      "emoji": "🦯",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "craft-spear",
+      "name": "Craft Spear",
+      "iconSource": "emoji",
+      "emoji": "🦯",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "deep-woods",
+      "name": "Deep Woods",
+      "iconSource": "emoji",
+      "emoji": "🌲",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "forest-path",
+      "name": "Forest path",
+      "iconSource": "emoji",
+      "emoji": "🪾",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "clearing",
+      "name": "Clearing",
+      "iconSource": "emoji",
+      "emoji": "🟩",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "forest-river",
+      "name": "Forest River",
+      "iconSource": "emoji",
+      "emoji": "🌳",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "location",
+      "name": "Location",
+      "iconSource": "emoji",
+      "emoji": "L",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "birch",
+      "name": "Birch",
+      "iconSource": "emoji",
+      "emoji": "B",
+      "bgColorToken": "ocean",
+      "frameColorToken": "ocean",
+      "message": "",
+      "effect": "none",
+      "nonConsumable": false
+    },
+    {
+      "id": "stone-circle",
+      "name": "Stone Circle",
+      "iconSource": "emoji",
+      "emoji": "🪨",
+      "bgColorToken": "ocean",
       "frameColorToken": "ocean",
       "message": "",
       "effect": "none",
@@ -451,57 +576,75 @@
   "reactions": [
     {
       "leftId": "viking",
-      "rightId": "hugin",
+      "rightId": "sacrificial-stone",
       "outputIds": [],
-      "script": "if (discovered(Meadow)) message \"Hugin circles overhead, waiting to see whether you can make a life before you chase a legend.\"\nif (discovered(Meadow)) stop\npopup \"Hugin croaks from the stone: first survive. Gather wood and stone, raise a camp, and do not die foolishly in the grass.\", Hugin"
+      "script": "remove_all\nset Location = 1\nadd Hugin\nif (discovered(Meadow)):\n    popup \"These stones mark your arrival in the Meadows. Here, your journey begins\", Rune Stone\n    add Meadow, Back\n    stop"
     },
     {
       "leftId": "viking",
-      "rightId": "runestone",
+      "rightId": "hugin",
       "outputIds": [],
-      "script": "if (not_discovered(Meadow)) popup \"The runestone marks your arrival in the Meadows. For now, all roads begin with food, wood, and somewhere safe to sleep.\", Runestone\nif (not_discovered(Meadow)) add Meadow"
+      "script": "if (not_discovered(Meadow)):\n    popup \"Welcome to the tenth world, warrior. I am Hugin, sent here to guide you in your travels.\", Hugin\n    add Meadow\n    stop\nif (discovered(Workbench Site) and not_discovered(Workbench)):\n    popup \"Collect at least 5 wood to start building\", Hugin\n    stop"
     },
     {
       "leftId": "viking",
       "rightId": "meadow",
       "outputIds": [],
-      "script": "remove_all\nadd Meadow, Forest, Stream, Sacrificial Stone, Back\nif (discovered(My Camp)) add My Camp\nif (not_discovered(My Camp)) add Glade"
+      "script": "remove_all\nset Location = 2\nadd Forest edge, Stream, Rune Stone\nif (discovered(My Camp)) add My Camp\nif (not_discovered(My Camp)) add Glade"
     },
     {
       "leftId": "viking",
       "rightId": "back",
       "outputIds": [],
-      "script": "remove_all\nadd Meadow, Forest, Stream, Sacrificial Stone, Back\nif (discovered(My Camp)) add My Camp\nif (not_discovered(My Camp)) add Glade"
+      "script": "remove_all\nset Location = 2\nadd Forest edge, Stream, Rune Stone\nif (discovered(My Camp)) add My Camp\nif (not_discovered(My Camp)) add Glade"
     },
     {
       "leftId": "viking",
-      "rightId": "forest",
+      "rightId": "forest-edge",
       "outputIds": [],
-      "script": "remove_all\nadd Forest, Branch, Beech, Berry Bush, Deer, Boar, Back"
+      "script": "remove_all\nset Location = 3\nadd Branch, Beech, Deer, Deep Woods, Back"
+    },
+    {
+      "leftId": "viking",
+      "rightId": "deep-woods",
+      "outputIds": [],
+      "script": "remove_all\nset Location = 4\nadd Branch, Boar, Beech, Forest path, Clearing, Forest edge"
+    },
+    {
+      "leftId": "viking",
+      "rightId": "forest-path",
+      "outputIds": [],
+      "script": "remove_all\nset Location = 5\nadd Branch, Branch, Birch, Beech, Forest edge, Stone"
+    },
+    {
+      "leftId": "viking",
+      "rightId": "clearing",
+      "outputIds": [],
+      "script": "remove_all\nset Location = 6\nadd Berry Bush, Stone Circle, Berry Bush, Forest River, Deer"
+    },
+    {
+      "leftId": "viking",
+      "rightId": "forest-river",
+      "outputIds": [],
+      "script": "remove_all\nset Location = 7\nadd Flint Deposit"
     },
     {
       "leftId": "viking",
       "rightId": "stream",
       "outputIds": [],
-      "script": "remove_all\nadd Stream, Stone Pile, Flint Deposit, Back"
+      "script": "remove_all\nset Location = 8\nadd Stone Pile, Flint Deposit, Back"
     },
     {
       "leftId": "viking",
       "rightId": "glade",
       "outputIds": [],
-      "script": "remove_all\nadd Glade, Back\npopup \"This glade could become your first camp, but not before you drag enough wood and stone here to work with.\", Glade\nif (count(Wood) >= 6 and count(Stone) >= 2 and not_discovered(My Camp)) add Workbench Site"
+      "script": "remove_all\nset Location = 9\nadd Deer, Back\npopup \"You step out into a sun-drenched clearing. It's the perfect spot for your new home.\", Glade\nif (not_discovered(Workbench)) add Workbench Site"
     },
     {
       "leftId": "viking",
       "rightId": "my-camp",
       "outputIds": [],
-      "script": "remove_all\nadd My Camp, Build, Craft, Back, Workbench\nif (discovered(House)) add House\nif (discovered(Palisade)) add Palisade\nif (discovered(Campfire)) add Campfire\nif (discovered(Bed)) add Bed"
-    },
-    {
-      "leftId": "viking",
-      "rightId": "sacrificial-stone",
-      "outputIds": [],
-      "script": "popup \"The old stone waits for a sacrifice worthy of a forsaken. That story is not yours yet.\", Sacrificial Stone"
+      "script": "remove_all\nset Location = 10\nadd My Camp, Build, Back, Workbench\nif (discovered(House)) add House\nif (discovered(Palisade)) add Palisade\nif (discovered(Campfire)) add Campfire\nif (discovered(Bed)) add Bed"
     },
     {
       "leftId": "viking",
@@ -513,7 +656,7 @@
       "leftId": "viking",
       "rightId": "beech",
       "outputIds": [],
-      "script": "if (not_on_table(Stone Axe)) message \"The beech does not care about your bare hands. You need an axe.\"\nif (not_on_table(Stone Axe)) stop\nif (count(Wood) == 0) add Wood\nset Wood += 5\npopup \"With the stone axe biting deep, the beech finally gives you timber worth building with.\", Stone Axe"
+      "script": "if (not_on_table(Stone Axe)):\n    message \"The beech does not care about your bare hands. You need an axe.\"\n    stop\nif (count(Wood) == 0) add Wood\nset Wood += 5\npopup \"When the tree fell, you felt someone standing behind you.\", Stone Axe\nadd Greydwarf\nremove Forest path\nremove Forest edge\nremove Deep Woods\nremove Clearing\nremove Forest River\nremove Back"
     },
     {
       "leftId": "viking",
@@ -531,7 +674,13 @@
       "leftId": "viking",
       "rightId": "boar",
       "outputIds": [],
-      "script": "if (not_on_table(Club) and not_on_table(Stone Axe) and not_on_table(Hammer)) set Health = 1\nif (not_on_table(Club) and not_on_table(Stone Axe) and not_on_table(Hammer)) popup \"You rush the boar unarmed, get mauled, and flee in shame with your life hanging by a thread.\", Boar\nif (not_on_table(Club) and not_on_table(Stone Axe) and not_on_table(Hammer)) stop\nset Health -= 6\nadd Raw Meat\nremove Boar\npopup \"The boar nearly opens you from hip to ribs, but you kill it and drag off a strip of raw meat.\", Raw Meat"
+      "script": "if (not_on_table(Club) and not_on_table(Stone Axe) and not_on_table(Spear)):\n    set Health = 1\n    popup \"You rush the boar unarmed, get mauled, and flee in shame with your life hanging by a thread.\", Boar\n    stop\nset Health -= 3\nif (not_on_table(Spear)) set Health -= 3\nadd Raw Meat\nremove Boar\npopup \"The boar nearly opens you from hip to ribs, but you kill it and drag off a strip of raw meat.\", Raw Meat"
+    },
+    {
+      "leftId": "viking",
+      "rightId": "greydwarf",
+      "outputIds": [],
+      "script": "if (not_on_table(Club) and not_on_table(Stone Axe) and not_on_table(Spear)):\n    set Health = 1\n    popup \"You defeat the creature, but the victory comes at a terrible price.\", Greydwarf\n    stop\nset Health -= 3\nif (not_on_table(Spear)) set Health -= 3\nset Wood += 1\nset Stone += 1\nremove Greydwarf\nif (count(Location) == 3) add Deep Woods, Back\nif (count(Location) == 4) add Forest path, Clearing, Forest edge\nif (count(Location) == 5) add Forest edge\nif (count(Location) == 6) add Forest River, Deer\nif (count(Location) == 7) add Clearing\npopup \"The greydwarf crumples into splinters and rot, and the woods open around you again.\", Greydwarf"
     },
     {
       "leftId": "viking",
@@ -549,31 +698,37 @@
       "leftId": "viking",
       "rightId": "workbench-site",
       "outputIds": [],
-      "script": "if (count(Wood) < 6) popup \"You still need more wood before the glade becomes a camp.\", Wood\nif (count(Wood) < 6) stop\nif (count(Stone) < 2) popup \"You still need more stone before the workbench can stand.\", Stone\nif (count(Stone) < 2) stop\nset Wood -= 6\nset Stone -= 2\npopup \"Boards, stone, and effort finally turn the glade into a place you can build from.\", Workbench\nadd My Camp, Workbench, Hammer\nremove Workbench Site\nremove Glade"
+      "script": "if (count(Wood) < 5):\n    popup \"You still need more wood before the glade becomes a camp.\", Wood\n    stop\nset Wood -= 5\nset Location = 10\npopup \"The first stone has been laid! Okay, it's not a stone yet, but the workbench opens up enormous possibilities!\", Workbench\nadd My Camp, Workbench\nremove Workbench Site\nremove Glade"
     },
     {
       "leftId": "viking",
       "rightId": "build",
       "outputIds": [],
-      "script": "remove Build\nremove Craft\nadd Back\nif (not_discovered(House)) add Build House\nif (not_discovered(Palisade)) add Build Palisade\nif (not_discovered(Campfire)) add Build Campfire\nif (not_discovered(Bed)) add Build Bed"
+      "script": "remove Build\nadd Back\nif (not_discovered(House)) add Build House\nif (not_discovered(Palisade)) add Build Palisade\nif (not_discovered(Campfire)) add Build Campfire\nif (not_discovered(Bed)) add Build Bed"
     },
     {
       "leftId": "viking",
-      "rightId": "craft",
+      "rightId": "workbench",
       "outputIds": [],
-      "script": "remove Build\nremove Craft\nadd Back\nif (not_discovered(Club)) add Craft Club\nif (not_discovered(Stone Axe)) add Craft Stone Axe"
+      "script": "add Back\nif (not_discovered(Club)) add Craft Club\nif (not_discovered(Stone Axe)) add Craft Stone Axe\nif (not_discovered(Spear)) add Craft Spear"
     },
     {
       "leftId": "viking",
       "rightId": "craft-club",
       "outputIds": [],
-      "script": "if (count(Wood) < 2) popup \"A club is simple, but you still need more wood.\", Wood\nif (count(Wood) < 2) stop\nset Wood -= 2\npopup \"You carve and balance a crude club. It will do.\", Club\nadd Club\nremove Craft Club"
+      "script": "if (count(Wood) < 2):\n    message \"A club is simple, but you still need more wood.\"\n    stop\nset Wood -= 2\npopup \"You carve and balance a crude club. It will do.\", Club\nadd Club"
     },
     {
       "leftId": "viking",
       "rightId": "craft-stone-axe",
       "outputIds": [],
-      "script": "if (count(Wood) < 2) popup \"You need more wood for the haft.\", Wood\nif (count(Wood) < 2) stop\nif (count(Stone) < 1) popup \"You still need a proper stone head for the axe.\", Stone\nif (count(Stone) < 1) stop\nset Wood -= 2\nset Stone -= 1\npopup \"Wood and stone become the first real tool Valheim respects from you.\", Stone Axe\nadd Stone Axe\nremove Craft Stone Axe"
+      "script": "if (count(Wood) < 1):\n    message \"You need more wood for the haft.\"\n    stop\nif (count(Stone) < 2):\n    message \"You need a proper stone head for the axe, and you need another one to sharpen it.\"\n    stop\nset Wood -= 1\nset Stone -= 2\npopup \"Wood and stone become the first real tool Valheim respects from you.\", Stone Axe\nadd Stone Axe"
+    },
+    {
+      "leftId": "viking",
+      "rightId": "craft-spear",
+      "outputIds": [],
+      "script": "if (count(Wood) < 2):\n    message \"You need more wood for the haft.\"\n    stop\nif (count(Flint) < 2):\n    message \"You need a proper stone head for the spear, and you need another one to sharpen it.\"\n    stop\nset Wood -= 2\nset Flint -= 2\npopup \"Wood and stone become the first real tool Valheim respects from you.\", Stone Axe\nadd Spear"
     },
     {
       "leftId": "viking",
@@ -585,7 +740,7 @@
       "leftId": "viking",
       "rightId": "build-palisade",
       "outputIds": [],
-      "script": "if (count(Wood) < 6) popup \"You need more wood before the camp can be defended properly.\", Wood\nif (count(Wood) < 6) stop\nset Wood -= 6\npopup \"You drive a ring of stakes into the earth and the camp suddenly feels less exposed.\", Palisade\nadd Palisade\nremove Build Palisade"
+      "script": "if (count(Wood) < 42) popup \"You need more wood before the camp can be defended properly.\", Wood\nif (count(Wood) < 42) stop\nset Wood -= 42\npopup \"You drive a ring of stakes into the earth and the camp suddenly feels less exposed.\", Palisade\nadd Palisade\nremove Build Palisade"
     },
     {
       "leftId": "viking",
@@ -628,8 +783,114 @@
     {
       "mode": "crossing",
       "condition": "count(Health) <= 0",
-      "script": "popup \"You have been slain. Your belongings scatter, your food is lost, and the Meadows greet you again with cold grass and a harder lesson.\", Viking\nset Health = 5\nremove_all\nremove_all Berries\nremove_all Raw Meat\nremove_all Cooked Meat\nadd Meadow\nstop-reaction"
+      "script": "popup \"You have been slain. Your belongings scatter, your food is lost, and the Meadows greet you again with cold grass and a harder lesson.\", Viking\nset Health = 5\nset Location = 2\nremove_all\nremove_all Berries\nremove_all Raw Meat\nremove_all Cooked Meat\nadd Meadow\nstop-reaction"
     }
-  ]
+  ],
+  "reactionComments": {
+    "byReaction": [
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      },
+      {
+        "leadingComments": []
+      }
+    ],
+    "trailingComments": []
+  }
 }
-

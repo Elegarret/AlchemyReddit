@@ -1,0 +1,4 @@
+interface:
+  display_name: "Realm Creation"
+  short_description: "Author story-first Reddit Alchemy realms"
+  default_prompt: "Use $realm-creation to design or revise a Reddit Alchemy realm."
