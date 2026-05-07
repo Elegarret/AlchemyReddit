@@ -24,11 +24,46 @@ describe('getReactionScriptAutocomplete', () => {
       'remove',
       'remove_all',
       'set',
+      'call',
       'message',
       'popup',
       'win',
       'lose',
       'stop',
+    ]);
+  });
+
+  it('suggests random, counters, and names after remove commas', () => {
+    const randomValue = 'if (ra';
+    const randomResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: randomValue.length,
+      elementNames,
+      value: randomValue,
+    });
+    const counterValue = 'if (he';
+    const counterResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: counterValue.length,
+      elementNames,
+      value: counterValue,
+    });
+    const removeValue = 'remove Dust, Ba';
+    const removeResult = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: removeValue.length,
+      elementNames,
+      value: removeValue,
+    });
+
+    expect(randomResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'random',
+    ]);
+    expect(counterResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'health',
+    ]);
+    expect(removeResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'Bandage',
     ]);
   });
 
@@ -45,6 +80,20 @@ describe('getReactionScriptAutocomplete', () => {
       'not_on_table',
       'not_discovered',
     ]);
+  });
+
+  it('does not suggest count in reaction if expressions', () => {
+    const value = 'if (co';
+    const result = getReactionScriptAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).not.toContain(
+      'count'
+    );
   });
 
   it('suggests and after a complete condition', () => {
@@ -272,6 +321,7 @@ describe('getReactionScriptAutocomplete', () => {
       'remove',
       'remove_all',
       'set',
+      'call',
       'message',
       'popup',
       'win',
@@ -523,6 +573,20 @@ describe('getReactionTextAutocomplete', () => {
     ]);
   });
 
+  it('suggests function blocks in reaction text mode', () => {
+    const value = 'fu';
+    const result = getReactionTextAutocomplete({
+      counterNames,
+      cursor: value.length,
+      elementNames,
+      value,
+    });
+
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toEqual([
+      'function',
+    ]);
+  });
+
   it('suggests event modes only after the event keyword', () => {
     const value = 'event o';
     const result = getReactionTextAutocomplete({
@@ -538,9 +602,9 @@ describe('getReactionTextAutocomplete', () => {
     expect(result.suggestions[0]?.text).toBe('once: ');
   });
 
-  it('suggests event condition helpers after event headers', () => {
-    const bareEvent = 'event: c';
-    const modeEvent = 'event once: c';
+  it('suggests counter expressions after event headers', () => {
+    const bareEvent = 'event: h';
+    const modeEvent = 'event once: m';
 
     const bareResult = getReactionTextAutocomplete({
       counterNames,
@@ -556,10 +620,10 @@ describe('getReactionTextAutocomplete', () => {
     });
 
     expect(bareResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
-      'count',
+      'health',
     ]);
     expect(modeResult.suggestions.map((suggestion) => suggestion.label)).toEqual([
-      'count',
+      'money',
     ]);
   });
 });

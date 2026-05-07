@@ -233,6 +233,46 @@ describe('ModSplash', () => {
     expect(document.querySelector('[title="Users completed: 6"]')).toBeTruthy();
   });
 
+  it('shows the listing rating instead of the raw upvote count', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    Object.assign(globalThis, { __BUILD_NUMBER__: 'test-build' });
+    initGetQueryMock.mockResolvedValue({
+      activeModListing: {
+        bestScore: 4.8,
+        featuredAt: null,
+        ownerUsername: 'realm-author',
+        playerCount: 17,
+        reactionCount: 220,
+        upvotes: 99,
+      },
+      activeRuleset: {
+        kind: 'mod',
+        ownerUsername: 'realm-author',
+        publishedAt: '2026-03-01T00:00:00.000Z',
+        publishedHash: 'hash-1',
+        sourceModId: 'realm-1',
+        storageScope: 'mod:realm-1:hash-1',
+        summary: 'Realm summary',
+        title: 'Rated Realm',
+      },
+      isModerator: false,
+      redditDiscovered: [],
+      rulesetUnavailableReason: null,
+      username: 'realm-author',
+    });
+
+    await import('./mod-splash');
+    await waitFor(
+      () => document.body.textContent?.includes('Rated Realm') ?? false
+    );
+
+    const rating = document.querySelector(
+      `[title="Mod's rating based on Reddit net score and player's count"]`
+    );
+    expect(rating?.textContent).toBe('5');
+    expect(document.querySelector('[title="Net vote score: 99"]')).toBeNull();
+  });
+
   it('restores the cached realm view before the fresh load completes', async () => {
     document.body.innerHTML = '<div id="root"></div>';
     Object.assign(globalThis, { __BUILD_NUMBER__: 'test-build' });
@@ -251,6 +291,7 @@ describe('ModSplash', () => {
           title: 'Cached Realm',
         },
         modListing: {
+          bestScore: 3.9,
           completionCount: 6,
           featuredAt: '2026-04-01T00:00:00.000Z',
           ownerUsername: 'realm-author',
@@ -276,7 +317,11 @@ describe('ModSplash', () => {
     expect(document.querySelector('.realm-splash-cover-art')).toBeTruthy();
     expect(document.body.textContent).toContain('mega');
     expect(document.body.textContent).toContain('Editorial choice');
-    expect(document.querySelector('[title="Net vote score: 9"]')).toBeTruthy();
+    expect(
+      document.querySelector(
+        `[title="Mod's rating based on Reddit net score and player's count"]`
+      )?.textContent
+    ).toBe('4');
     expect(document.querySelector('[title="Editorial choice"]')).toBeTruthy();
     expect(document.querySelector('[title="Users played: 17"]')).toBeTruthy();
     expect(document.querySelector('[title="Users completed: 6"]')).toBeNull();

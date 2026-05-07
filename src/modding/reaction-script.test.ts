@@ -26,6 +26,11 @@ const parseOrThrow = (script: string) => {
   return parsed.ast;
 };
 
+const literal = (value: number) => ({
+  kind: 'literal',
+  value,
+});
+
 describe('parseReactionScript', () => {
   it('parses canonical actions and bare add shorthand', () => {
     const parsed = parseReactionScript(
@@ -68,7 +73,7 @@ describe('parseReactionScript', () => {
           counterName: 'money',
           kind: 'set',
           operator: '+=',
-          value: 1,
+          value: literal(1),
         },
         conditions: [],
         line: 3,
@@ -78,7 +83,7 @@ describe('parseReactionScript', () => {
           counterName: 'money',
           kind: 'set',
           operator: '-=',
-          value: 1,
+          value: literal(1),
         },
         conditions: [],
         line: 4,
@@ -88,13 +93,13 @@ describe('parseReactionScript', () => {
           counterName: 'health',
           kind: 'set',
           operator: '=',
-          value: 10,
+          value: literal(10),
         },
         conditions: [],
         line: 5,
       },
       {
-        action: { elementRef: 'flashlight', kind: 'remove' },
+        action: { elementRefs: ['flashlight'], kind: 'remove' },
         conditions: [],
         line: 6,
       },
@@ -149,6 +154,71 @@ describe('parseReactionScript', () => {
     ]);
   });
 
+  it('parses compact counter decrement syntax without folding the operator into the name', () => {
+    const parsed = parseReactionScript('set money-=1');
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    expect(parsed.ast.statements[0]?.action).toEqual({
+      counterName: 'money',
+      kind: 'set',
+      operator: '-=',
+      value: literal(1),
+    });
+  });
+
+  it('parses calls, counter expressions, random expressions, and multi-remove', () => {
+    const parsed = parseReactionScript(
+      [
+        'call Heal',
+        'set Score += Luck',
+        'set Luck += random(-5,5)',
+        'if (random(100) < 33) remove dust, key',
+      ].join('\n')
+    );
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    expect(parsed.ast.statements.map((statement) => statement.action)).toEqual([
+      { functionName: 'Heal', kind: 'call' },
+      {
+        counterName: 'Score',
+        kind: 'set',
+        operator: '+=',
+        value: { counterName: 'Luck', kind: 'counter' },
+      },
+      {
+        counterName: 'Luck',
+        kind: 'set',
+        operator: '+=',
+        value: { kind: 'random', max: 5, min: -5 },
+      },
+      { elementRefs: ['dust', 'key'], kind: 'remove' },
+    ]);
+    expect(parsed.ast.statements[3]?.conditions).toEqual([
+      {
+        kind: 'value_compare',
+        left: { kind: 'random', max: 99, min: 0 },
+        operator: '<',
+        right: literal(33),
+      },
+    ]);
+    expect(formatReactionScript(parsed.ast)).toBe(
+      [
+        'call Heal',
+        'set Score += Luck',
+        'set Luck += random(-5, 5)',
+        'if (random(100) < 33) remove dust, key',
+      ].join('\n')
+    );
+  });
+
   it('parses if lines with not_discovered and count conditions', () => {
     const parsed = parseReactionScript(
       'if (on_table(flashlight) and not_discovered(jacket) and count(health) < 10) add bandage'
@@ -177,9 +247,7 @@ describe('parseReactionScript', () => {
 
   it('accepts whitespace-tolerant if syntax', () => {
     const compact = parseReactionScript('if(count(health)<10)add bandage');
-    const spaced = parseReactionScript(
-      'if ( count(health) < 10 ) add bandage'
-    );
+    const spaced = parseReactionScript('if ( count(health) < 10 ) add bandage');
 
     expect(compact.ok).toBe(true);
     expect(spaced.ok).toBe(true);
@@ -219,7 +287,7 @@ describe('parseReactionScript', () => {
           counterName: 'Noise',
           kind: 'set',
           operator: '+=',
-          value: 1,
+          value: literal(1),
         },
         conditionGroupId: 1,
         conditions: [
@@ -270,7 +338,7 @@ describe('parseReactionScript', () => {
         counterName: 'Noise',
         kind: 'set',
         operator: '+=',
-        value: 1,
+        value: literal(1),
       },
       { elementRefs: ['bandage'], kind: 'add' },
     ]);
@@ -418,13 +486,9 @@ describe('parseReactionScript', () => {
 
     expect(parsed.errors).toEqual([
       {
-        line: 1,
-        message: 'Unsupported condition: health < 10',
-      },
-      {
         line: 2,
         message:
-          'Use set counterName = number, set counterName += number, or set counterName -= number.',
+          'Use set counterName = expression, set counterName += expression, or set counterName -= expression.',
       },
       {
         line: 3,
@@ -492,10 +556,13 @@ describe('validateReactionScript', () => {
   });
 
   it('rejects unknown popup icon element refs', () => {
-    const validation = validateReactionScript('popup "A hidden clue appears.", relic', {
-      counterNames: [],
-      elements: elementRefs,
-    });
+    const validation = validateReactionScript(
+      'popup "A hidden clue appears.", relic',
+      {
+        counterNames: [],
+        elements: elementRefs,
+      }
+    );
 
     expect(validation.ok).toBe(false);
     expect(validation.errors).toEqual([
@@ -535,11 +602,14 @@ describe('validateReactionScript', () => {
   });
 
   it('still allows counters as popup icons', () => {
-    const validation = validateReactionScript('popup "A hidden clue appears.", Health', {
-      counterNames: ['health'],
-      elements: [...elementRefs, { id: 'health', name: 'Health' }],
-      nonGameplayElementIds: ['health'],
-    });
+    const validation = validateReactionScript(
+      'popup "A hidden clue appears.", Health',
+      {
+        counterNames: ['health'],
+        elements: [...elementRefs, { id: 'health', name: 'Health' }],
+        nonGameplayElementIds: ['health'],
+      }
+    );
 
     expect(validation.ok).toBe(true);
   });
@@ -570,6 +640,55 @@ describe('validateReactionScript', () => {
         scriptKind: 'event',
       }).ok
     ).toBe(true);
+  });
+
+  it('validates called functions and includes their emitted elements', () => {
+    const validation = validateReactionScript('call Reward', {
+      counterNames: [],
+      elements: elementRefs,
+      functions: [
+        {
+          name: 'Reward',
+          script: 'add Key',
+        },
+      ],
+    });
+
+    expect(validation.ok).toBe(true);
+    expect(validation.emittedElementIds).toEqual(['key']);
+  });
+
+  it('rejects unknown and recursive function calls', () => {
+    const missing = validateReactionScript('call Missing', {
+      counterNames: [],
+      elements: elementRefs,
+      functions: [],
+    });
+    expect(missing.ok).toBe(false);
+    expect(missing.errors).toEqual([
+      {
+        line: 1,
+        message: 'Unknown function "Missing".',
+      },
+    ]);
+
+    const recursive = validateReactionScript('call Loop', {
+      counterNames: [],
+      elements: elementRefs,
+      functions: [
+        {
+          name: 'Loop',
+          script: 'call Loop',
+        },
+      ],
+    });
+    expect(recursive.ok).toBe(false);
+    expect(recursive.errors).toEqual([
+      {
+        line: 1,
+        message: 'Function "Loop" cannot call itself recursively.',
+      },
+    ]);
   });
 });
 
@@ -637,6 +756,54 @@ describe('executeReactionScript', () => {
       shownCounterNames: [],
       stopped: false,
     });
+  });
+
+  it('executes functions, counter expressions, deterministic random ranges, and multi-remove', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Health', 'Luck'],
+      counters: {
+        Health: 1,
+        Luck: 3,
+      },
+      discoveredElementIds: [],
+      elements: [...elementRefs, { id: 'health', name: 'Health' }],
+      functions: [
+        {
+          name: 'Heal',
+          script: 'set Health += 2\nmessage "Recovered."',
+        },
+      ],
+      nonGameplayElementIds: ['health'],
+      script: [
+        'call heal',
+        'set Health += Luck',
+        'set Health += random(5,5)',
+        'if (random(1) < 1) add key',
+        'remove dust, dust, Health',
+      ].join('\n'),
+      tableElements: [
+        { elementId: 'dust', id: 'table-1' },
+        { elementId: 'dust', id: 'table-2' },
+        { elementId: 'key', id: 'table-3' },
+      ],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.counterValues).toEqual({
+      Health: 11,
+      Luck: 3,
+    });
+    expect(execution.result.emittedElementIds).toEqual(['key']);
+    expect(execution.result.hiddenCounterNames).toEqual(['Health']);
+    expect(execution.result.messages).toEqual(['Recovered.']);
+    expect(execution.result.removedTableElementIds).toEqual([
+      'table-1',
+      'table-2',
+    ]);
   });
 
   it('evaluates grouped if conditions once before running the group', () => {
@@ -988,6 +1155,43 @@ describe('executeReactionScript', () => {
       condition: 'count(Health) <= 0',
       mode: 'crossing',
       script: 'message "You died"\nlose "You died."',
+    });
+    expect(execution.result.eventState).toEqual({
+      activeEventIds: [eventId],
+      firedEventIds: [eventId],
+    });
+  });
+
+  it('runs counter expression events when any referenced counter changes', () => {
+    const execution = executeReactionScript({
+      counterNames: ['Health', 'MaxHealth'],
+      counters: {
+        Health: 5,
+        MaxHealth: 5,
+      },
+      discoveredElementIds: [],
+      elements: elementRefs,
+      events: [
+        {
+          condition: 'Health < MaxHealth',
+          mode: 'crossing',
+          script: 'message "Can heal."',
+        },
+      ],
+      script: 'set MaxHealth += 1',
+      tableElements: [],
+    });
+
+    expect(execution.ok).toBe(true);
+    if (!execution.ok) {
+      return;
+    }
+
+    expect(execution.result.messages).toEqual(['Can heal.']);
+    const eventId = getReactionScriptEventId({
+      condition: 'Health < MaxHealth',
+      mode: 'crossing',
+      script: 'message "Can heal."',
     });
     expect(execution.result.eventState).toEqual({
       activeEventIds: [eventId],

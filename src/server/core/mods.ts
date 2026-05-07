@@ -20,6 +20,11 @@ import {
   type SharePostData,
   type ValidationResult,
 } from '../../modding/types';
+import {
+  deriveDraftFromReactionText,
+  formatReactionTextIssue,
+  getCanonicalReactionText,
+} from '../../mod-editor/draft';
 import { getPostUrl } from './post';
 
 const catalogKey = 'mods:catalog';
@@ -68,19 +73,6 @@ const getAdminCatalogScore = (
         updatedAt: item.updatedAt,
       })
     : adminUnpublishedScoreOffset + (Date.parse(item.updatedAt) || Date.now()) * -1;
-const getDaysSince = (value: string | undefined) => {
-  if (!value) {
-    return 90;
-  }
-
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return 90;
-  }
-
-  return Math.max(0, (Date.now() - timestamp) / 86_400_000);
-};
-
 type RankCacheState = {
   bestScore: number;
   lastSyncedAt: string;
@@ -216,16 +208,16 @@ const getPageBounds = ({ page, pageSize }: PaginationArgs) => ({
 });
 
 export const getModBestScore = (
-  item: Pick<ModListItem, 'publishedAt' | 'playerCount' | 'upvotes'>
+  item: Pick<ModListItem, 'playerCount' | 'upvotes'>
 ) => {
-  const voteScore = item.upvotes ?? 0;
+  const voteScore = Math.max(item.upvotes ?? 0, 0);
   const playerCount = item.playerCount ?? 0;
-  const voteQuality = voteScore / Math.sqrt(Math.max(playerCount, 1));
-  const playQuality = Math.log1p(playerCount) * 0.35;
-  const freshnessTieBreak =
-    Math.min(getDaysSince(item.publishedAt), 90) * -0.001;
-
-  return voteQuality + playQuality + freshnessTieBreak;
+  const effectiveVotes =
+    voteScore / (1 + Math.log1p(playerCount) * 0.15);
+  return Math.min(
+    100,
+    Math.max(0, 100 * (1 - Math.exp(-effectiveVotes * 0.45)))
+  );
 };
 
 const parseMod = (value: string | undefined) => {
@@ -523,7 +515,6 @@ const buildRankCacheForPublishedItem = async (
 
   return await writeRankCache(item.id, {
     bestScore: getModBestScore({
-      publishedAt: item.publishedAt,
       playerCount,
       upvotes,
     }),
@@ -914,7 +905,6 @@ export const recordUniqueModPlayer = async (modId: string, userId: string) => {
   await writeRankCache(modId, {
     ...cached,
     bestScore: getModBestScore({
-      publishedAt: latest.publishedAt,
       playerCount,
       upvotes: cached.upvotes,
     }),
@@ -1204,12 +1194,29 @@ export const getPublishedModListItem = async (
 export const validateDraftInput = (input: SaveDraftInput): ValidationResult =>
   validateModDraft(input);
 
+const deriveValidatedDraftInput = (input: SaveDraftInput): SaveDraftInput => {
+  const parsed = deriveDraftFromReactionText(input);
+  if (!parsed.ok) {
+    const firstIssue = parsed.errors[0];
+    throw new Error(
+      firstIssue
+        ? formatReactionTextIssue(firstIssue)
+        : 'Fix reaction text errors first.'
+    );
+  }
+
+  return {
+    ...parsed.draft,
+    reactionText: getCanonicalReactionText(input),
+  };
+};
+
 export const saveDraftForUser = async (
   userId: string,
   username: string,
   rawInput: SaveDraftInput
 ) => {
-  const input = saveDraftInputSchema.parse(rawInput);
+  const input = deriveValidatedDraftInput(saveDraftInputSchema.parse(rawInput));
   const existingEditable = input.id
     ? await loadEditableSourceForUser(userId, username, input.id)
     : null;
@@ -1236,6 +1243,8 @@ export const saveDraftForUser = async (
     elements: input.elements,
     reactions: input.reactions,
     events: input.events,
+    functions: input.functions,
+    reactionText: input.reactionText,
     reactionComments: input.reactionComments,
     status: 'draft',
     updatedAt,
@@ -1268,7 +1277,7 @@ export const publishDraftForUser = async (
   }
   const { draft, latest: existingPublished, source } = editable;
 
-  const validation = validateDraftInput({
+  const draftForPublish = deriveValidatedDraftInput({
     id: draft.id,
     title: draft.title,
     summary: draft.summary,
@@ -1281,6 +1290,27 @@ export const publishDraftForUser = async (
     elements: draft.elements,
     reactions: draft.reactions,
     events: draft.events,
+    functions: draft.functions ?? [],
+    reactionText: draft.reactionText,
+    reactionComments: draft.reactionComments,
+  });
+
+  const validation = validateDraftInput({
+    id: draftForPublish.id,
+    title: draftForPublish.title,
+    summary: draftForPublish.summary,
+    ...(draftForPublish.coverImageUrl
+      ? { coverImageUrl: draftForPublish.coverImageUrl }
+      : {}),
+    intro: draftForPublish.intro,
+    startingElementIds: draftForPublish.startingElementIds,
+    counters: draftForPublish.counters,
+    showPalette: draftForPublish.showPalette,
+    compactElements: draftForPublish.compactElements,
+    elements: draftForPublish.elements,
+    reactions: draftForPublish.reactions,
+    events: draftForPublish.events,
+    functions: draftForPublish.functions,
   });
 
   if (!validation.isValid || validation.warnings.length > 0) {
@@ -1298,7 +1328,8 @@ export const publishDraftForUser = async (
       : new Date().toISOString();
   const updatedAt = new Date().toISOString();
   const published: ModDoc = {
-    ...draft,
+    ...draftForPublish,
+    id: modId,
     ownerUserId: source.ownerUserId,
     ownerUsername: source.ownerUsername,
     status: 'published',

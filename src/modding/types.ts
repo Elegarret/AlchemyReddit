@@ -14,6 +14,7 @@ export const MAX_REALM_SUMMARY_LENGTH = 128;
 export const MAX_REALM_INTRO_LENGTH = 512;
 export const MAX_ELEMENT_MESSAGE_LENGTH = 512;
 export const MAX_REACTION_SCRIPT_LENGTH = 4096;
+export const MAX_REACTION_TEXT_LENGTH = 1_048_576;
 export const MAX_MOD_ELEMENTS = 1024;
 export const MAX_MOD_REACTIONS = 4096;
 export const MOD_ELEMENT_EFFECT_VALUES = [
@@ -24,6 +25,8 @@ export const MOD_ELEMENT_EFFECT_VALUES = [
   'computer',
   'earthquake',
   'storm',
+  'walking',
+  'glitters',
 ] as const;
 export const modElementEffectSchema = z.enum(MOD_ELEMENT_EFFECT_VALUES);
 export type ModElementEffect = z.infer<typeof modElementEffectSchema>;
@@ -41,7 +44,10 @@ export const LEGACY_ELEMENT_EFFECTS: Record<string, ModElementEffect> = {
   earthquake: 'earthquake',
   explode: 'explode',
   light: 'light',
+  'magic-orb': 'hint',
+  fairy: 'walking',
   scientist: 'hint',
+  spell: 'glitters',
   storm: 'storm',
 };
 
@@ -172,6 +178,17 @@ export const modEventSchema = z.object({
 
 export type ModEvent = z.infer<typeof modEventSchema>;
 
+export const modFunctionSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z][A-Za-z0-9_-]*$/),
+  script: z.string().min(1).max(MAX_REACTION_SCRIPT_LENGTH),
+});
+
+export type ModFunction = z.infer<typeof modFunctionSchema>;
+
 const reactionCommentLineSchema = z.string().max(MAX_REACTION_SCRIPT_LENGTH);
 
 export const reactionCommentBlockSchema = z.object({
@@ -257,6 +274,8 @@ export const modDocSchema = z.object({
   elements: z.array(modElementSchema).max(MAX_MOD_ELEMENTS),
   reactions: z.array(modReactionSchema).max(MAX_MOD_REACTIONS),
   events: z.array(modEventSchema).max(128).optional().default([]),
+  functions: z.array(modFunctionSchema).max(128).optional().default([]),
+  reactionText: z.string().max(MAX_REACTION_TEXT_LENGTH).optional(),
   reactionComments: reactionCommentsSchema.optional().default({
     byReaction: [],
     trailingComments: [],
@@ -273,10 +292,12 @@ export const modDocSchema = z.object({
 type ParsedModDoc = z.infer<typeof modDocSchema>;
 export type ModDoc = Omit<
   ParsedModDoc,
-  'compactElements' | 'events' | 'reactionComments'
+  'compactElements' | 'events' | 'functions' | 'reactionComments'
 > & {
   compactElements?: boolean;
   events?: ModEvent[];
+  functions?: ModFunction[];
+  reactionText?: string;
   reactionComments?: ReactionComments;
 };
 
@@ -366,6 +387,7 @@ export type ActiveRuleset = {
   recipes: Record<string, string[]>;
   reactionScripts: Record<string, string>;
   events: ModEvent[];
+  functions?: ModFunction[];
   elementNames?: Record<string, string>;
   elementStyles: Record<string, string>;
   elementIcons: Record<string, ElementIconValue>;
@@ -410,6 +432,8 @@ export const saveDraftInputSchema = z.object({
   elements: z.array(modElementSchema).max(MAX_MOD_ELEMENTS),
   reactions: z.array(modReactionSchema).max(MAX_MOD_REACTIONS),
   events: z.array(modEventSchema).max(128).optional().default([]),
+  functions: z.array(modFunctionSchema).max(128).optional().default([]),
+  reactionText: z.string().max(MAX_REACTION_TEXT_LENGTH).optional(),
   reactionComments: reactionCommentsSchema.optional().default({
     byReaction: [],
     trailingComments: [],
@@ -419,9 +443,11 @@ export const saveDraftInputSchema = z.object({
 type ParsedSaveDraftInput = z.infer<typeof saveDraftInputSchema>;
 export type SaveDraftInput = Omit<
   ParsedSaveDraftInput,
-  'compactElements' | 'events' | 'reactionComments'
+  'compactElements' | 'events' | 'functions' | 'reactionComments'
 > & {
   compactElements?: boolean;
   events?: ModEvent[];
+  functions?: ModFunction[];
+  reactionText?: string;
   reactionComments?: ReactionComments;
 };

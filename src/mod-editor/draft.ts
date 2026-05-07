@@ -24,6 +24,7 @@ import {
   type ModCounterDefinition,
   type ModElement,
   type ModEventMode,
+  type ModFunction,
   type ModListItem,
   type SaveDraftInput,
   saveDraftInputSchema,
@@ -92,30 +93,38 @@ export const createStarterElement = (
   nonConsumable: false,
 });
 
-export const createEmptyDraft = (): SaveDraftInput => ({
-  title: DEFAULT_MOD_TITLE,
-  summary: '',
-  intro: '',
-  startingElementIds: DEFAULT_STARTER_ELEMENTS.map((element) => element.id),
-  counters: [],
-  events: [],
-  showPalette: true,
-  compactElements: false,
-  elements: DEFAULT_STARTER_ELEMENTS.map((element) =>
-    createStarterElement(
-      element.id,
-      element.name,
-      element.bgColorToken,
-      element.frameColorToken,
-      element.emoji
-    )
-  ),
-  reactions: [],
-  reactionComments: {
-    byReaction: [],
-    trailingComments: [],
-  },
-});
+export const createEmptyDraft = (): SaveDraftInput => {
+  const draft: SaveDraftInput = {
+    title: DEFAULT_MOD_TITLE,
+    summary: '',
+    intro: '',
+    startingElementIds: DEFAULT_STARTER_ELEMENTS.map((element) => element.id),
+    counters: [],
+    events: [],
+    functions: [],
+    showPalette: true,
+    compactElements: false,
+    elements: DEFAULT_STARTER_ELEMENTS.map((element) =>
+      createStarterElement(
+        element.id,
+        element.name,
+        element.bgColorToken,
+        element.frameColorToken,
+        element.emoji
+      )
+    ),
+    reactions: [],
+    reactionComments: {
+      byReaction: [],
+      trailingComments: [],
+    },
+  };
+
+  return {
+    ...draft,
+    reactionText: formatReactionText(draft),
+  };
+};
 
 export const clampRealmSummary = (summary: string) =>
   summary.slice(0, MAX_REALM_SUMMARY_LENGTH);
@@ -124,26 +133,41 @@ const toImportedDraft = (
   draft:
     | ReturnType<typeof saveDraftInputSchema.parse>
     | ReturnType<typeof modDocSchema.parse>
-): SaveDraftInput => ({
-  title: draft.title,
-  summary: clampRealmSummary(draft.summary),
-  ...(draft.coverImageUrl ? { coverImageUrl: draft.coverImageUrl } : {}),
-  intro: draft.intro,
-  startingElementIds: draft.startingElementIds,
-  counters: draft.counters,
-  events: draft.events,
-  showPalette: draft.showPalette,
-  compactElements: draft.compactElements ?? false,
-  elements: draft.elements,
-  reactions: draft.reactions,
-  reactionComments: normalizeReactionComments(draft),
-});
+): SaveDraftInput => {
+  const importedDraft: SaveDraftInput = {
+    title: draft.title,
+    summary: clampRealmSummary(draft.summary),
+    ...(draft.coverImageUrl ? { coverImageUrl: draft.coverImageUrl } : {}),
+    intro: draft.intro,
+    startingElementIds: draft.startingElementIds,
+    counters: draft.counters,
+    events: draft.events,
+    functions: draft.functions ?? [],
+    showPalette: draft.showPalette,
+    compactElements: draft.compactElements ?? false,
+    elements: draft.elements,
+    reactions: draft.reactions,
+    reactionComments: normalizeReactionComments(draft),
+    ...(draft.reactionText ? { reactionText: draft.reactionText } : {}),
+  };
+  const reactionText = importedDraft.reactionText ?? formatReactionText(importedDraft);
+  const parsed = parseReactionTextToDraft(importedDraft, reactionText);
+
+  return parsed.ok
+    ? {
+        ...parsed.draft,
+        reactionText,
+      }
+    : {
+        ...importedDraft,
+        reactionText,
+      };
+};
 
 export const serializeDraftForExport = (draft: SaveDraftInput) =>
   JSON.stringify(
     {
-      ...draft,
-      reactionComments: normalizeReactionComments(draft),
+      ...deriveDraftFromReactionText(draft).draft,
     },
     null,
     2
@@ -302,6 +326,17 @@ const parseEventHeaderLine = (rawLine: string) => {
   return {
     condition: (match[2] ?? '').trim(),
     mode,
+  };
+};
+
+const parseFunctionHeaderLine = (rawLine: string) => {
+  const match = rawLine.match(/^\s*function\s+([A-Za-z][A-Za-z0-9_-]*)\s*:\s*$/i);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    name: match[1] ?? '',
   };
 };
 
@@ -472,7 +507,9 @@ const parseCounterItem = (
   | {
       error: ReactionTextIssue;
     } => {
-  const trimmed = rawItem.trim();
+  const trimmed = rawItem
+    .replace(/\b(min|max|initial)\s*=\s*(-?\d+)/gi, '$1=$2')
+    .trim();
   if (!trimmed) {
     return {
       error: {
@@ -749,6 +786,7 @@ const parseReactionBodyToDraft = (
 ) => {
   const nextDraft = draft;
   const events: SaveDraftInput['events'] = [];
+  const functions: SaveDraftInput['functions'] = [];
   const reactions: SaveDraftInput['reactions'] = [];
   const commentBlocks: ReactionCommentBlock[] = [];
   const errors: ReactionTextIssue[] = [];
@@ -769,6 +807,76 @@ const parseReactionBodyToDraft = (
 
     const absoluteLine = bodyStartIndex + index + 1;
     const line = splitLine.code.trim();
+    const parsedFunctionHeader = parseFunctionHeaderLine(line);
+    if (parsedFunctionHeader) {
+      const scriptLines: string[] = [];
+      while (index + 1 < bodyLines.length) {
+        const nextLine = bodyLines[index + 1] ?? '';
+        if (nextLine.startsWith('    ')) {
+          scriptLines.push(nextLine.slice(4));
+          index += 1;
+          continue;
+        }
+
+        if (nextLine.startsWith('\t')) {
+          scriptLines.push(nextLine.slice(1));
+          index += 1;
+          continue;
+        }
+
+        break;
+      }
+
+      if (scriptLines.length === 0 || !scriptLines.join('\n').trim()) {
+        errors.push({
+          line: absoluteLine,
+          message: 'Function blocks must include an indented script body.',
+        });
+      }
+
+      const script =
+        formatReactionScript(scriptLines.join('\n')) ?? scriptLines.join('\n');
+      const currentFunction: ModFunction = {
+        name: parsedFunctionHeader.name,
+        script,
+      };
+      const scriptValidation = validateReactionScript(script, {
+        counterNames: getDraftCounterNames(nextDraft),
+        elements: nextDraft.elements.map((element) => ({
+          id: element.id,
+          name: element.name,
+        })),
+        functions: [...functions, currentFunction],
+        nonGameplayElementIds: nextDraft.counters.map(
+          (counter) => counter.elementId
+        ),
+      });
+      if (!scriptValidation.ok) {
+        scriptValidation.errors.forEach((error) => {
+          const missingElementName =
+            error.message.match(/^Unknown element "(.+)"\.$/)?.[1] ?? null;
+          errors.push({
+            line: absoluteLine + error.line,
+            message: error.message,
+            ...(missingElementName ? { missingElementName } : {}),
+          });
+        });
+      }
+
+      functions.push(currentFunction);
+      pendingLeadingComments = [];
+      continue;
+    }
+
+    if (/^function\b/i.test(line)) {
+      errors.push({
+        line: absoluteLine,
+        message: 'Expected a function header: function Name:',
+      });
+      pendingLeadingComments = [];
+      continue;
+    }
+
     const parsedEventHeader = parseEventHeaderLine(line);
     if (parsedEventHeader) {
       if (!parsedEventHeader.condition) {
@@ -821,6 +929,7 @@ const parseReactionBodyToDraft = (
               id: element.id,
               name: element.name,
             })),
+            functions,
             nonGameplayElementIds: nextDraft.counters.map(
               (counter) => counter.elementId
             ),
@@ -846,6 +955,7 @@ const parseReactionBodyToDraft = (
           id: element.id,
           name: element.name,
         })),
+        functions,
         nonGameplayElementIds: nextDraft.counters.map(
           (counter) => counter.elementId
         ),
@@ -920,6 +1030,7 @@ const parseReactionBodyToDraft = (
           id: element.id,
           name: element.name,
         })),
+        functions,
         nonGameplayElementIds: nextDraft.counters.map(
           (counter) => counter.elementId
         ),
@@ -1115,6 +1226,7 @@ const parseReactionBodyToDraft = (
         id: element.id,
         name: element.name,
       })),
+      functions,
       nonGameplayElementIds: nextDraft.counters.map(
         (counter) => counter.elementId
       ),
@@ -1160,6 +1272,7 @@ const parseReactionBodyToDraft = (
       },
       reactions,
       events,
+      functions,
     },
     errors,
   };
@@ -1198,7 +1311,10 @@ export const parseReactionTextToDraft = (
   );
 
   return {
-    draft: bodyParse.draft,
+    draft: {
+      ...bodyParse.draft,
+      reactionText: text,
+    },
     errors: [...declarationParse.errors, ...bodyParse.errors],
     ok:
       declarationParse.errors.length === 0 &&
@@ -1206,10 +1322,192 @@ export const parseReactionTextToDraft = (
   };
 };
 
+export const getCanonicalReactionText = (draft: SaveDraftInput) =>
+  draft.reactionText ?? formatReactionText(draft);
+
+export const deriveDraftFromReactionText = (
+  draft: SaveDraftInput
+): ReactionTextParseResult => {
+  const reactionText = getCanonicalReactionText(draft);
+  return parseReactionTextToDraft(draft, reactionText);
+};
+
 export const applyReactionTextToDraft = (
   draft: SaveDraftInput,
   text: string
 ) => parseReactionTextToDraft(draft, text).draft;
+
+const getReactionTextBlocks = (text: string) => {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const blocks: Array<{
+    endLine: number;
+    reactionCount: number;
+    startLine: number;
+    startReactionIndex: number;
+  }> = [];
+  let reactionIndex = 0;
+  let pendingCommentStartLine: number | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index] ?? '';
+    const splitLine = splitReactionScriptLineComment(rawLine);
+    const line = splitLine.code.trim();
+    if (!line) {
+      if (splitLine.commentText !== null && pendingCommentStartLine === null) {
+        pendingCommentStartLine = index;
+      }
+      continue;
+    }
+
+    const functionHeader = parseFunctionHeaderLine(line);
+    const eventHeader = parseEventHeaderLine(line);
+    if (functionHeader || eventHeader) {
+      while (index + 1 < lines.length) {
+        const nextLine = lines[index + 1] ?? '';
+        if (nextLine.startsWith('    ') || nextLine.startsWith('\t')) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      pendingCommentStartLine = null;
+      continue;
+    }
+
+    const groupedHeaders = parseGroupedEmptyReactionHeaders(line);
+    if (groupedHeaders) {
+      const startLine = pendingCommentStartLine ?? index;
+      while (index + 1 < lines.length) {
+        const nextLine = lines[index + 1] ?? '';
+        if (nextLine.startsWith('    ') || nextLine.startsWith('\t')) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      blocks.push({
+        endLine: index,
+        reactionCount: groupedHeaders.length,
+        startLine,
+        startReactionIndex: reactionIndex,
+      });
+      reactionIndex += groupedHeaders.length;
+      pendingCommentStartLine = null;
+      continue;
+    }
+
+    const equalIndex = line.indexOf('=');
+    const colonIndex = line.indexOf(':');
+    const plusIndex = line.indexOf('+');
+    const delimiterIndex =
+      colonIndex > 0 && (equalIndex === -1 || colonIndex < equalIndex)
+        ? colonIndex
+        : equalIndex;
+    if (delimiterIndex <= 0 || plusIndex <= 0 || plusIndex > delimiterIndex) {
+      continue;
+    }
+
+    const startLine = pendingCommentStartLine ?? index;
+    const inlineResult =
+      delimiterIndex === equalIndex ? line.slice(equalIndex + 1).trim() : '';
+    if (!inlineResult) {
+      while (index + 1 < lines.length) {
+        const nextLine = lines[index + 1] ?? '';
+        if (nextLine.startsWith('    ') || nextLine.startsWith('\t')) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+    }
+    blocks.push({
+      endLine: index,
+      reactionCount: 1,
+      startLine,
+      startReactionIndex: reactionIndex,
+    });
+    reactionIndex += 1;
+    pendingCommentStartLine = null;
+  }
+
+  return blocks;
+};
+
+const formatReactionTextBlock = (
+  draft: SaveDraftInput,
+  reactionIndex: number
+) => {
+  const reaction = draft.reactions[reactionIndex];
+  if (!reaction) {
+    return [];
+  }
+
+  const normalizedComments = normalizeReactionComments(draft);
+  const commentBlock =
+    normalizedComments.byReaction[reactionIndex] ??
+    createEmptyReactionCommentBlock();
+  const left =
+    draft.elements.find((element) => element.id === reaction.leftId)?.name ?? '';
+  const right =
+    draft.elements.find((element) => element.id === reaction.rightId)?.name ?? '';
+  const outputs = reaction.outputIds
+    .map(
+      (outputId) =>
+        draft.elements.find((element) => element.id === outputId)?.name ?? ''
+    )
+    .join(', ');
+  const script = reaction.script?.trim() ?? '';
+  const headerComment =
+    commentBlock.headerComment !== undefined
+      ? ` //${commentBlock.headerComment}`
+      : '';
+  const leadingCommentLines = commentBlock.leadingComments.map(
+    (comment) => `//${comment}`
+  );
+
+  if (script) {
+    const formattedScript = formatReactionScript(script) ?? script;
+    return [
+      ...leadingCommentLines,
+      `${left}+${right}=${headerComment}`,
+      ...formattedScript.split('\n').map((line) => `    ${line}`),
+    ];
+  }
+
+  return [
+    ...leadingCommentLines,
+    `${left}+${right}=${outputs}${headerComment}`,
+  ];
+};
+
+export const patchReactionTextForReactionChange = (
+  text: string,
+  reactionIndex: number,
+  nextDraft: SaveDraftInput
+) => {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const targetBlock = getReactionTextBlocks(text).find(
+    (block) =>
+      reactionIndex >= block.startReactionIndex &&
+      reactionIndex < block.startReactionIndex + block.reactionCount
+  );
+  if (!targetBlock) {
+    return formatReactionText(nextDraft);
+  }
+
+  const replacementLines = Array.from(
+    { length: targetBlock.reactionCount },
+    (_, offset) =>
+      formatReactionTextBlock(nextDraft, targetBlock.startReactionIndex + offset)
+  ).flat();
+  lines.splice(
+    targetBlock.startLine,
+    targetBlock.endLine - targetBlock.startLine + 1,
+    ...replacementLines
+  );
+
+  return lines.join('\n');
+};
 
 export const formatReactionText = (draft: SaveDraftInput) => {
   const normalizedComments = normalizeReactionComments(draft);
@@ -1293,6 +1591,15 @@ export const formatReactionText = (draft: SaveDraftInput) => {
     declarationLines.push(`nonconsumables: ${nonConsumableNames.join(', ')}`);
   }
 
+  const functionLines = (draft.functions ?? []).flatMap((scriptFunction) => {
+    const formattedScript =
+      formatReactionScript(scriptFunction.script) ?? scriptFunction.script;
+    return [
+      `function ${scriptFunction.name}:`,
+      ...formattedScript.split('\n').map((line) => `    ${line}`),
+    ];
+  });
+
   const eventLines = (draft.events ?? []).flatMap((event) => {
     const modeText = event.mode === 'crossing' ? '' : ` ${event.mode}`;
     const formattedScript = formatReactionScript(event.script) ?? event.script;
@@ -1303,8 +1610,8 @@ export const formatReactionText = (draft: SaveDraftInput) => {
   });
 
   const lines =
-    eventLines.length > 0 || reactionLines.length > 0
-      ? [...declarationLines, '', ...eventLines, ...reactionLines]
+    functionLines.length > 0 || eventLines.length > 0 || reactionLines.length > 0
+      ? [...declarationLines, '', ...functionLines, ...eventLines, ...reactionLines]
       : declarationLines;
 
   return lines.join('\n') + (lines.length > 0 ? '\n' : '');

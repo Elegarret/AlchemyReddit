@@ -1279,6 +1279,7 @@ export const DroppableInput = ({
 export const ReactionWidget = ({
   counterElementIds,
   counterNames,
+  functions,
   index,
   reaction,
   elements,
@@ -1357,6 +1358,7 @@ export const ReactionWidget = ({
                 id: element.id,
                 name: element.name,
               })),
+              functions: functions ?? [],
               nonGameplayElementIds: counterElementIds,
             });
 
@@ -1367,6 +1369,7 @@ export const ReactionWidget = ({
       counterElementIds,
       counterNames,
       elements,
+      functions,
       hasScript,
       scriptText,
       shouldShowScriptValidation,

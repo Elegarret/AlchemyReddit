@@ -22,6 +22,7 @@ export const BASE_RULESET: ActiveRuleset = {
 	recipes: canonicalizeReactionMap(RECIPES),
 	reactionScripts: {},
 	events: [],
+	functions: [],
 	elementStyles: ELEMENT_COLORS,
 	elementIcons: ELEMENT_ICONS,
 	elementEffects: ELEMENT_EFFECTS,

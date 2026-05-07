@@ -81,6 +81,12 @@ const TOP_LEVEL_ACTION_TEMPLATES: SuggestionTemplate[] = [
     text: 'set ',
   },
   {
+    cursorOffset: 'call '.length,
+    description: 'run function',
+    label: 'call',
+    text: 'call ',
+  },
+  {
     cursorOffset: 'message "'.length,
     description: 'show text message',
     label: 'message',
@@ -121,14 +127,17 @@ const END_IF_BLOCK_SUGGESTION_LABEL = 'end if-block';
 const RESERVED_SUGGESTION_LABELS = new Set([
   'add',
   'and',
+  'call',
   'count',
   'discovered',
+  'function',
   'if',
   'message',
   'not_discovered',
   'not_on_table',
   'on_table',
   'popup',
+  'random',
   'remove',
   'remove_all',
   'set',
@@ -159,17 +168,17 @@ const CONDITION_TEMPLATES: SuggestionTemplate[] = [
     text: 'not_discovered()',
   },
   {
-    cursorOffset: 'count('.length,
-    label: 'count',
-    text: 'count()',
+    cursorOffset: 'random('.length,
+    label: 'random',
+    text: 'random()',
   },
 ];
 
 const EVENT_CONDITION_TEMPLATES: SuggestionTemplate[] = [
   {
-    cursorOffset: 'count('.length,
-    label: 'count',
-    text: 'count()',
+    cursorOffset: 'random('.length,
+    label: 'random',
+    text: 'random()',
   },
 ];
 
@@ -223,6 +232,15 @@ const REACTION_TEXT_EVENT_TEMPLATES: SuggestionTemplate[] = [
     description: 'counter event',
     label: 'event',
     text: 'event ',
+  },
+];
+
+const REACTION_TEXT_FUNCTION_TEMPLATES: SuggestionTemplate[] = [
+  {
+    cursorOffset: 'function '.length,
+    description: 'script function',
+    label: 'function',
+    text: 'function ',
   },
 ];
 
@@ -662,12 +680,20 @@ const getConditionSuggestions = (params: {
     return [];
   }
 
-  return buildSuggestions(
-    CONDITION_TEMPLATES,
-    trimmedSegment,
-    replaceStart,
-    replaceEnd
-  );
+  return [
+    ...buildSuggestions(
+      CONDITION_TEMPLATES,
+      trimmedSegment,
+      replaceStart,
+      replaceEnd
+    ),
+    ...buildNameSuggestions(
+      counterNames,
+      trimmedSegment,
+      replaceStart,
+      replaceEnd
+    ),
+  ];
 };
 
 const getEventConditionSuggestions = (params: {
@@ -714,12 +740,20 @@ const getEventConditionSuggestions = (params: {
     return [];
   }
 
-  return buildSuggestions(
-    EVENT_CONDITION_TEMPLATES,
-    trimmedSegment,
-    replaceStart,
-    replaceEnd
-  );
+  return [
+    ...buildSuggestions(
+      EVENT_CONDITION_TEMPLATES,
+      trimmedSegment,
+      replaceStart,
+      replaceEnd
+    ),
+    ...buildNameSuggestions(
+      counterNames,
+      trimmedSegment,
+      replaceStart,
+      replaceEnd
+    ),
+  ];
 };
 
 const getActionSuggestions = (params: {
@@ -831,11 +865,18 @@ const getActionSuggestions = (params: {
   const elementKeywordMatch = prefix.match(/^(\s*(?:remove|remove_all)\s+)(.*)$/s);
   if (elementKeywordMatch) {
     const keywordPrefix = elementKeywordMatch[1] ?? '';
-    const partial = elementKeywordMatch[2] ?? '';
+    const rawList = elementKeywordMatch[2] ?? '';
+    const isRemoveAll = /\bremove_all\s+$/i.test(keywordPrefix);
+    const segmentStart = isRemoveAll ? 0 : rawList.lastIndexOf(',') + 1;
+    const segment = rawList.slice(segmentStart);
+    const trimmedSegment = segment.trimStart();
     return buildNameSuggestions(
       elementNames,
-      partial,
-      absoluteStart + keywordPrefix.length,
+      trimmedSegment,
+      absoluteStart +
+        keywordPrefix.length +
+        segmentStart +
+        (segment.length - trimmedSegment.length),
       absoluteStart + prefix.length
     );
   }
@@ -1207,6 +1248,12 @@ export const getReactionTextAutocomplete = (params: {
 
     return {
       suggestions: [
+        ...buildSuggestions(
+          REACTION_TEXT_FUNCTION_TEMPLATES,
+          trimmedPrefix,
+          replaceStart,
+          absoluteEnd
+        ),
         ...buildSuggestions(
           REACTION_TEXT_EVENT_TEMPLATES,
           trimmedPrefix,

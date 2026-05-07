@@ -361,6 +361,28 @@
 			transform: translate(-50%, -34px) scale(1.04);
 		}
 	}
+
+	@keyframes fairy-glitter-fade {
+		0% {
+			opacity: 0;
+			transform: translate(-50%, -50%) scale(0.8) rotate(0deg);
+		}
+
+		10% {
+			opacity: 1;
+			transform: translate(-50%, -50%) scale(1.2) rotate(45deg);
+		}
+
+		68% {
+			opacity: 0.86;
+			transform: translate(calc(-50% + var(--glitter-drift-x, 0px) * 0.55), calc(-50% + var(--glitter-drift-y, -28px) * 0.55)) scale(0.96) rotate(96deg);
+		}
+
+		100% {
+			opacity: 0;
+			transform: translate(calc(-50% + var(--glitter-drift-x, 0px)), calc(-50% + var(--glitter-drift-y, -28px))) scale(0.34) rotate(160deg);
+		}
+	}
 }
 
 .animate-explode-shake {
@@ -414,6 +436,22 @@
 	will-change: transform, opacity;
 }
 
+.fairy-glitter {
+	pointer-events: none;
+	width: var(--glitter-size, 5px);
+	height: var(--glitter-size, 5px);
+	background:
+		radial-gradient(circle, rgba(255, 255, 255, 0.98) 0 28%, rgba(250, 204, 21, 0.92) 30% 58%, rgba(244, 114, 182, 0.2) 70%);
+	box-shadow:
+		0 0 10px rgba(255, 255, 255, 0.95),
+		0 0 18px rgba(250, 204, 21, 0.95),
+		0 0 30px rgba(244, 114, 182, 0.68),
+		0 0 42px rgba(125, 211, 252, 0.38);
+	mix-blend-mode: screen;
+	animation: fairy-glitter-fade 2.4s ease-out forwards;
+	will-change: transform, opacity;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.snow-backdrop-flake {
 		animation-duration: 0.01ms !important;
@@ -427,7 +465,8 @@
 	}
 
 	.animate-counter-chip-pulse,
-	.animate-counter-delta-float {
+	.animate-counter-delta-float,
+	.fairy-glitter {
 		animation-duration: 0.01ms !important;
 		animation-delay: 0s !important;
 		animation-iteration-count: 1 !important;

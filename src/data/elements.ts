@@ -144,6 +144,17 @@ export const ELEMENT_COLORS: Record<string, string> = {
 	tsunami: 'bg-gradient-to-r from-blue-500 to-cyan-400 border-blue-700',
 	glacier: 'bg-cyan-200 border-cyan-400',
 	iceberg: 'bg-gradient-to-b from-cyan-50 to-sky-200 border-cyan-300',
+	spell: 'bg-violet-300 border-violet-500',
+	wizard: 'bg-indigo-700 border-indigo-900',
+	rune: 'bg-stone-500 border-fuchsia-500',
+	fireball: 'bg-red-500 border-orange-300',
+	icebolt: 'bg-cyan-300 border-blue-500',
+	unicorn: 'bg-gradient-to-r from-pink-200 via-white to-sky-200 border-fuchsia-300',
+	mermaid: 'bg-teal-400 border-cyan-600',
+	fairy: 'bg-lime-200 border-pink-300',
+	wand: 'bg-amber-700 border-yellow-300',
+	'magic-orb': 'bg-gradient-to-br from-indigo-700 via-fuchsia-500 to-cyan-300 border-white',
+	genie: 'bg-blue-400 border-violet-600',
 };
 
 export const ELEMENT_ICONS: Record<string, any> = {
@@ -289,6 +300,17 @@ export const ELEMENT_ICONS: Record<string, any> = {
 	tsunami: '🌊',
 	glacier: '/glacier.png',
 	iceberg: '/iceberg.png',
+	spell: '✨',
+	wizard: '🧙',
+	rune: 'ᚱ',
+	fireball: '🔥',
+	icebolt: '❄️',
+	unicorn: '🦄',
+	mermaid: '🧜‍♀️',
+	fairy: ['🧚','🧚🏻‍♀️'],
+	wand: '🪄',
+	'magic-orb': '🔮',
+	genie: '🧞',
 };
 
 export const KEY_ITEMS = ['energy', 'life', 'dinosaur', 'human', 'livestock', 'field', 'tool', 'steam-engine', 'space'];
@@ -355,7 +377,10 @@ export const ELEMENT_EFFECTS: Record<string, ModElementEffect> = {
 	computer: 'computer',
 	earthquake: 'earthquake',
 	explode: 'explode',
+	fairy: 'walking',
 	light: 'light',
+	'magic-orb': 'hint',
 	scientist: 'hint',
+	spell: 'glitters',
 	storm: 'storm',
 };

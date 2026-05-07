@@ -12,6 +12,8 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -52,11 +54,20 @@ import {
 } from '../modding/reaction-script';
 import { trpc } from '../trpc';
 import { openEntry, setEditorTargetModId } from '../webview-navigation';
+import {
+  areBoardElementBoundsIntersecting,
+  getBoundedBoardElementPosition,
+  getEdgeBouncedBoardElementPosition,
+  type BoardElementBounds,
+  type BoardElementPosition,
+  type BoardViewportSize,
+} from './board-position';
 import { readPlaytestRuleset } from './playtest';
 import { getReactionClusterPositions } from './reaction-cluster';
 import {
   type Element,
   type ElementIcon,
+  type FairyGlitterStyle,
   type SnowBackdropFlakeStyle,
 } from './types';
 import { createSnowBackdropFlakes, createSnowPaletteHills } from './visuals';
@@ -84,6 +95,19 @@ type CounterChipDelta = {
   id: number;
 };
 
+type FairyGlitter = {
+  id: number;
+  style: FairyGlitterStyle;
+  x: number;
+  y: number;
+};
+
+type FairyFlightState = {
+  angle: number;
+  nextTurnAt: number;
+  speed: number;
+};
+
 let elementIdCounter = 0;
 const createElementId = () => `el-${++elementIdCounter}`;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -97,6 +121,9 @@ const BOARD_PLANK_MAX_WIDTH = 196;
 const STARTER_ELEMENT_SIZE = BOARD_TILE_SIZE;
 const STARTER_ELEMENT_GAP = 28;
 const STARTER_EDGE_MARGIN = 56;
+const FAIRY_ELEMENT_ID = 'fairy';
+const FAIRY_FLIGHT_INTERVAL_MS = 260;
+const FAIRY_GLITTER_LIFETIME_MS = 2400;
 const HIDDEN_PLAYTEST_COUNTER_HINT =
   'This counter is hidden, you can see it only in the playtest mode';
 
@@ -122,15 +149,6 @@ type ElementLabelLayout = {
 type BoardElementFootprint = {
   height: number;
   isPlank: boolean;
-  width: number;
-};
-
-type BoardElementBounds = {
-  bottom: number;
-  height: number;
-  left: number;
-  right: number;
-  top: number;
   width: number;
 };
 
@@ -171,15 +189,6 @@ const getBoardElementFootprint = (
     ),
   };
 };
-
-export const areBoardElementBoundsIntersecting = (
-  leftBounds: BoardElementBounds,
-  rightBounds: BoardElementBounds
-) =>
-  leftBounds.left < rightBounds.right &&
-  leftBounds.right > rightBounds.left &&
-  leftBounds.top < rightBounds.bottom &&
-  leftBounds.bottom > rightBounds.top;
 
 const supportsHoverInput = () => {
   if (
@@ -710,6 +719,7 @@ const GameSession = ({
   const [pushedElements, setPushedElements] = useState<
     Record<string, { x: number; y: number }>
   >({});
+  const [fairyGlitters, setFairyGlitters] = useState<FairyGlitter[]>([]);
   const [showOptions, setShowOptions] = useState(false);
   const username = initialUsername;
   const authorUsername = ruleset.ownerUsername ?? 'Unknown';
@@ -749,8 +759,7 @@ const GameSession = ({
   });
   const [showCompletionPopup, setShowCompletionPopup] = useState(false);
   const [realmReviewText, setRealmReviewText] = useState('');
-  const [isRealmReviewSubmitting, setIsRealmReviewSubmitting] =
-    useState(false);
+  const [isRealmReviewSubmitting, setIsRealmReviewSubmitting] = useState(false);
   const [realmReviewError, setRealmReviewError] = useState<string | null>(null);
   const [showReviewThanksPopup, setShowReviewThanksPopup] = useState(false);
   const [showReviewActionsPopup, setShowReviewActionsPopup] = useState(false);
@@ -906,6 +915,152 @@ const GameSession = ({
     return areBoardElementBoundsIntersecting(leftBounds, rightBounds);
   };
 
+  const getViewportSize = (): BoardViewportSize => ({
+    height:
+      typeof window === 'undefined' || window.innerHeight <= 0
+        ? BOARD_TILE_SIZE
+        : window.innerHeight,
+    width:
+      typeof window === 'undefined' || window.innerWidth <= 0
+        ? BOARD_TILE_SIZE
+        : window.innerWidth,
+  });
+
+  const getBoundedPositionForElement = (
+    element: Pick<Element, 'icon' | 'name'>,
+    position: BoardElementPosition
+  ) =>
+    getBoundedBoardElementPosition(
+      position,
+      getBoardFootprintForElement(element),
+      getViewportSize()
+    );
+
+  const getEdgeBouncedPositionForElement = (
+    element: Pick<Element, 'icon' | 'name'>,
+    position: BoardElementPosition
+  ) =>
+    getEdgeBouncedBoardElementPosition(
+      position,
+      getBoardFootprintForElement(element),
+      getViewportSize()
+    );
+
+  const placeElementWithinViewport = <T extends Element>(
+    element: T,
+    mode: 'bounce' | 'clamp' = 'clamp'
+  ): T => {
+    const position =
+      mode === 'bounce'
+        ? getEdgeBouncedPositionForElement(element, element)
+        : getBoundedPositionForElement(element, element);
+    return {
+      ...element,
+      x: position.x,
+      y: position.y,
+    };
+  };
+
+  const canElementsInteract = (
+    leftElement: Pick<Element, 'name'>,
+    rightElement: Pick<Element, 'name'>
+  ) =>
+    hasReactionForRuleset(ruleset, leftElement.name, rightElement.name) ||
+    hasElementEffect(leftElement.name, 'computer') ||
+    hasElementEffect(rightElement.name, 'computer');
+
+  const getElementDistanceScore = (
+    leftElement: Pick<Element, 'x' | 'y'>,
+    rightElement: Pick<Element, 'x' | 'y'>
+  ) =>
+    (leftElement.x - rightElement.x) ** 2 +
+    (leftElement.y - rightElement.y) ** 2;
+
+  const findBestMergeTarget = (
+    draggedElement: Element,
+    currentElements: Element[]
+  ) => {
+    let bestTarget: {
+      distanceScore: number;
+      element: Element;
+      index: number;
+      isInteractive: boolean;
+    } | null = null;
+
+    for (let index = 0; index < currentElements.length; index += 1) {
+      const element = currentElements[index];
+      if (!element) {
+        continue;
+      }
+
+      if (element.id === draggedElement.id) {
+        continue;
+      }
+
+      if (!isWithinMergeRange(draggedElement, element)) {
+        continue;
+      }
+
+      const candidate = {
+        distanceScore: getElementDistanceScore(draggedElement, element),
+        element,
+        index,
+        isInteractive: canElementsInteract(draggedElement, element),
+      };
+      if (
+        bestTarget === null ||
+        (candidate.isInteractive && !bestTarget.isInteractive) ||
+        (candidate.isInteractive === bestTarget.isInteractive &&
+          candidate.distanceScore < bestTarget.distanceScore) ||
+        (candidate.isInteractive === bestTarget.isInteractive &&
+          candidate.distanceScore === bestTarget.distanceScore &&
+          candidate.index > bestTarget.index)
+      ) {
+        bestTarget = candidate;
+      }
+    }
+
+    return bestTarget?.element ?? null;
+  };
+
+  useEffect(() => {
+    const keepElementsWithinViewport = () => {
+      setElements((currentElements) =>
+        currentElements.map((element) => {
+          const rawIcon = ruleset.elementIcons[element.name];
+          const icon =
+            element.icon ?? (Array.isArray(rawIcon) ? rawIcon[0] : rawIcon);
+          const footprint = getBoardElementFootprint(
+            ruleset.elementNames?.[element.name] ?? element.name,
+            icon,
+            ruleset.compactElements
+          );
+          const position = getBoundedBoardElementPosition(element, footprint, {
+            height:
+              typeof window === 'undefined' || window.innerHeight <= 0
+                ? BOARD_TILE_SIZE
+                : window.innerHeight,
+            width:
+              typeof window === 'undefined' || window.innerWidth <= 0
+                ? BOARD_TILE_SIZE
+                : window.innerWidth,
+          });
+          return {
+            ...element,
+            x: position.x,
+            y: position.y,
+          };
+        })
+      );
+    };
+
+    keepElementsWithinViewport();
+    window.addEventListener('resize', keepElementsWithinViewport);
+    return () => {
+      window.removeEventListener('resize', keepElementsWithinViewport);
+    };
+  }, [ruleset]);
+
   const getElementEffect = (elementId: string): ModElementEffect =>
     ruleset.elementEffects[elementId] ??
     LEGACY_ELEMENT_EFFECTS[elementId] ??
@@ -913,6 +1068,13 @@ const GameSession = ({
 
   const hasElementEffect = (elementId: string, effect: ModElementEffect) =>
     getElementEffect(elementId) === effect;
+
+  const hasWalkingEffect = (elementId: string) =>
+    hasElementEffect(elementId, 'walking');
+
+  const hasGlittersEffect = (elementId: string) =>
+    hasElementEffect(elementId, 'glitters') ||
+    (ruleset.kind === 'base' && elementId === FAIRY_ELEMENT_ID);
 
   const hasLegacyOverlayPopup =
     discoveryPopup !== null ||
@@ -1023,6 +1185,10 @@ const GameSession = ({
   const flashCounter = useRef(0);
   const wheelTimeout = useRef<number | null>(null);
   const elementsRef = useRef<Element[]>(elements);
+  const draggingRef = useRef<string | null>(dragging);
+  const fairyGlitterCounter = useRef(0);
+  const fairyGlitterTimeouts = useRef<Record<number, number>>({});
+  const fairyFlightStates = useRef<Record<string, FairyFlightState>>({});
   const explosionStartTimeouts = useRef<Record<string, number>>({});
   const explosionCleanupTimeouts = useRef<Record<string, number>>({});
   const quakeTimeout = useRef<number | null>(null);
@@ -1273,6 +1439,10 @@ const GameSession = ({
   }, [elements]);
 
   useEffect(() => {
+    draggingRef.current = dragging;
+  }, [dragging]);
+
+  useEffect(() => {
     const currentEarthquakeIds = new Set(
       elements
         .filter((el) => hasElementEffect(el.name, 'earthquake'))
@@ -1445,6 +1615,9 @@ const GameSession = ({
       Object.keys(explosionCleanupTimeouts.current).forEach((id) => {
         window.clearTimeout(explosionCleanupTimeouts.current[id]);
       });
+      Object.values(fairyGlitterTimeouts.current).forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
       if (quakeTimeout.current !== null) {
         window.clearTimeout(quakeTimeout.current);
       }
@@ -1457,6 +1630,156 @@ const GameSession = ({
       });
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const createFairyFlightState = (now: number): FairyFlightState => ({
+      angle: Math.random() * Math.PI * 2,
+      nextTurnAt: now + 900 + Math.random() * 1800,
+      speed: 44 + Math.random() * 54,
+    });
+
+    const addFairyGlitter = (x: number, y: number) => {
+      const id = ++fairyGlitterCounter.current;
+      const burstAngle = Math.random() * Math.PI * 2;
+      const spawnRadius = 24 + Math.random() * 28;
+      const driftDistance = 70 + Math.random() * 78;
+      const style: FairyGlitterStyle = {
+        '--glitter-drift-x': `${Math.round(Math.cos(burstAngle) * driftDistance)}px`,
+        '--glitter-drift-y': `${Math.round(Math.sin(burstAngle) * driftDistance)}px`,
+        '--glitter-size': `${Math.round(5 + Math.random() * 7)}px`,
+      };
+
+      setFairyGlitters((current) => [
+        ...current.slice(-84),
+        {
+          id,
+          style,
+          x: x + Math.cos(burstAngle) * spawnRadius,
+          y: y + Math.sin(burstAngle) * spawnRadius,
+        },
+      ]);
+
+      fairyGlitterTimeouts.current[id] = window.setTimeout(() => {
+        setFairyGlitters((current) =>
+          current.filter((glitter) => glitter.id !== id)
+        );
+        delete fairyGlitterTimeouts.current[id];
+      }, FAIRY_GLITTER_LIFETIME_MS);
+    };
+
+    const animateElementEffects = () => {
+      const now = Date.now();
+      const activeWalkingIds = new Set<string>();
+      const glitterElements = elementsRef.current.filter((element) =>
+        hasGlittersEffect(element.name)
+      );
+      const walkingElements = elementsRef.current.filter((element) =>
+        hasWalkingEffect(element.name)
+      );
+
+      glitterElements.forEach((element) => {
+        addFairyGlitter(element.x, element.y);
+      });
+
+      walkingElements.forEach((element) => {
+        activeWalkingIds.add(element.id);
+      });
+
+      Object.keys(fairyFlightStates.current).forEach((id) => {
+        if (!activeWalkingIds.has(id)) {
+          delete fairyFlightStates.current[id];
+        }
+      });
+
+      if (walkingElements.length === 0) {
+        return;
+      }
+
+      setElements((currentElements) => {
+        let movedElement = false;
+        const nextElements = currentElements.map((element) => {
+          if (
+            !hasWalkingEffect(element.name) ||
+            draggingRef.current === element.id
+          ) {
+            return element;
+          }
+
+          const footprint = getBoardFootprintForElement(element);
+          const viewport = getViewportSize();
+          const flightHeight = ruleset.showPalette
+            ? Math.max(BOARD_TILE_SIZE, viewport.height - 256)
+            : viewport.height;
+          const minX = footprint.width / 2;
+          const maxX = Math.max(minX, viewport.width - footprint.width / 2);
+          const minY = footprint.height / 2;
+          const maxY = Math.max(minY, flightHeight - footprint.height / 2);
+          let flightState =
+            fairyFlightStates.current[element.id] ??
+            createFairyFlightState(now);
+
+          if (now >= flightState.nextTurnAt) {
+            flightState = createFairyFlightState(now);
+          }
+
+          const stepSeconds = FAIRY_FLIGHT_INTERVAL_MS / 1000;
+          let nextX =
+            element.x +
+            Math.cos(flightState.angle) * flightState.speed * stepSeconds;
+          let nextY =
+            element.y +
+            Math.sin(flightState.angle) * flightState.speed * stepSeconds;
+          let nextAngle = flightState.angle;
+          let bounced = false;
+
+          if (nextX < minX || nextX > maxX) {
+            nextAngle = Math.PI - nextAngle;
+            nextX = Math.min(maxX, Math.max(minX, nextX));
+            bounced = true;
+          }
+
+          if (nextY < minY || nextY > maxY) {
+            nextAngle = -nextAngle;
+            nextY = Math.min(maxY, Math.max(minY, nextY));
+            bounced = true;
+          }
+
+          fairyFlightStates.current[element.id] = bounced
+            ? {
+                angle: nextAngle + (Math.random() - 0.5) * 0.8,
+                nextTurnAt: now + 500 + Math.random() * 1200,
+                speed: flightState.speed,
+              }
+            : {
+                ...flightState,
+                angle: nextAngle,
+              };
+
+          movedElement = true;
+          return {
+            ...element,
+            x: nextX,
+            y: nextY,
+          };
+        });
+
+        return movedElement ? nextElements : currentElements;
+      });
+    };
+
+    const intervalId = window.setInterval(
+      animateElementEffects,
+      FAIRY_FLIGHT_INTERVAL_MS
+    );
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [ruleset]);
 
   useEffect(() => {
     if (!hasStorm) {
@@ -1650,7 +1973,7 @@ const GameSession = ({
     });
   };
 
-  const handlePointerDown = (e: React.PointerEvent, id: string) => {
+  const handlePointerDown = (e: ReactPointerEvent, id: string) => {
     if (areBoardInteractionsLocked) {
       return;
     }
@@ -1710,7 +2033,7 @@ const GameSession = ({
           ?.slice(8, -1)
       : undefined;
 
-    const style: React.CSSProperties = {
+    const style: CSSProperties = {
       ...(customBg ? { backgroundColor: customBg } : {}),
       ...(customFrame ? { borderColor: customFrame } : {}),
     };
@@ -1720,7 +2043,8 @@ const GameSession = ({
     const Icon = isHidden ? null : (iconOverride ?? ruleset.elementIcons[name]);
     const displayName = isHidden ? '???' : getElementDisplayName(name);
     const shape: ElementTileShape =
-      shapeOverride ?? (size === 'large' && !isHidden && !Icon ? 'plank' : 'tile');
+      shapeOverride ??
+      (size === 'large' && !isHidden && !Icon ? 'plank' : 'tile');
 
     const reactiveClasses = isReactive
       ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[var(--ring-offset)] animate-pulse'
@@ -1780,7 +2104,7 @@ const GameSession = ({
     );
   };
 
-  const spawnFromPalette = (e: React.PointerEvent, name: string) => {
+  const spawnFromPalette = (e: ReactPointerEvent, name: string) => {
     if (areBoardInteractionsLocked) {
       return;
     }
@@ -1791,14 +2115,17 @@ const GameSession = ({
       ? (getRandomHint() ?? 'nothing')
       : undefined;
 
-    const newElement: Element = {
-      id,
-      name,
-      x: e.clientX,
-      y: e.clientY,
-      ...(hint ? { hint } : {}),
-      ...(icon ? { icon } : {}),
-    };
+    const newElement = placeElementWithinViewport(
+      {
+        id,
+        name,
+        x: e.clientX,
+        y: e.clientY,
+        ...(hint ? { hint } : {}),
+        ...(icon ? { icon } : {}),
+      },
+      'bounce'
+    );
 
     setElements((prev) => [...prev, newElement]);
     setDragging(id);
@@ -1806,14 +2133,23 @@ const GameSession = ({
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
+  const handlePointerMove = (e: ReactPointerEvent) => {
     if (areBoardInteractionsLocked) {
       return;
     }
 
     if (dragging) {
-      const newX = e.clientX - dragOffset.current.x;
-      const newY = e.clientY - dragOffset.current.y;
+      const draggedEl = elements.find((el) => el.id === dragging);
+      if (!draggedEl) {
+        return;
+      }
+
+      const nextPosition = getEdgeBouncedPositionForElement(draggedEl, {
+        x: e.clientX - dragOffset.current.x,
+        y: e.clientY - dragOffset.current.y,
+      });
+      const newX = nextPosition.x;
+      const newY = nextPosition.y;
 
       setElements((prev) =>
         prev.map((el) =>
@@ -1821,38 +2157,27 @@ const GameSession = ({
         )
       );
 
-      const draggedEl = elements.find((el) => el.id === dragging);
-      if (draggedEl) {
-        const movedDraggedEl = {
-          ...draggedEl,
-          x: newX,
-          y: newY,
-        };
-        const targetEl = elements.find((el) => {
-          if (el.id === dragging) return false;
-          return isWithinMergeRange(movedDraggedEl, el);
-        });
+      const movedDraggedEl = {
+        ...draggedEl,
+        x: newX,
+        y: newY,
+      };
+      const targetEl = findBestMergeTarget(movedDraggedEl, elements);
 
+      if (targetEl && canElementsInteract(draggedEl, targetEl)) {
         if (
-          targetEl &&
-          (hasReactionForRuleset(ruleset, draggedEl.name, targetEl.name) ||
-            hasElementEffect(draggedEl.name, 'computer') ||
-            hasElementEffect(targetEl.name, 'computer'))
+          !reactiveIDs.includes(draggedEl.id) ||
+          !reactiveIDs.includes(targetEl.id)
         ) {
-          if (
-            !reactiveIDs.includes(draggedEl.id) ||
-            !reactiveIDs.includes(targetEl.id)
-          ) {
-            setReactiveIDs([draggedEl.id, targetEl.id]);
-          }
-        } else if (reactiveIDs.length > 0) {
-          setReactiveIDs([]);
+          setReactiveIDs([draggedEl.id, targetEl.id]);
         }
+      } else if (reactiveIDs.length > 0) {
+        setReactiveIDs([]);
       }
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent) => {
+  const handlePointerUp = (e: ReactPointerEvent) => {
     if (areBoardInteractionsLocked) {
       return;
     }
@@ -1878,10 +2203,7 @@ const GameSession = ({
       return;
     }
 
-    const targetEl = elements.find((el) => {
-      if (el.id === dragging) return false;
-      return isWithinMergeRange(draggedEl, el);
-    });
+    const targetEl = findBestMergeTarget(draggedEl, elements);
 
     if (targetEl) {
       const isComputerAction =
@@ -1944,7 +2266,7 @@ const GameSession = ({
         );
 
         // Prepare next discovery state to correctly generate hints
-        let nextDiscovered = [...discovered];
+        const nextDiscovered = [...discovered];
         let newlyDiscoveredKeyItem = null;
         let newlyDiscoveredInfoItem = null;
         result.emittedElementIds.forEach((name) => {
@@ -1974,14 +2296,14 @@ const GameSession = ({
           const hint = hasElementEffect(name, 'hint')
             ? (getRandomHint(nextDiscovered) ?? 'nothing')
             : undefined;
-          return {
+          return placeElementWithinViewport({
             id: createElementId(),
             name,
             x: midX,
             y: midY,
             ...(hint ? { hint } : {}),
             ...(icon ? { icon } : {}),
-          };
+          });
         });
         const persistentReactionElementIds = [draggedEl.id, targetEl.id].filter(
           (tableElementId) => !removedElementIds.has(tableElementId)
@@ -2042,7 +2364,11 @@ const GameSession = ({
         }
 
         // Step 1: Place at center
-        setElements([...updatedFilteredElements, ...newResultElements]);
+        setElements(
+          [...updatedFilteredElements, ...newResultElements].map((element) =>
+            placeElementWithinViewport(element)
+          )
+        );
 
         // Step 2: Move surviving non-consumable inputs and outputs into the reaction cluster
         if (reactionClusterPositionByElementId.size > 0) {
@@ -2053,10 +2379,14 @@ const GameSession = ({
                   el.id
                 );
                 if (targetPosition) {
+                  const boundedPosition = getBoundedPositionForElement(
+                    el,
+                    targetPosition
+                  );
                   return {
                     ...el,
-                    x: targetPosition.x,
-                    y: targetPosition.y,
+                    x: boundedPosition.x,
+                    y: boundedPosition.y,
                   };
                 }
                 return el;
@@ -2082,9 +2412,23 @@ const GameSession = ({
           setElements((prev) =>
             prev.map((el) => {
               if (el.id === draggedEl.id)
-                return { ...el, x: el.x + moveX, y: el.y + moveY };
+                return placeElementWithinViewport(
+                  {
+                    ...el,
+                    x: el.x + moveX,
+                    y: el.y + moveY,
+                  },
+                  'bounce'
+                );
               if (el.id === targetEl.id)
-                return { ...el, x: el.x - moveX, y: el.y - moveY };
+                return placeElementWithinViewport(
+                  {
+                    ...el,
+                    x: el.x - moveX,
+                    y: el.y - moveY,
+                  },
+                  'bounce'
+                );
               return el;
             })
           );
@@ -2103,9 +2447,23 @@ const GameSession = ({
           setElements((prev) =>
             prev.map((el) => {
               if (el.id === draggedEl.id)
-                return { ...el, x: el.x + moveX, y: el.y + moveY };
+                return placeElementWithinViewport(
+                  {
+                    ...el,
+                    x: el.x + moveX,
+                    y: el.y + moveY,
+                  },
+                  'bounce'
+                );
               if (el.id === targetEl.id)
-                return { ...el, x: el.x - moveX, y: el.y - moveY };
+                return placeElementWithinViewport(
+                  {
+                    ...el,
+                    x: el.x - moveX,
+                    y: el.y - moveY,
+                  },
+                  'bounce'
+                );
               return el;
             })
           );
@@ -2118,7 +2476,7 @@ const GameSession = ({
   };
 
   // Palette Gesture Handlers
-  const onPaletteDown = (e: React.PointerEvent, name?: string) => {
+  const onPaletteDown = (e: ReactPointerEvent, name?: string) => {
     if (areBoardInteractionsLocked) {
       return;
     }
@@ -2128,7 +2486,7 @@ const GameSession = ({
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const onPaletteMove = (e: React.PointerEvent) => {
+  const onPaletteMove = (e: ReactPointerEvent) => {
     if (areBoardInteractionsLocked) {
       return;
     }
@@ -2169,7 +2527,7 @@ const GameSession = ({
     }
   };
 
-  const onPaletteUp = (e: React.PointerEvent) => {
+  const onPaletteUp = (e: ReactPointerEvent) => {
     if (areBoardInteractionsLocked) {
       return;
     }
@@ -2190,7 +2548,7 @@ const GameSession = ({
     isGesturingPalette.current = 'none';
   };
 
-  const onPaletteWheel = (e: React.WheelEvent) => {
+  const onPaletteWheel = (e: ReactWheelEvent) => {
     if (areBoardInteractionsLocked) {
       return;
     }
@@ -2423,7 +2781,7 @@ const GameSession = ({
           rows={4}
           disabled={!canSubmitRealmReview || isRealmReviewSubmitting}
           placeholder={`Leave a review for r/${authorUsername}`}
-          className="min-h-28 w-full resize-none rounded-2xl border border-white/12 bg-slate-950/45 px-4 py-3 text-sm leading-relaxed text-white outline-none transition-colors placeholder:text-white/38 focus:border-white/30 focus:bg-slate-950/62 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-28 w-full resize-none rounded-2xl border border-white/12 bg-slate-950/45 px-4 py-3 text-sm leading-relaxed text-white transition-colors outline-none placeholder:text-white/38 focus:border-white/30 focus:bg-slate-950/62 disabled:cursor-not-allowed disabled:opacity-60"
         />
 
         {realmReviewError && (
@@ -2824,6 +3182,18 @@ const GameSession = ({
 
       {/* Elements Layer */}
       <div className="pointer-events-none absolute inset-0 z-20">
+        {fairyGlitters.map((glitter) => (
+          <div
+            key={glitter.id}
+            className="fairy-glitter absolute rounded-full"
+            style={{
+              ...glitter.style,
+              left: glitter.x,
+              top: glitter.y,
+            }}
+          />
+        ))}
+
         {elements.map((el) => {
           const isDragging = dragging === el.id;
           const isReactive = reactiveIDs.includes(el.id);
@@ -2831,7 +3201,8 @@ const GameSession = ({
           const isExploding = explodingIDs[el.id];
           const footprint = getBoardFootprintForElement(el);
           const usesPlankWrapper = footprint.isPlank;
-          const usesDynamicWrapper = usesPlankWrapper || ruleset.compactElements;
+          const usesDynamicWrapper =
+            usesPlankWrapper || ruleset.compactElements;
           const boardTileSize: ElementTileSize = ruleset.compactElements
             ? 'small'
             : 'large';
@@ -2909,7 +3280,7 @@ const GameSession = ({
                           );
                         })()}
                         <span className="text-secondary pb-1 text-lg leading-none font-black capitalize">
-                          {el.hint?.replace(/-/g, ' ')}
+                          {getElementDisplayName(el.hint)}
                         </span>
                       </div>
                     )}
@@ -3052,7 +3423,7 @@ const GameSession = ({
                 New Key Item Discovered!
               </div>
               <h2 className="mb-6 text-4xl font-black text-white capitalize">
-                {discoveryPopup.replace('-', ' ')}
+                {getElementDisplayName(discoveryPopup)}
               </h2>
 
               <div className="relative mb-8 flex justify-center">
@@ -3385,8 +3756,8 @@ const GameSession = ({
               </h3>
               <p className="mb-6 text-base leading-relaxed text-white/90">
                 Your review is now a Reddit comment. If you liked this realm,
-                open the game post and upvote it from Reddit so more players
-                can find it.
+                open the game post and upvote it from Reddit so more players can
+                find it.
               </p>
               <button
                 type="button"

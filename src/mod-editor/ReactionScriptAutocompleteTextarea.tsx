@@ -64,11 +64,13 @@ const SYSTEM_WORDS = new Set([
   'add',
   'always',
   'and',
+  'call',
   'count',
   'counters',
   'crossing',
   'discovered',
   'event',
+  'function',
   'if',
   'message',
   'not_discovered',
@@ -105,12 +107,7 @@ const shouldTriggerAutocompleteFromKey = (event: {
     return false;
   }
 
-  return (
-    event.key.length === 1 ||
-    event.key === 'Backspace' ||
-    event.key === 'Delete' ||
-    event.key === 'Enter'
-  );
+  return event.key.length === 1;
 };
 
 const getLineStart = (value: string, cursor: number) =>
@@ -891,6 +888,7 @@ export const ReactionScriptAutocompleteTextarea = ({
       ref={textareaRef}
       value={value}
       onChange={(event) => {
+        ignoreNextSelectRef.current = true;
         onChange(event.target.value);
         hasPendingEditRef.current = true;
         setSelectionStart(event.target.selectionStart);
@@ -953,23 +951,14 @@ export const ReactionScriptAutocompleteTextarea = ({
         const nextSelectionStart = event.currentTarget.selectionStart;
         if (ignoreNextSelectRef.current) {
           ignoreNextSelectRef.current = false;
+          setSelectionStart(nextSelectionStart);
+          return;
         } else {
           settleEditing();
         }
         setSelectionStart(nextSelectionStart);
         setSelectedSuggestionIndex(null);
-        setIsAutocompleteEnabled(
-          event.currentTarget.selectionStart ===
-            event.currentTarget.selectionEnd &&
-            shouldOpenAutocompleteAtCursor({
-              counterNames,
-              cursor: nextSelectionStart,
-              elementNames,
-              ...(iconElementNames ? { iconElementNames } : {}),
-              mode,
-              value: event.currentTarget.value,
-            })
-        );
+        setIsAutocompleteEnabled(false);
       }}
       onKeyDown={(event) => {
         if (
@@ -1120,6 +1109,7 @@ export const ReactionScriptAutocompleteTextarea = ({
         if (suggestions.length > 0) {
           if (event.key === 'ArrowDown') {
             event.preventDefault();
+            ignoreNextSelectRef.current = true;
             setSelectedSuggestionIndex((current) =>
               current === null || current + 1 >= suggestions.length
                 ? 0
@@ -1130,6 +1120,7 @@ export const ReactionScriptAutocompleteTextarea = ({
 
           if (event.key === 'ArrowUp') {
             event.preventDefault();
+            ignoreNextSelectRef.current = true;
             setSelectedSuggestionIndex((current) =>
               current === null || current === 0
                 ? suggestions.length - 1
@@ -1140,6 +1131,7 @@ export const ReactionScriptAutocompleteTextarea = ({
 
           if (event.key === 'Enter' || event.key === 'Tab') {
             if (selectedSuggestionIndex === null) {
+              ignoreNextSelectRef.current = true;
               return;
             }
 
@@ -1156,6 +1148,20 @@ export const ReactionScriptAutocompleteTextarea = ({
 
         if (event.key === 'Escape') {
           setIsAutocompleteEnabled(false);
+          settleEditing();
+          return;
+        }
+
+        if (
+          event.key === 'ArrowLeft' ||
+          event.key === 'ArrowRight' ||
+          event.key === 'Home' ||
+          event.key === 'End' ||
+          event.key === 'PageUp' ||
+          event.key === 'PageDown'
+        ) {
+          setIsAutocompleteEnabled(false);
+          setSelectedSuggestionIndex(null);
           settleEditing();
           return;
         }

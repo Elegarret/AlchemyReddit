@@ -101,6 +101,29 @@ afterEach(() => {
 });
 
 describe('CompactCatalog', () => {
+  it('shows the rounded cached rating in the compact hub', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    listBestQueryMock.mockResolvedValue([
+      {
+        ...buildMod(1),
+        bestScore: 62.3,
+      },
+    ]);
+    listFeaturedQueryMock.mockResolvedValue([]);
+    listNewQueryMock.mockResolvedValue([]);
+
+    await act(async () => {
+      await import('./mod-catalog-compact');
+    });
+    await waitFor(() => /Realm 1(?!\d)/.test(getPageText()));
+
+    expect(
+      document.querySelector(
+        `[title="Mod's rating based on Reddit net score and player's count"]`
+      )?.textContent
+    ).toBe('62');
+  });
+
   it('renders the compact tabbed catalog and trims each tab to eight realms', async () => {
     document.body.innerHTML = '<div id="root"></div>';
     listBestQueryMock.mockResolvedValue([

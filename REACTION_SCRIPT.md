@@ -13,7 +13,8 @@ A bare element name is shorthand for `add elementName`, but canonical formatting
 - `if_line := if ( condition_list ) action; action; ...`
 - `if_block := if ( condition_list ):` followed by indented action lines
 - `condition_list := condition (and condition)*`
-- full reaction-text editor only: `event [crossing|once|always]: counter_condition_list` followed by indented script lines
+- full reaction-text editor only: `function Name:` followed by indented script lines
+- full reaction-text editor only: `event [crossing|once|always]: counter_expression_condition_list` followed by indented script lines
 - `// comment` starts a line comment outside double-quoted strings and runs to end of line
 
 ## Actions
@@ -22,11 +23,15 @@ A bare element name is shorthand for `add elementName`, but canonical formatting
 - `add element_1, element_2`
 - `element_1` - shortcut for `add element_1`
 - `remove element_1` - removes 1 element with given name
+- `remove element_1, element_2` - removes 1 copy of each listed element in order
 - `remove_all` - clears table
 - `remove_all element_1` - removes all elements with this name
 - `set counter += 1` - add value
-- `set counter -= 1` - substract value
+- `set counter += otherCounter` - add another counter's current value
+- `set counter += random(-5,5)` - add a random integer from -5 through 5
+- `set counter -= 1` - subtract value
 - `set counter = 10` - set value
+- `call FunctionName` - run a full-text `function FunctionName:` block
 - `message "Message at the top of the screen"`
 - `popup "Blocking popup text"`
 - `popup "Blocking popup text", icon_name`
@@ -49,6 +54,26 @@ A bare element name is shorthand for `add elementName`, but canonical formatting
 - `count(counterName) >= number`
 - `count(counterName) == number`
 - `count(counterName) != number`
+- `random(100) < number` - `random(100)` returns an integer from 0 through 99
+- `counterName >= random(min,max)` - compare a counter to a random integer
+
+## Full-Text Functions
+
+Functions are authored only in the full reaction-text editor. They define reusable
+script lines and run only when another script calls them.
+
+```txt
+function Heal:
+    set Health += 2
+    message "Recovered."
+
+Air+Fire=
+    call Heal
+```
+
+Function names must start with a letter and may contain letters, numbers,
+underscores, or hyphens. Function bodies return no value; their actions behave
+as if they were written directly at the `call` line. Recursive calls are invalid.
 
 ## Full-Text Counter Events
 
@@ -59,18 +84,22 @@ events run before the original reaction script continues.
 ```txt
 counters: Health min=0 max=10 initial=10
 
-event: count(Health) <= 0
+event: Health <= 0
     message "You died"
     lose "You died."
 ```
 
-Event conditions support counter comparisons only:
+Event conditions support counter numeric comparisons only:
 
-- `count(Health) <= 0`
-- `count(Health) <= 0 and count(Poison) > 0`
+- `Health <= 0`
+- `Health <= 0 and Poison > 0`
+- `Health < MaxHealth`
+- `Health < random(1,10)`
 
 Table and discovery predicates such as `on_table(...)` and `discovered(...)`
-are not valid in event headers.
+are not valid in event headers. Event headers must reference at least one
+counter, so a random-only condition such as `random(100) < 33` is not valid.
+Legacy `count(Health) <= 0` event conditions still parse for saved realms.
 
 Event repeat modes:
 
@@ -82,7 +111,7 @@ Event bodies use normal script actions. The event-only `stop-reaction` action
 prevents later lines in the original reaction script from running:
 
 ```txt
-event: count(Energy) <= 0
+event: Energy <= 0
     message "You are out of energy."
     stop-reaction
 ```

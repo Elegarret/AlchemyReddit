@@ -44,6 +44,7 @@ type ModSplashRulesetPreview = {
 };
 
 type ModSplashListingPreview = {
+  bestScore?: number;
   completionCount?: number;
   featuredAt: string | null;
   ownerUsername: string | null;
@@ -107,6 +108,8 @@ const isModSplashListingPreview = (
     isStringOrNull(Reflect.get(value, 'ownerUsername')) &&
     (Reflect.get(value, 'featuredAt') === undefined ||
       isStringOrNull(Reflect.get(value, 'featuredAt'))) &&
+    (Reflect.get(value, 'bestScore') === undefined ||
+      isNumber(Reflect.get(value, 'bestScore'))) &&
     isNumber(Reflect.get(value, 'upvotes')) &&
     isNumber(Reflect.get(value, 'playerCount')) &&
     (Reflect.get(value, 'completionCount') === undefined ||
@@ -237,6 +240,9 @@ const toModListingPreview = (
   }
 
   return {
+    ...(typeof modListing.bestScore === 'number'
+      ? { bestScore: modListing.bestScore }
+      : {}),
     ...(typeof modListing.completionCount === 'number'
       ? { completionCount: modListing.completionCount }
       : {}),
@@ -247,6 +253,27 @@ const toModListingPreview = (
     upvotes: modListing.upvotes ?? 0,
   };
 };
+
+const getListingBestScore = (listing: ModSplashListingPreview) => {
+  if (typeof listing.bestScore === 'number') {
+    return listing.bestScore;
+  }
+
+  const voteScore = Math.max(listing.upvotes ?? 0, 0);
+  const playerCount = listing.playerCount ?? 0;
+  const effectiveVotes =
+    voteScore / (1 + Math.log1p(playerCount) * 0.15);
+  return Math.min(
+    100,
+    Math.max(0, 100 * (1 - Math.exp(-effectiveVotes * 0.45)))
+  );
+};
+
+const getDisplayedRating = (listing: ModSplashListingPreview | null) =>
+  listing ? Math.round(getListingBestScore(listing)) : 0;
+
+const ratingTooltip =
+  "Mod's rating based on Reddit net score and player's count";
 
 const resolveModSplashState = (
   response: Awaited<ReturnType<typeof trpc.init.get.query>>
@@ -299,7 +326,10 @@ export const ModSplash = () => {
         }
 
         const nextState = resolveModSplashState(response);
-        writeInlineViewCache(getModSplashCacheKey(), stripCompletionCount(nextState));
+        writeInlineViewCache(
+          getModSplashCacheKey(),
+          stripCompletionCount(nextState)
+        );
         setState(nextState);
       } catch (error) {
         console.error(error);
@@ -417,7 +447,7 @@ export const ModSplash = () => {
   const realmSizeClassName = isEmptyRealmSizeLabel(realmSizeLabel)
     ? 'text-[color:var(--realm-size-empty-text)]'
     : 'realm-text-soft';
-  const upvotesTooltip = `Net vote score: ${state.modListing?.upvotes || 0}`;
+  const displayedRating = getDisplayedRating(state.modListing);
   const playerCountTooltip = `Users played: ${state.modListing?.playerCount || 0}`;
   const showCompletionCount =
     typeof state.modListing?.completionCount === 'number';
@@ -477,10 +507,10 @@ export const ModSplash = () => {
             )}
             <div
               className="realm-text-ink flex items-center gap-1"
-              title={upvotesTooltip}
+              title={ratingTooltip}
             >
               <IoThumbsUpSharp className="text-[14px]" />
-              <span>{state.modListing?.upvotes || 0}</span>
+              <span>{displayedRating}</span>
             </div>
             <div
               className="realm-text-soft flex items-center gap-1"

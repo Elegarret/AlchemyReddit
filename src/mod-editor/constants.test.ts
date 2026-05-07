@@ -9,6 +9,8 @@ describe('ELEMENT_EFFECT_OPTIONS', () => {
       'earthquake',
       'explode',
       'light',
+      'walking',
+      'glitters',
     ]);
   });
 
@@ -19,6 +21,8 @@ describe('ELEMENT_EFFECT_OPTIONS', () => {
       'Quake (shake screen)',
       'Explode (clear screen)',
       'Light',
+      'Walking',
+      'Glitters',
     ]);
   });
 });
@@ -32,5 +36,7 @@ describe('normalizeEditorElementEffect', () => {
   it('preserves supported effects', () => {
     expect(normalizeEditorElementEffect('hint')).toBe('hint');
     expect(normalizeEditorElementEffect('earthquake')).toBe('earthquake');
+    expect(normalizeEditorElementEffect('walking')).toBe('walking');
+    expect(normalizeEditorElementEffect('glitters')).toBe('glitters');
   });
 });

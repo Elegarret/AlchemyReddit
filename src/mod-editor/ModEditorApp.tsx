@@ -74,9 +74,11 @@ import {
   formatDate,
   formatReactionText,
   formatReactionTextIssue,
+  getCanonicalReactionText,
   getNextGeneratedElementName,
   getSharePostUrl,
   normalizeReactionComments,
+  patchReactionTextForReactionChange,
   parseImportedDraftText,
   parseReactionTextToDraft,
   serializeDraftForExport,
@@ -270,7 +272,9 @@ export const ModEditorApp = () => {
   const validationBlinkTimeoutRef = useRef<number | null>(null);
   const [reactionView, setReactionView] = useState<'visual' | 'text'>('visual');
   const [isReactionTextExpanded, setIsReactionTextExpanded] = useState(true);
-  const [reactionText, setReactionText] = useState('');
+  const [reactionText, setReactionText] = useState(() =>
+    getCanonicalReactionText(createEmptyDraft())
+  );
   const [pendingElementFocusId, setPendingElementFocusId] = useState<
     string | null
   >(null);
@@ -281,18 +285,13 @@ export const ModEditorApp = () => {
   const coverInputRef = useRef<HTMLInputElement | null>(null);
 
   const reactionTextParse = useMemo(
-    () =>
-      reactionView === 'text'
-        ? parseReactionTextToDraft(draft, reactionText)
-        : null,
-    [draft, reactionText, reactionView]
+    () => parseReactionTextToDraft(draft, reactionText),
+    [draft, reactionText]
   );
-  const reactionTextIssues =
-    reactionView === 'text' ? (reactionTextParse?.errors ?? []) : [];
-  const draftWithTextChanges =
-    reactionView === 'text' && reactionTextParse?.ok
-      ? reactionTextParse.draft
-      : draft;
+  const reactionTextIssues = reactionTextParse.errors;
+  const draftWithTextChanges = reactionTextParse.ok
+    ? reactionTextParse.draft
+    : draft;
 
   const syncDraftFromText = (text: string) => {
     const parsed = parseReactionTextToDraft(draft, text);
@@ -311,7 +310,6 @@ export const ModEditorApp = () => {
 
   const toggleReactionView = () => {
     if (reactionView === 'visual') {
-      setReactionText(formatReactionText(draft));
       setIsReactionTextExpanded(true);
       setReactionView('text');
     } else {
@@ -327,7 +325,6 @@ export const ModEditorApp = () => {
       }
 
       setDraft(parsed.draft);
-      setReactionText(formatReactionText(parsed.draft));
       setReactionView('visual');
     }
   };
@@ -398,6 +395,7 @@ export const ModEditorApp = () => {
         elements: draftWithTextChanges.elements,
         reactions: draftWithTextChanges.reactions,
         events: draftWithTextChanges.events ?? [],
+        functions: draftWithTextChanges.functions ?? [],
       }),
     [draftWithTextChanges]
   );
@@ -488,7 +486,7 @@ export const ModEditorApp = () => {
     setDraft(nextDraft);
     setShouldShowValidationPlank(true);
     setIsValidationExpanded(false);
-    setReactionText(formatReactionText(nextDraft));
+    setReactionText(getCanonicalReactionText(nextDraft));
     setLoadedDraftId(nextLoadedDraftId);
     setLoadedRealmMeta(nextLoadedRealmMeta);
     setShareUrl(null);
@@ -498,8 +496,9 @@ export const ModEditorApp = () => {
   };
 
   const resolveCurrentDraftForActions = () => {
-    if (reactionView === 'text' && reactionTextIssues.length > 0) {
-      const firstIssue = reactionTextIssues[0];
+    const parsed = parseReactionTextToDraft(draft, reactionText);
+    if (!parsed.ok) {
+      const firstIssue = parsed.errors[0];
       throw new Error(
         firstIssue
           ? formatReactionTextIssue(firstIssue)
@@ -508,15 +507,14 @@ export const ModEditorApp = () => {
     }
 
     const nextDraft = {
-      ...draftWithTextChanges,
-      summary: clampRealmSummary(draftWithTextChanges.summary),
-      intro: draftWithTextChanges.intro.trim(),
-      reactionComments: normalizeReactionComments(draftWithTextChanges),
+      ...parsed.draft,
+      summary: clampRealmSummary(parsed.draft.summary),
+      intro: parsed.draft.intro.trim(),
+      reactionText,
+      reactionComments: normalizeReactionComments(parsed.draft),
     };
 
-    if (reactionView === 'text') {
-      setDraft(nextDraft);
-    }
+    setDraft(nextDraft);
 
     return nextDraft;
   };
@@ -550,7 +548,13 @@ export const ModEditorApp = () => {
     updater: (current: SaveDraftInput) => SaveDraftInput
   ) => {
     setShouldShowValidationPlank(true);
-    setDraft((current) => updater(current));
+    setDraft((current) => {
+      const nextDraft = updater(current);
+      if (reactionView === 'visual') {
+        setReactionText(formatReactionText(nextDraft));
+      }
+      return nextDraft;
+    });
   };
 
   const openAuthorsHelpPage = () => {
@@ -1051,8 +1055,7 @@ export const ModEditorApp = () => {
       outputIds.push(leftResolved.elementId);
     }
 
-    setShouldShowValidationPlank(true);
-    setDraft({
+    const committedDraft = {
       ...nextDraft,
       reactions: nextDraft.reactions.map((reaction, reactionIndex) =>
         reactionIndex === index
@@ -1064,11 +1067,18 @@ export const ModEditorApp = () => {
             }
           : reaction
       ),
-    });
+    };
+    setShouldShowValidationPlank(true);
+    setReactionText(
+      patchReactionTextForReactionChange(reactionText, index, committedDraft)
+    );
+    setDraft(committedDraft);
   };
 
   const updateReactionScript = (index: number, script: string) => {
-    updateDraft((current) => ({
+    setShouldShowValidationPlank(true);
+    setDraft((current) => {
+      const nextDraft = {
       ...current,
       reactions: current.reactions.map((reaction, reactionIndex) =>
         reactionIndex === index
@@ -1078,7 +1088,12 @@ export const ModEditorApp = () => {
             }
           : reaction
       ),
-    }));
+      };
+      setReactionText(
+        patchReactionTextForReactionChange(reactionText, index, nextDraft)
+      );
+      return nextDraft;
+    });
   };
 
   const deleteReaction = (index: number) => {
@@ -1478,6 +1493,8 @@ export const ModEditorApp = () => {
           elements: loaded.elements,
           reactions: loaded.reactions,
           events: loaded.events ?? [],
+          functions: loaded.functions ?? [],
+          ...(loaded.reactionText ? { reactionText: loaded.reactionText } : {}),
           ...(loaded.reactionComments
             ? { reactionComments: loaded.reactionComments }
             : {}),
@@ -1529,7 +1546,9 @@ export const ModEditorApp = () => {
     try {
       await trpc.mods.remove.mutate(modId);
       if (loadedDraftId === modId) {
-        setDraft(createEmptyDraft());
+        const emptyDraft = createEmptyDraft();
+        setDraft(emptyDraft);
+        setReactionText(getCanonicalReactionText(emptyDraft));
         setShouldShowValidationPlank(false);
         setIsValidationExpanded(false);
         setLoadedDraftId(null);
@@ -1567,7 +1586,9 @@ export const ModEditorApp = () => {
     setIsBusy(true);
     try {
       await trpc.mods.remove.mutate(loadedDraftId);
-      setDraft(createEmptyDraft());
+      const emptyDraft = createEmptyDraft();
+      setDraft(emptyDraft);
+      setReactionText(getCanonicalReactionText(emptyDraft));
       setShouldShowValidationPlank(false);
       setIsValidationExpanded(false);
       setLoadedDraftId(null);
@@ -2565,6 +2586,7 @@ export const ModEditorApp = () => {
                       <ReactionWidget
                         counterElementIds={counterElementIds}
                         counterNames={counterNames}
+                        functions={draftWithTextChanges.functions ?? []}
                         key={`${reaction.leftId}-${reaction.rightId}-${index}`}
                         index={index}
                         reaction={reaction}
@@ -2611,7 +2633,7 @@ export const ModEditorApp = () => {
                       onChange={handleReactionTextChange}
                       onPasteMissingElements={handlePasteMissingElements}
                       placeholder={
-                        'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nevent: count(Health) <= 0\n    message "You died"\n    lose "You died."\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    popup "It opens. (Markdown allowed)", Treasure\n    add Treasure'
+                        'starters: Air, Fire, Earth, Water\ncounters: Health min=0 max=100 initial=10\nnonconsumables: Furnace\n\nevent: Health <= 0\n    message "You died"\n    lose "You died."\n\nWater+Fire=Steam, Fog\nCupboard+Key=\n    popup "It opens. (Markdown allowed)", Treasure\n    add Treasure'
                       }
                       reactionTextDraft={draft}
                       reactionTextIssues={reactionTextIssues}

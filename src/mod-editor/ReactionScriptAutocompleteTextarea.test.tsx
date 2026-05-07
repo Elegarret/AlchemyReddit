@@ -122,6 +122,128 @@ describe('ReactionScriptAutocompleteTextarea', () => {
     });
   });
 
+  it('opens autocomplete only after literal typing, not cursor placement', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState('add A');
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="script"
+          onChange={setValue}
+          placeholder="Type a script"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    await act(async () => {
+      textarea!.focus();
+      textarea!.setSelectionRange(5, 5);
+      textarea!.dispatchEvent(new Event('select', { bubbles: true }));
+    });
+
+    expect(document.body.querySelectorAll('button')).toHaveLength(0);
+
+    await act(async () => {
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          key: 'm',
+        })
+      );
+      setTextareaValue(textarea as HTMLTextAreaElement, 'add Am', 6);
+      textarea!.dispatchEvent(new Event('select', { bubbles: true }));
+    });
+
+    const suggestionLabels = Array.from(document.body.querySelectorAll('button'))
+      .map((button) => button.querySelector('span')?.textContent ?? '')
+      .filter((label) => elementNames.includes(label));
+
+    expect(suggestionLabels).toEqual(['Amber', 'Amethyst', 'Ammonia']);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('closes autocomplete when cursor navigation keys move the caret', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+    const root = createRoot(container);
+    const Harness = () => {
+      const [value, setValue] = useState('add ');
+
+      return (
+        <ReactionScriptAutocompleteTextarea
+          className="test-textarea"
+          counterNames={[]}
+          elementNames={elementNames}
+          mode="script"
+          onChange={setValue}
+          placeholder="Type a script"
+          rows={4}
+          value={value}
+        />
+      );
+    };
+
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    await act(async () => {
+      textarea!.focus();
+      textarea!.setSelectionRange(4, 4);
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          key: 'A',
+        })
+      );
+      setTextareaValue(textarea as HTMLTextAreaElement, 'add A', 5);
+    });
+
+    expect(document.body.querySelectorAll('button').length).toBeGreaterThan(0);
+
+    await act(async () => {
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          key: 'ArrowLeft',
+        })
+      );
+      textarea!.setSelectionRange(4, 4);
+      textarea!.dispatchEvent(new Event('select', { bubbles: true }));
+    });
+
+    expect(document.body.querySelectorAll('button')).toHaveLength(0);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it('beautifies script mode content on blur when enabled', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -231,7 +353,7 @@ describe('ReactionScriptAutocompleteTextarea', () => {
           placeholder="Type reactions"
           rows={6}
           value={
-            'starters: Air, Fire\ncounters: Health initial=1\nnonconsumables: Furnace'
+            'starters: Air, Fire\ncounters: Health initial=1\nnonconsumables: Furnace\nfunction Heal:'
           }
         />
       );
@@ -241,7 +363,14 @@ describe('ReactionScriptAutocompleteTextarea', () => {
       Array.from(container.querySelectorAll('.editor-code-token-keyword')).map(
         (node) => node.textContent
       )
-    ).toEqual(expect.arrayContaining(['starters', 'counters', 'nonconsumables']));
+    ).toEqual(
+      expect.arrayContaining([
+        'starters',
+        'counters',
+        'nonconsumables',
+        'function',
+      ])
+    );
 
     await act(async () => {
       root.unmount();
@@ -558,7 +687,7 @@ describe('ReactionScriptAutocompleteTextarea', () => {
 
     const root = createRoot(container);
     const Harness = () => {
-      const [value, setValue] = useState('event once: count(health)');
+      const [value, setValue] = useState('event once: health <= 0');
 
       return (
         <ReactionScriptAutocompleteTextarea
@@ -596,7 +725,7 @@ describe('ReactionScriptAutocompleteTextarea', () => {
       );
     });
 
-    expect(textarea.value).toBe('event once: count(health)\n    ');
+    expect(textarea.value).toBe('event once: health <= 0\n    ');
 
     await act(async () => {
       root.unmount();

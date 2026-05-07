@@ -138,18 +138,20 @@ const getBestScore = (mod: ModListItem) => {
     return mod.bestScore;
   }
 
-  const voteScore = mod.upvotes ?? 0;
+  const voteScore = Math.max(mod.upvotes ?? 0, 0);
   const playerCount = mod.playerCount ?? 0;
-  return (
-    voteScore / Math.sqrt(Math.max(playerCount, 1)) +
-    Math.log1p(playerCount) * 0.35
+  const effectiveVotes =
+    voteScore / (1 + Math.log1p(playerCount) * 0.15);
+  return Math.min(
+    100,
+    Math.max(0, 100 * (1 - Math.exp(-effectiveVotes * 0.45)))
   );
 };
 
-const getDisplayedRating = (mod: ModListItem) => Math.trunc(getBestScore(mod));
+const getDisplayedRating = (mod: ModListItem) => Math.round(getBestScore(mod));
 
 const ratingTooltip =
-  "Mod's rating based on upvotes, downvotes and player's count";
+  "Mod's rating based on Reddit net score and player's count";
 
 const renderFeaturedMarker = (mod: ModListItem) =>
   mod.featuredAt ? (

@@ -21,3 +21,9 @@ export type SnowBackdropFlakeStyle = CSSProperties & {
   '--snow-scale-peak': string;
   '--snow-scale-end': string;
 };
+
+export type FairyGlitterStyle = CSSProperties & {
+  '--glitter-drift-x': string;
+  '--glitter-drift-y': string;
+  '--glitter-size': string;
+};

@@ -6,6 +6,7 @@ import { test } from '../test';
 import type { ModElement } from '../../modding/types';
 import {
   getEditableModForUser,
+  getModBestScore,
   getPublishedMod,
   hidePublishedMod,
   listAllAdminMods,
@@ -95,6 +96,46 @@ const saveRealmDraft = async (
       },
     ],
   });
+
+test('best score maps to a wider 0-100 scale and clamps weak signals', async () => {
+  expect(
+    getModBestScore({
+      playerCount: 0,
+      upvotes: 0,
+    })
+  ).toBe(0);
+
+  expect(
+    getModBestScore({
+      playerCount: 50,
+      upvotes: -3,
+    })
+  ).toBe(0);
+
+  expect(
+    getModBestScore({
+      playerCount: 75,
+      upvotes: 2,
+    })
+  ).toBeGreaterThan(
+    getModBestScore({
+      playerCount: 400,
+      upvotes: 2,
+    })
+  );
+
+  expect(
+    getModBestScore({
+      playerCount: 1100,
+      upvotes: 3,
+    })
+  ).toBeGreaterThan(
+    getModBestScore({
+      playerCount: 400,
+      upvotes: 2,
+    })
+  );
+});
 
 test('republishing reuses the existing share post and updates its custom post data', async ({
   userId,
@@ -902,13 +943,17 @@ test('recording a unique player updates cached player counts and best score', as
   const after = await listBestMods(1);
   expect(after[0]?.playerCount).toBe(1);
   expect(after[0]?.bestScore).toBeCloseTo(
-    9 / Math.sqrt(1) +
-      Math.log1p(1) * 0.35 -
-      Math.min(
-        (Date.now() - Date.parse(after[0]?.publishedAt ?? '')) / 86_400_000,
-        90
-      ) *
-        0.001,
+    Math.min(
+      100,
+      Math.max(
+        0,
+        100 *
+          (1 -
+            Math.exp(
+              -((9 / (1 + Math.log1p(1) * 0.15)) * 0.45)
+            ))
+      )
+    ),
     5
   );
 });
@@ -1465,6 +1510,105 @@ test('draft save and load preserve editor-only reaction comments', async ({
     ],
     trailingComments: [' trailing note'],
   });
+});
+
+test('draft save and publish derive runtime fields from reaction text', async ({
+  userId,
+  username,
+  mocks,
+}) => {
+  const sharePostId = 't3_sharepost-reaction-text';
+  mocks.reddit.linksAndComments.addPost({
+    id: sharePostId,
+    title: "Storm Lab (testuser's realm)",
+  });
+  const sharePost = await reddit.getPostById(sharePostId);
+  Object.defineProperty(sharePost, 'id', {
+    configurable: true,
+    value: 'sharepost-reaction-text',
+    writable: true,
+  });
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(sharePost);
+
+  const reactionText = [
+    'starters: Air, Water',
+    '',
+    'function Reward:',
+    '    add Storm',
+    'Air+Water=',
+    '    call Reward',
+    '',
+  ].join('\n');
+  const saved = await saveDraftForUser(userId, username, {
+    title: 'Storm Lab',
+    summary: 'Reaction text source check.',
+    intro: 'Welcome to the storm lab.',
+    startingElementIds: ['air', 'water'],
+    counters: [],
+    showPalette: true,
+    elements: [
+      makeElement('air', 'Air'),
+      makeElement('water', 'Water'),
+      makeElement('storm', 'Storm'),
+    ],
+    reactions: [
+      {
+        leftId: 'air',
+        rightId: 'water',
+        outputIds: [],
+      },
+    ],
+    reactionText,
+  });
+
+  expect(saved.reactionText).toBe(reactionText);
+  expect(saved.functions).toEqual([
+    {
+      name: 'Reward',
+      script: 'add Storm',
+    },
+  ]);
+  expect(saved.reactions).toEqual([
+    {
+      leftId: 'air',
+      rightId: 'water',
+      outputIds: [],
+      script: 'call Reward',
+    },
+  ]);
+
+  const published = await publishDraftForUser(userId, username, saved.id);
+  expect(published.mod.reactionText).toBe(reactionText);
+  expect(published.mod.functions).toEqual(saved.functions);
+});
+
+test('draft save rejects invalid function calls from reaction text', async ({
+  userId,
+  username,
+}) => {
+  await expect(
+    saveDraftForUser(userId, username, {
+      title: 'Loop Lab',
+      summary: 'Recursive function check.',
+      intro: '',
+      startingElementIds: ['air', 'water'],
+      counters: [],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('water', 'Water'),
+      ],
+      reactions: [],
+      reactionText: [
+        'starters: Air, Water',
+        '',
+        'function Loop:',
+        '    call Loop',
+        'Air+Water=',
+        '    call Loop',
+      ].join('\n'),
+    })
+  ).rejects.toThrow('Function "Loop" cannot call itself recursively.');
 });
 
 test('saving allows oversized output lists but publishing blocks on the warning', async ({

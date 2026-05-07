@@ -96,9 +96,11 @@ vi.mock('./ReactionScriptAutocompleteTextarea', () => ({
   ReactionScriptAutocompleteTextarea: ({
     onChange,
     reactionTextIssues,
+    value,
   }: {
     onChange: (value: string) => void;
     reactionTextIssues?: Array<{ line: number; message: string }>;
+    value: string;
   }) => (
     <div data-testid="reaction-text-editor">
       <button
@@ -107,9 +109,29 @@ vi.mock('./ReactionScriptAutocompleteTextarea', () => ({
       >
         Inject Invalid Reaction Text
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          onChange(
+            [
+              'starters: Air, Fire, Earth, Water',
+              '',
+              'function Heal:',
+              '    message "Recovered"',
+              '',
+              'Air+Fire=, Water+Fire=',
+              '    call Heal',
+              '',
+            ].join('\n')
+          )
+        }
+      >
+        Inject Function Text
+      </button>
       <div data-testid="reaction-text-issues">
         Issue count: {reactionTextIssues?.length ?? 0}
       </div>
+      <pre data-testid="reaction-text-value">{value}</pre>
     </div>
   ),
 }));
@@ -217,6 +239,65 @@ describe('ModEditorApp', () => {
     expect(container.textContent).toContain('Validation:');
     expect(container.textContent).toContain('Issue count: 1');
     expect(container.querySelectorAll('.editor-validation-error')).toHaveLength(0);
+
+    await unmount();
+  });
+
+  it('keeps raw functions, grouping, and blank lines through text/visual toggles', async () => {
+    const { container, unmount } = await renderApp();
+
+    const textEditorButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Text Editor')
+    );
+    expect(textEditorButton).toBeTruthy();
+
+    await act(async () => {
+      textEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const injectFunctionButton = Array.from(
+      container.querySelectorAll('button')
+    ).find((button) => button.textContent?.includes('Inject Function Text'));
+    expect(injectFunctionButton).toBeTruthy();
+
+    await act(async () => {
+      injectFunctionButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true })
+      );
+    });
+
+    const expectedText = [
+      'starters: Air, Fire, Earth, Water',
+      '',
+      'function Heal:',
+      '    message "Recovered"',
+      '',
+      'Air+Fire=, Water+Fire=',
+      '    call Heal',
+      '',
+    ].join('\n');
+
+    const visualEditorButton = Array.from(
+      container.querySelectorAll('button')
+    ).find((button) => button.textContent?.includes('Visual Editor'));
+    expect(visualEditorButton).toBeTruthy();
+
+    await act(async () => {
+      visualEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const backToTextButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Text Editor')
+    );
+    expect(backToTextButton).toBeTruthy();
+
+    await act(async () => {
+      backToTextButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(
+      container.querySelector('[data-testid="reaction-text-value"]')?.textContent
+    ).toBe(expectedText);
 
     await unmount();
   });

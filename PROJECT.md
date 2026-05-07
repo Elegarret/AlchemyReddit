@@ -63,7 +63,7 @@ Keep this file updated when architecture, major flows, or important project conv
 - Inline splash entrypoints cache their last rendered state in session storage and revalidate on `window.focus`, which keeps return-from-game popup closes from falling back to a visibly cold inline reload.
 - The inline splash now routes its secondary CTA to the realm catalog (`Alchemy Hub`) instead of opening a fresh editor directly.
 - The compact realm catalog is a fixed single-view screen with `Featured` / `Best` / `New` tabs, capped to 8 realms per tab in a 2x4 grid, and conditionally adds `My Realms` for signed-in users who have created realms. It keeps realm creation as a compact header action instead of a separate section. Separate compact entrypoints can open directly to public tabs. Moderators can mark published realms as featured from the full catalog admin view; featured realms show an editorial-choice star in catalogs and realm splashes.
-- Catalog ranking is now cache-first on the server. Published realms keep a per-realm Redis rank cache (`upvotes`, `playerCount`, `bestScore`, `lastSyncedAt`) plus derived indexes for `Best`, `Featured`, and admin-visible `All`. The cache freshness target for vote-based ranking is 15 minutes.
+- Catalog ranking is now cache-first on the server. Published realms keep a per-realm Redis rank cache (`upvotes`, `playerCount`, `bestScore`, `lastSyncedAt`) plus derived indexes for `Best`, `Featured`, and admin-visible `All`. The cache freshness target for vote-based ranking is 15 minutes, and the cached `bestScore` is now a bounded `0-100` rating derived from Reddit net score with player-count dampening.
 - `Best` no longer comes from loading a bulk catalog payload and sorting it in the client. The server reads a cached Redis best-score zset, refreshes only a top candidate window when entries are stale, and returns the top requested realms from that index.
 - `New` continues to use the existing published catalog zset ordered by original `publishedAt`, so republishing edits do not bump a realm back to the top.
 - `Featured` now reads from a dedicated featured-membership index on the server and still returns a randomized subset for the compact hub rather than a deterministic sort.
@@ -78,11 +78,13 @@ Keep this file updated when architecture, major flows, or important project conv
 - Reaction script syntax now canonically uses `add`, bracket-less action forms such as `set health += 1`, `message "..."`, `popup "..."`, `win "..."`, and `lose "..."`, plus condition predicates like `not_discovered(...)` and `count(...)` comparisons. `count(Counter)` reads a counter value, while `count(Element)` in reaction scripts reads the amount of that element on the table. The per-reaction textarea exposes lightweight local autocomplete for those token families, while the full text editor serializes valid scripts back out in canonical form.
 - Reaction scripts and the full reaction-text editor now support `//` comments outside quoted strings. Script beautifying preserves comment lines and trailing comments, and comment-only script bodies do not count as active scripted overrides.
 - Full reaction-text comments persist through save/load and visual/text mode switches via editor-only `reactionComments` metadata stored alongside reactions. That metadata must stay out of gameplay/runtime behavior and out of the published fingerprint.
-- `remove_all` now supports both `remove_all ElementName` to clear one element kind and a bare `remove_all` form that clears consumable table elements while preserving non-consumables. Counter visibility is separate: `add CounterName` shows a counter chip, `remove CounterName` hides it, and `remove_all CounterName` remains invalid.
+- `remove` now accepts comma-separated targets and removes one matching table instance per listed gameplay element in order; for counters it hides each listed counter chip. `remove_all` supports both `remove_all ElementName` to clear one element kind and a bare `remove_all` form that clears consumable table elements while preserving non-consumables. Counter visibility is separate: `add CounterName` shows a counter chip, `remove CounterName` hides it, and `remove_all CounterName` remains invalid.
 - The full-text reaction editor now opens expanded by default when authors switch into text mode, can compact back to the split layout, autocompletes top-level `A + B =` reaction lines, and falls through to standard script autocomplete on indented lines.
 - The full-text reaction editor supports grouped empty reaction headers such as `A+B=, C+D=` followed by one indented shared script body; the shorthand expands to separate normal reactions.
 - The full-text reaction editor now supports an optional top declaration block for `starters:`, `counters:`, and `nonconsumables:`. Those lines round-trip with the visual editor, may be followed immediately by reactions or by a blank line, must stay in one contiguous block at the top, and `counters:` supports optional `min=` / `max=` bounds while still requiring `initial=`.
-- The full-text reaction editor now supports top-level counter `event` blocks. Event autocomplete offers `event` first, then mode names after `event `, and condition helpers such as `count(...)` after the event colon. Event conditions are counter-only `count(...)` comparisons joined by `and`; event bodies reuse reaction script actions, can use event-only `stop-reaction`, and support `crossing` / `once` / `always` repeat modes. Events are saved with drafts/mods but have no visual editor authoring UI.
+- The full-text reaction editor now supports top-level counter `event` blocks. Event autocomplete offers `event` first, mode names after `event `, and counter-name expression suggestions after the event colon. Event conditions are counter-only numeric comparisons such as `Health <= 0` or `Health < MaxHealth`, joined by `and`; legacy `count(Health)` event conditions still parse for saved realms. Event bodies reuse reaction script actions, can use event-only `stop-reaction`, and support `crossing` / `once` / `always` repeat modes. Events are saved with drafts/mods but have no visual editor authoring UI.
+- The full-text reaction editor now supports top-level `function Name:` script blocks plus `call Name` actions. Functions are saved with drafts/mods, run inline from reaction or event scripts, contribute emitted elements to reachability, reject recursive call graphs, and are intended for reusable no-return script snippets.
+- Reaction script numeric expressions now support counter reads and random integers in addition to integer literals. `set Score += Money`, `set Luck += random(-5,5)`, and conditions such as `if (random(100) < 33) add Spark` are valid. Event headers use the same numeric comparison parser but must reference at least one counter and cannot use table/discovery predicates.
 - Reaction script and full reaction-text editors no longer auto-create elements while typing. Unknown names stay as validation issues until authors explicitly add them from inline/script validation, the main validation plank, or the post-paste `Add all` popup.
 - Element names reject reserved reaction/script syntax characters such as `+`, `,`, `=`, `:`, `(`, `)`, and `"` during authoring. New auto-created names are also normalized away from reserved scripting prefixes like `add` or `set`, and publish-time validation blocks any stale invalid names that slip in from older data.
 - Post-paste missing-element detection in both code editors parses complete `popup "..."`, `win "..."`, `lose "..."`, legacy popup-call syntax, and element-predicate calls safely, so closing syntax like `)` is not folded into suggested new element names.
@@ -111,18 +113,18 @@ Keep this file updated when architecture, major flows, or important project conv
 - The emoji picker follows `prefers-color-scheme` by default, so it renders in light or dark mode to match the rest of the app instead of forcing dark mode.
 
 ## TODO
+- game, bug: hit shows "element-1-2" instead of real element's name like Water
+-* editor: make the full-text script a source of truth
+- - Viking+Block=, Block+Eikthyr= converts to 2 separate reactions
 
 ## Future Plans
 
-- URGENT!!! Add a user-facing tutorial, including guidance for reaction scripts and other modding flows where needed.
-- starred mods - >90% upvotes
 - featured mods, section on the main page, choose 5 random featured every time
 - Advanced realm settings:
 - - inventory-style palette. Opened elements don't get there automatically, only by special script action. Same elememnts must stack there, i.e if stone was added twice, display as stone and (2) in the corner. Elements are not permamnet there, they being consumed when dragged out.
 - add user profiles
 - improved saves backward compatibility, do not wipe after every realm edit
 - plan: convert current hardcoded reactions set into the realm + replace all paths leading to old hardcoded game so the realm must open instead of hardcoded game. But that hardcoded realm must have no difference in expirience with the old one. It must also catch up saves from the hardcoded ga,e
-- allow several reactions with the same result, like A+B=,C+D= //results
 - game: multi-element reaction, by rect-select
 
 ## Commands

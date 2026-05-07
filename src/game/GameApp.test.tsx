@@ -12,11 +12,12 @@ import {
 import { BASE_RULESET } from '../modding/base-ruleset';
 import { buildRulesetFromDraft, getLocalStorageKeys } from '../modding/runtime';
 import type { ActiveRuleset } from '../modding/types';
+import { GameElementTile, GameRoot } from './GameApp';
 import {
   areBoardElementBoundsIntersecting,
-  GameElementTile,
-  GameRoot,
-} from './GameApp';
+  getBoundedBoardElementPosition,
+  getEdgeBouncedBoardElementPosition,
+} from './board-position';
 import { getReactionClusterPositions } from './reaction-cluster';
 
 const {
@@ -1055,7 +1056,10 @@ describe('GameRoot realm menu', () => {
     if (!(boardElementWrapper instanceof HTMLElement)) {
       throw new Error('Expected a compact board element to render.');
     }
-    const label = getRequiredElement(boardElementWrapper, '[data-element-label="true"]');
+    const label = getRequiredElement(
+      boardElementWrapper,
+      '[data-element-label="true"]'
+    );
 
     expect(boardElementWrapper.className).not.toContain('h-20');
     expect(boardElementWrapper.style.width).toBe('64px');
@@ -1140,5 +1144,45 @@ describe('areBoardElementBoundsIntersecting', () => {
         width: 80,
       })
     ).toBe(true);
+  });
+});
+
+describe('board element positioning', () => {
+  const footprint = {
+    height: 80,
+    width: 80,
+  };
+  const viewport = {
+    height: 300,
+    width: 400,
+  };
+
+  it('keeps element footprints inside the viewport', () => {
+    expect(
+      getBoundedBoardElementPosition({ x: -20, y: 360 }, footprint, viewport)
+    ).toEqual({
+      x: 40,
+      y: 260,
+    });
+  });
+
+  it('bounces overshoot back inward before clamping far overshoots', () => {
+    expect(
+      getEdgeBouncedBoardElementPosition({ x: 20, y: 280 }, footprint, viewport)
+    ).toEqual({
+      x: 60,
+      y: 240,
+    });
+
+    expect(
+      getEdgeBouncedBoardElementPosition(
+        { x: -999, y: 999 },
+        footprint,
+        viewport
+      )
+    ).toEqual({
+      x: 360,
+      y: 40,
+    });
   });
 });

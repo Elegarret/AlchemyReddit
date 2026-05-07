@@ -5,6 +5,7 @@ import {
   ensureElementInDraft,
   formatReactionText,
   normalizeReactionComments,
+  patchReactionTextForReactionChange,
   parseReactionTextToDraft,
   parseImportedDraftText,
   serializeDraftForExport,
@@ -215,7 +216,7 @@ describe('applyReactionTextToDraft', () => {
       createDraftWithElements('Health', 'Heat', 'Furnace', 'Catalyst', 'Steam'),
       [
         'starters: Air, Fire',
-        'counters: Health max=999 initial=25, Heat initial=0 min=-5',
+        'counters: Health max = 999 initial = 25, Heat initial = 0 min = -5',
         'nonconsumables: Furnace, Catalyst',
         '',
         'Air+Fire=Steam',
@@ -241,15 +242,15 @@ describe('applyReactionTextToDraft', () => {
 
   it('parses and formats full-text counter event blocks', () => {
     const result = parseReactionTextToDraft(
-      createDraftWithElements('Health', 'Bandage'),
+      createDraftWithElements('Health', 'MaxHealth', 'Bandage'),
       [
         'starters: Air, Fire',
-        'counters: Health min=0 max=10 initial=1',
+        'counters: Health min=0 max=10 initial=1, MaxHealth initial=10',
         '',
-        'event: count(Health)<=0',
+        'event: Health<=0',
         '    message "You died"',
         '    lose "You died."',
-        'event always: count(Health) <= 0',
+        'event always: Health < MaxHealth',
         '    add Bandage',
         'Air+Fire=Bandage',
       ].join('\n')
@@ -262,12 +263,12 @@ describe('applyReactionTextToDraft', () => {
 
     expect(result.draft.events).toEqual([
       {
-        condition: 'count(Health) <= 0',
+        condition: 'Health <= 0',
         mode: 'crossing',
         script: 'message "You died"\nlose "You died."',
       },
       {
-        condition: 'count(Health) <= 0',
+        condition: 'Health < MaxHealth',
         mode: 'always',
         script: 'add Bandage',
       },
@@ -275,14 +276,55 @@ describe('applyReactionTextToDraft', () => {
     expect(formatReactionText(result.draft)).toBe(
       [
         'starters: Air, Fire',
-        'counters: Health min=0 max=10 initial=1',
+        'counters: Health min=0 max=10 initial=1, MaxHealth initial=10',
         '',
-        'event: count(Health) <= 0',
+        'event: Health <= 0',
         '    message "You died"',
         '    lose "You died."',
-        'event always: count(Health) <= 0',
+        'event always: Health < MaxHealth',
         '    add Bandage',
         'Air+Fire=Bandage',
+        '',
+      ].join('\n')
+    );
+  });
+
+  it('parses and formats full-text function blocks', () => {
+    const result = parseReactionTextToDraft(
+      createDraftWithElements('Health', 'Spark'),
+      [
+        'starters: Air, Fire',
+        'counters: Health min=0 max=10 initial=1',
+        '',
+        'function Heal:',
+        '    set Health += 2',
+        '    add Spark',
+        'Air+Fire=',
+        '    call Heal',
+      ].join('\n')
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.draft.functions).toEqual([
+      {
+        name: 'Heal',
+        script: 'set Health += 2\nadd Spark',
+      },
+    ]);
+    expect(formatReactionText(result.draft)).toBe(
+      [
+        'starters: Air, Fire',
+        'counters: Health min=0 max=10 initial=1',
+        '',
+        'function Heal:',
+        '    set Health += 2',
+        '    add Spark',
+        'Air+Fire=',
+        '    call Heal',
         '',
       ].join('\n')
     );
@@ -305,7 +347,7 @@ describe('applyReactionTextToDraft', () => {
     expect(result.errors).toEqual([
       {
         line: 4,
-        message: 'Event conditions only support count(counter) comparisons.',
+        message: 'Event conditions only support counter comparisons.',
       },
     ]);
   });
@@ -492,6 +534,15 @@ describe('applyReactionTextToDraft', () => {
   });
 
   it('exports and re-imports the full draft payload including comments', () => {
+    const reactionText = [
+      'starters: Air, Fire, Earth, Water',
+      '',
+      '// before',
+      'Air+Fire= // header',
+      '    popup "Found a clue."',
+      '// after',
+      '',
+    ].join('\n');
     const draft = {
       ...createDraftWithElements('Steam'),
       id: 'mod-123',
@@ -499,6 +550,7 @@ describe('applyReactionTextToDraft', () => {
       summary: 'A custom realm.',
       coverImageUrl: 'https://i.redd.it/storm-cover.png',
       intro: 'Hello **realm**',
+      reactionText,
       reactions: [
         {
           leftId: 'air',
@@ -526,11 +578,28 @@ describe('applyReactionTextToDraft', () => {
       startingElementIds: ['air', 'fire', 'earth', 'water'],
       counters: [],
       events: [],
+      functions: [],
       showPalette: true,
       compactElements: false,
       elements: draft.elements,
-      reactions: draft.reactions,
-      reactionComments: draft.reactionComments,
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: [],
+          script: 'popup "Found a clue."',
+        },
+      ],
+      reactionComments: {
+        byReaction: [
+          {
+            headerComment: ' header',
+            leadingComments: [' before'],
+          },
+        ],
+        trailingComments: [' after'],
+      },
+      reactionText,
     });
   });
 
@@ -569,14 +638,74 @@ describe('applyReactionTextToDraft', () => {
       startingElementIds: ['air', 'fire'],
       counters: [],
       events: [],
+      functions: [],
       showPalette: true,
       compactElements: false,
       elements: createEmptyDraft().elements,
       reactions: [],
+      reactionText: 'starters: Air, Fire\n',
       reactionComments: {
         byReaction: [],
         trailingComments: [],
       },
     });
+  });
+
+  it('patches only the touched reaction text block for visual reaction edits', () => {
+    const reactionText = [
+      'starters: Air, Fire, Earth, Water',
+      '',
+      'function Heal:',
+      '    message "Recovered"',
+      '',
+      '// grouped',
+      'Air+Fire=, Water+Fire=',
+      '    call Heal',
+      '',
+      '// untouched',
+      'Earth+Water=Steam',
+      '',
+    ].join('\n');
+    const parsed = parseReactionTextToDraft(
+      createDraftWithElements('Steam'),
+      reactionText
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const nextDraft = {
+      ...parsed.draft,
+      reactions: parsed.draft.reactions.map((reaction, index) =>
+        index === 2
+          ? {
+              ...reaction,
+              outputIds: [],
+              script: 'add Steam',
+            }
+          : reaction
+      ),
+    };
+
+    expect(
+      patchReactionTextForReactionChange(reactionText, 2, nextDraft)
+    ).toBe(
+      [
+        'starters: Air, Fire, Earth, Water',
+        '',
+        'function Heal:',
+        '    message "Recovered"',
+        '',
+        '// grouped',
+        'Air+Fire=, Water+Fire=',
+        '    call Heal',
+        '',
+        '// untouched',
+        'Earth+Water=',
+        '    add Steam',
+        '',
+      ].join('\n')
+    );
   });
 });

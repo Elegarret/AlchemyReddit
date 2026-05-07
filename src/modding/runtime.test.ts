@@ -700,7 +700,7 @@ describe('validateModDraft', () => {
     });
 
     expect(result.scriptErrors).toContain(
-      'Event 1 condition: Event conditions only support count(counter) comparisons.'
+      'Event 1 condition: Event conditions only support counter comparisons.'
     );
     expect(result.isValid).toBe(false);
   });
@@ -773,6 +773,64 @@ describe('validateModDraft', () => {
       activeEventIds: [eventId],
       firedEventIds: [eventId],
     });
+  });
+
+  it('runs called functions through ruleset reactions and reachability', () => {
+    const draft = {
+      title: 'Function Realm',
+      summary: 'Functions should behave like inline scripts.',
+      intro: '',
+      startingElementIds: ['air', 'fire'],
+      counters: [],
+      functions: [
+        {
+          name: 'Reward',
+          script: 'add Spark',
+        },
+      ],
+      showPalette: true,
+      elements: [
+        makeElement('air', 'Air'),
+        makeElement('fire', 'Fire'),
+        makeElement('spark', 'Spark'),
+      ],
+      reactions: [
+        {
+          leftId: 'air',
+          rightId: 'fire',
+          outputIds: [],
+          script: 'call Reward',
+        },
+      ],
+    };
+    const validation = validateModDraft(draft);
+    expect(validation.scriptErrors).toEqual([]);
+    expect(validation.reachableElementIds).toContain('spark');
+
+    const ruleset = buildRulesetFromDraft(draft);
+    const resolved = resolveReactionForRuleset({
+      counterValues: {},
+      currentTableElements: [
+        { elementId: 'air', id: 'table-1' },
+        { elementId: 'fire', id: 'table-2' },
+      ],
+      discoveredElementIds: ['air', 'fire'],
+      eventState: {
+        activeEventIds: [],
+        firedEventIds: [],
+      },
+      leftId: 'air',
+      rightId: 'fire',
+      ruleset,
+    });
+
+    expect(resolved?.ok).toBe(true);
+    if (!resolved || !resolved.ok) {
+      return;
+    }
+
+    expect(ruleset.functions).toEqual(draft.functions);
+    expect(resolved.result.emittedElementIds).toEqual(['spark']);
   });
 
   it('surfaces event messages alongside normal scripted reaction messages', () => {

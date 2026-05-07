@@ -73,10 +73,11 @@ add Gold Coin, Old Map
 Smoke
 ```
 
-Remove one element from the table:
+Remove one or more elements from the table. Each listed name removes one copy:
 
 ```
 remove Key
+remove Key, Dust, Dust
 ```
 
 Remove all copies of one table element:
@@ -247,7 +248,12 @@ Change a counter:
 set Health -= 1
 set Heat += 5
 set Money = 0
+set Score += Money
+set Luck += random(-5,5)
 ```
+
+`random(100)` gives an integer from 0 through 99. `random(-5,5)` gives an
+integer from -5 through 5.
 
 Check a counter:
 
@@ -255,6 +261,7 @@ Check a counter:
 if (count(Health) <= 0) lose "You collapse.", Skull
 if (count(Heat) >= 10) add Steam
 if (count(Money) != 0) message "Your purse jingles."
+if (random(100) < 33) add Lucky Spark
 ```
 
 Counters can have authored `min` and `max` bounds. If a script tries to move past those bounds, the value clamps automatically.
@@ -299,7 +306,7 @@ run immediately after a `set Counter ...` line changes a referenced counter.
 ```
 counters: Health min=0 max=10 initial=10
 
-event: count(Health) <= 0
+event: Health <= 0
     message "You died"
     lose "You died."
 
@@ -314,7 +321,7 @@ continues by default unless the event ends the realm with `win` / `lose` or uses
 `stop-reaction`.
 
 ```
-event: count(Energy) <= 0
+event: Energy <= 0
     message "You are out of energy."
     stop-reaction
 ```
@@ -322,25 +329,46 @@ event: count(Energy) <= 0
 Event headers only support counter conditions:
 
 ```
-event: count(Health) <= 0
-event: count(Health) <= 0 and count(Poison) > 0
+event: Health <= 0
+event: Health <= 0 and Poison > 0
+event: Health < MaxHealth
 ```
 
 Events cannot use `on_table(...)`, `discovered(...)`, or other element
-conditions in the header.
+conditions in the header. Event headers must reference at least one counter, so
+`random(100) < 33` is not valid by itself.
 
 Repeat modes:
 
 ```
-event crossing: count(Health) <= 0
-event once: count(Alarm) >= 1
-event always: count(Heat) >= 10
+event crossing: Health <= 0
+event once: Alarm >= 1
+event always: Heat >= 10
 ```
 
 - `event:` is the same as `event crossing:`.
 - `crossing` runs when the condition changes from false to true.
 - `once` runs only once per saved playthrough.
 - `always` runs every time a referenced counter changes while the condition is true.
+
+### Full-Text Functions
+
+Use functions when several reactions or events need the same script lines.
+Functions are written in the full text editor and run only when called.
+
+```
+function Heal:
+    set Health += 2
+    message "Recovered."
+
+Bandage+Use:
+    call Heal
+    remove Bandage
+```
+
+Function names must start with a letter and may contain letters, numbers,
+underscores, or hyphens. Function actions behave as if they were written at the
+`call` line. Recursive function calls are invalid.
 
 ### Puzzle Example: A Three-Step Ritual
 
@@ -458,13 +486,16 @@ starters: Air, Fire, Earth, Water
 counters: Health min=0 max=10 initial=10, Ritual Progress initial=0
 nonconsumables: Furnace, Workbench
 
-event: count(Health) <= 0
+function HeatOre:
+    set Heat += 1
+    if (count(Heat) >= 3) add Ingot
+
+event: Health <= 0
     lose "You died."
 
 Air+Fire=Steam
 Furnace+Ore:
-    set Heat += 1
-    if (count(Heat) >= 3) add Ingot
+    call HeatOre
 ```
 
 Declaration lines are optional, but if you use them they must stay together at the top of the text. `counters:` entries require `initial=...`; `min=` and `max=` are optional.
@@ -496,7 +527,7 @@ If a line does not work, check these first:
 
 - Did you spell the element or counter exactly like it appears in the realm?
 - Is the name an element when the command expects an element, or a counter when the command expects a counter?
-- Did you use `count(Health) >= 3` instead of `Health >= 3`?
+- In event headers, does the condition reference a counter and avoid table/discovery checks?
 - Did you use `and` instead of `or`?
 - Did you remember that `if (...)` affects only the action on the same line?
 - Did you use `remove Health` instead of `remove_all Health` for counters?
@@ -523,6 +554,7 @@ Removes one copy of a table element. If the name is a counter, it hides that cou
 
 ```
 remove Element
+remove First Element, Second Element
 ```
 
 `remove_all`
@@ -540,8 +572,18 @@ Changes a counter value.
 
 ```
 set Counter += 1
+set Counter += OtherCounter
+set Counter += random(-5,5)
 set Counter -= 1
 set Counter = 10
+```
+
+`call`
+
+Runs a named full-text function.
+
+```
+call Heal
 ```
 
 `message`
@@ -651,6 +693,19 @@ count(Counter) == 3
 count(Counter) != 3
 ```
 
+In reaction scripts, `count(Element)` can also read how many copies of an element
+are on the table. Event headers prefer direct counter expressions such as
+`Health <= 0`; legacy `count(Health) <= 0` still parses for saved realms.
+
+`random(...)`
+
+Reads a random integer for conditions or counter changes.
+
+```
+random(100) < 33
+random(-5,5) >= 0
+```
+
 `and`
 
 Combines multiple conditions. All of them must be true.
@@ -659,12 +714,21 @@ Combines multiple conditions. All of them must be true.
 if (condition and condition) action
 ```
 
+`function`
+
+Full text editor only. Starts a reusable function block.
+
+```
+function Heal:
+    set Health += 2
+```
+
 `event`
 
 Full text editor only. Starts a counter event block.
 
 ```
-event: count(Health) <= 0
+event: Health <= 0
     lose "You died."
 ```
 
@@ -673,9 +737,9 @@ event: count(Health) <= 0
 Set how often an event can run.
 
 ```
-event crossing: count(Health) <= 0
-event once: count(Alarm) >= 1
-event always: count(Heat) >= 10
+event crossing: Health <= 0
+event once: Alarm >= 1
+event always: Heat >= 10
 ```
 
 ### Operators

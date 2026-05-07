@@ -7,6 +7,7 @@ export type ElementPanelView = 'extended' | 'compact';
 export type ReactionWidgetProps = {
   counterElementIds: string[];
   counterNames: string[];
+  functions: SaveDraftInput['functions'];
   index: number;
   reaction: SaveDraftInput['reactions'][number];
   elements: ModElement[];
@@ -59,6 +60,16 @@ export const ELEMENT_EFFECT_OPTIONS: Array<{
     value: 'light',
     label: 'Light',
     description: 'Applies the existing glow effect on the table.',
+  },
+  {
+    value: 'walking',
+    label: 'Walking',
+    description: 'Moves around the table inside the play area.',
+  },
+  {
+    value: 'glitters',
+    label: 'Glitters',
+    description: 'Emits bright sparkles around itself while on the table.',
   },
 ];
 

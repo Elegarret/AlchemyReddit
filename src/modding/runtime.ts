@@ -4,6 +4,7 @@ import {
 	parseReactionScriptConditionList,
 	hasReactionScript,
 	validateReactionScriptConditions,
+	validateReactionScriptFunctionDefinitions,
 	validateReactionScript,
 	type ReactionScriptPopupEvent,
 	type ReactionScriptEventState,
@@ -16,6 +17,7 @@ import type {
 	ModCounterDefinition,
 	ModElement,
 	ModEvent,
+	ModFunction,
 	ModReaction,
 	SaveDraftInput,
 	ValidationResult,
@@ -233,7 +235,8 @@ const getReactionEmittedOutputs = (
 	reaction: ModReaction,
 	elements: ModElement[],
 	counterNames: string[],
-	counterElementIds: string[] = []
+	counterElementIds: string[] = [],
+	functions: ModFunction[] = []
 ) => {
 	if (!hasReactionScript(reaction.script)) {
 		return reaction.outputIds;
@@ -245,6 +248,7 @@ const getReactionEmittedOutputs = (
 			id: element.id,
 			name: element.name,
 		})),
+		functions,
 		nonGameplayElementIds: counterElementIds,
 	});
 
@@ -261,6 +265,7 @@ export const getAllRecipeOutputs = (ruleset: ActiveRuleset) => {
 		const validation = validateReactionScript(script, {
 			counterNames: ruleset.counterNames,
 			elements: getRulesetScriptElements(ruleset),
+			functions: ruleset.functions ?? [],
 			nonGameplayElementIds: getRulesetCounterElementIds(ruleset),
 		});
 		if (!validation.ok) {
@@ -274,6 +279,7 @@ export const getAllRecipeOutputs = (ruleset: ActiveRuleset) => {
 		const validation = validateReactionScript(event.script, {
 			counterNames: ruleset.counterNames,
 			elements: getRulesetScriptElements(ruleset),
+			functions: ruleset.functions ?? [],
 			nonGameplayElementIds: getRulesetCounterElementIds(ruleset),
 			scriptKind: 'event',
 		});
@@ -402,6 +408,7 @@ export const resolveReactionForRuleset = (params: {
 			elements: getRulesetScriptElements(ruleset),
 			events: ruleset.events,
 			eventState,
+			functions: ruleset.functions ?? [],
 			nonGameplayElementIds: getRulesetCounterElementIds(ruleset),
 			nonConsumableElementIds: ruleset.nonConsumableElementIds,
 			script,
@@ -508,6 +515,7 @@ export const createModFingerprint = (
 		| 'elements'
 		| 'reactions'
 		| 'events'
+		| 'functions'
 	>
 ) => {
 	const source = JSON.stringify({
@@ -522,6 +530,7 @@ export const createModFingerprint = (
 		elements: mod.elements,
 		reactions: mod.reactions,
 		events: mod.events ?? [],
+		functions: mod.functions ?? [],
 	});
 
 	let hash = 2166136261;
@@ -539,7 +548,8 @@ export const getReachableElementIds = (
 	elements: ModElement[],
 	counterNames: string[] = [],
 	counterElementIds: string[] = [],
-	events: ModEvent[] = []
+	events: ModEvent[] = [],
+	functions: ModFunction[] = []
 ) => {
 	const reachable = new Set(startingElementIds);
 	let changed = true;
@@ -554,7 +564,8 @@ export const getReachableElementIds = (
 				reaction,
 				elements,
 				counterNames,
-				counterElementIds
+				counterElementIds,
+				functions
 			)) {
 				if (reachable.has(outputId)) {
 					continue;
@@ -568,6 +579,7 @@ export const getReachableElementIds = (
 			const validation = validateReactionScript(event.script, {
 				counterNames,
 				elements,
+				functions,
 				nonGameplayElementIds: counterElementIds,
 				scriptKind: 'event',
 			});
@@ -603,6 +615,7 @@ export const validateModDraft = (draft: {
 	startingElementIds: string[];
 	counters: ModCounterDefinition[];
 	events?: ModEvent[];
+	functions?: ModFunction[];
 	showPalette: boolean;
 	elements: ModElement[];
 	reactions: ModReaction[];
@@ -746,6 +759,7 @@ export const validateModDraft = (draft: {
 					id: element.id,
 					name: element.name,
 				})),
+				functions: draft.functions ?? [],
 				nonGameplayElementIds: Array.from(counterIds),
 			});
 			scriptValidation.errors.forEach((error) => {
@@ -784,6 +798,7 @@ export const validateModDraft = (draft: {
 						id: element.id,
 						name: element.name,
 					})),
+					functions: draft.functions ?? [],
 					nonGameplayElementIds: Array.from(counterIds),
 					scriptKind: 'event',
 				},
@@ -804,12 +819,39 @@ export const validateModDraft = (draft: {
 				id: element.id,
 				name: element.name,
 			})),
+			functions: draft.functions ?? [],
 			nonGameplayElementIds: Array.from(counterIds),
 			scriptKind: 'event',
 		});
 		eventValidation.errors.forEach((error) => {
 			scriptErrors.push(
 				`Event ${eventIndex + 1} script line ${error.line}: ${formatReactionScriptValidationMessage(error.message)}`
+			);
+		});
+	});
+
+	const functionDefinitionValidation = validateReactionScriptFunctionDefinitions(
+		draft.functions ?? []
+	);
+	functionDefinitionValidation.errors.forEach((error) => {
+		scriptErrors.push(
+			`Function ${error.line}: ${formatReactionScriptValidationMessage(error.message)}`
+		);
+	});
+
+	(draft.functions ?? []).forEach((scriptFunction, functionIndex) => {
+		const functionValidation = validateReactionScript(scriptFunction.script, {
+			counterNames,
+			elements: draft.elements.map((element) => ({
+				id: element.id,
+				name: element.name,
+			})),
+			functions: draft.functions ?? [],
+			nonGameplayElementIds: Array.from(counterIds),
+		});
+		functionValidation.errors.forEach((error) => {
+			scriptErrors.push(
+				`Function ${functionIndex + 1} "${scriptFunction.name}" script line ${error.line}: ${formatReactionScriptValidationMessage(error.message)}`
 			);
 		});
 	});
@@ -822,7 +864,8 @@ export const validateModDraft = (draft: {
 					draft.elements,
 					counterNames,
 					Array.from(counterIds),
-					draft.events ?? []
+					draft.events ?? [],
+					draft.functions ?? []
 				)
 			: gameplayStartingElementIds.filter(
 					(elementId) => elementIds.has(elementId) && !counterIds.has(elementId)
@@ -931,6 +974,7 @@ export const buildRulesetFromMod = (mod: ModDoc): ActiveRuleset => {
 		recipes,
 		reactionScripts,
 		events: mod.events ?? [],
+		functions: mod.functions ?? [],
 		elementNames,
 		elementStyles,
 		elementIcons,
@@ -966,6 +1010,7 @@ export const buildRulesetFromDraft = (draft: SaveDraftInput): ActiveRuleset =>
 		elements: draft.elements,
 		reactions: draft.reactions,
 		events: draft.events ?? [],
+		functions: draft.functions ?? [],
 		status: 'draft',
 		updatedAt: new Date().toISOString(),
 		publishedHash: createModFingerprint({
@@ -980,5 +1025,6 @@ export const buildRulesetFromDraft = (draft: SaveDraftInput): ActiveRuleset =>
 			elements: draft.elements,
 			reactions: draft.reactions,
 			events: draft.events ?? [],
+			functions: draft.functions ?? [],
 		}),
 	});

@@ -94,6 +94,7 @@ describe('Catalog', () => {
       ownerUsername: 'author',
       completionCount: 2,
       playerCount: 12,
+      bestScore: 62.3,
       publishedAt: '2026-03-01T00:00:00.000Z',
       publishedHash: 'hash-1',
       reactionCount: 4,
@@ -132,9 +133,14 @@ describe('Catalog', () => {
     );
     expect(
       document.querySelector(
-        `[title="Mod's rating based on upvotes, downvotes and player's count"]`
+        `[title="Mod's rating based on Reddit net score and player's count"]`
       )
     ).toBeTruthy();
+    expect(
+      document.querySelector(
+        `[title="Mod's rating based on Reddit net score and player's count"]`
+      )?.textContent
+    ).toBe('62');
     expect(document.querySelector('[title="Users played: 12"]')).toBeTruthy();
     expect(document.querySelector('[title="Users completed: 2"]')).toBeTruthy();
   });
