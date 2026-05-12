@@ -160,6 +160,7 @@ export const getLocalStorageKeys = (ruleset: ActiveRuleset) => {
 			elements: 'alchemy-table-elements',
 			events: 'alchemy-events',
 			page: 'alchemy-current-page',
+			progressMeta: 'alchemy-progress-meta',
 		};
 	}
 
@@ -171,6 +172,7 @@ export const getLocalStorageKeys = (ruleset: ActiveRuleset) => {
 		elements: `${prefix}-table-elements`,
 		events: `${prefix}-events`,
 		page: `${prefix}-current-page`,
+		progressMeta: `${prefix}-progress-meta`,
 	};
 };
 

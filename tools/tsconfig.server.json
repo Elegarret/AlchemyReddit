@@ -12,6 +12,7 @@
     "../src/modding/**/*",
     "../src/mod-editor/draft.ts",
     "../src/mod-editor/constants.ts",
+    "../src/game-progress.ts",
     "../src/data/**/*",
     "../src/transformer.ts",
     "../src/global.d.ts",

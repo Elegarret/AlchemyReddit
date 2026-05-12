@@ -5,12 +5,13 @@ import { context, media, reddit, settings } from '@devvit/web/server';
 import { countDecrement, countGet, countIncrement } from './core/count';
 import { z } from 'zod';
 import { saveDraftInputSchema } from '../modding/types';
+import { createEmptyPlayerProgress } from '../game-progress';
 
 /**
  * Initialization of tRPC backend
  * Should be done only once per backend!
  */
-import { getDiscoveredElements, saveDiscoveredElements } from './core/progress';
+import { getPlayerProgress, savePlayerProgress } from './core/progress';
 import {
   createSharePostForMod,
   getEditableModForUser,
@@ -62,6 +63,29 @@ const normalizedPngDataUrlSchema = z
   );
 
 const reviewTextSchema = z.string().trim().min(1).max(5_000);
+
+const progressEventStateSchema = z.object({
+  activeEventIds: z.array(z.string().min(1).max(128)).max(256),
+  firedEventIds: z.array(z.string().min(1).max(128)).max(256),
+});
+
+const savedTableElementSchema = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1).max(128),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  icon: z.string().max(4096).optional(),
+  hint: z.string().max(256).optional(),
+});
+
+const playerProgressSaveSchema = z.object({
+  counterValues: z.record(z.string().min(1).max(128), z.number().finite()),
+  discovered: z.array(z.string().min(1).max(128)).max(2048),
+  eventState: progressEventStateSchema,
+  progressScope: z.string().min(1).max(128),
+  tableElements: z.array(savedTableElementSchema).max(512),
+  visibleCounterNames: z.array(z.string().min(1).max(128)).max(256),
+});
 
 const normalizeRedditPostThingId = (postId: string): `t3_${string}` => {
   const barePostId = postId.startsWith('t3_') ? postId.slice(3) : postId;
@@ -123,10 +147,10 @@ export const appRouter = t.router({
           await recordUniqueModPlayer(resolvedRuleset.modId, userId);
         }
 
-        const [redditDiscovered, isModerator] = await Promise.all([
+        const [redditProgress, isModerator] = await Promise.all([
           userId
-            ? getDiscoveredElements(userId, resolvedRuleset.progressScope)
-            : Promise.resolve([]),
+            ? getPlayerProgress(userId, resolvedRuleset.progressScope)
+            : Promise.resolve(createEmptyPlayerProgress()),
           isCurrentUserModerator(username),
         ]);
         const includeCompletionCount =
@@ -142,7 +166,8 @@ export const appRouter = t.router({
           isModerator,
           postId: context.postId,
           username,
-          redditDiscovered,
+          redditDiscovered: redditProgress.discovered,
+          redditProgress,
           activeRuleset: resolvedRuleset.ruleset,
           activeModListing,
           progressScope: resolvedRuleset.progressScope,
@@ -152,20 +177,17 @@ export const appRouter = t.router({
   }),
   progress: t.router({
     save: publicProcedure
-      .input(
-        z.object({
-          discovered: z.array(z.string()),
-          progressScope: z.string().min(1).max(128),
-        })
-      )
+      .input(playerProgressSaveSchema)
       .mutation(async ({ input }) => {
         const userId = context.userId;
         if (userId) {
-          await saveDiscoveredElements(
-            userId,
-            input.progressScope,
-            input.discovered
-          );
+          await savePlayerProgress(userId, input.progressScope, {
+            counterValues: input.counterValues,
+            discovered: input.discovered,
+            eventState: input.eventState,
+            tableElements: input.tableElements,
+            visibleCounterNames: input.visibleCounterNames,
+          });
         }
         return { success: true };
       }),
@@ -231,18 +253,18 @@ export const appRouter = t.router({
     listAllAdmin: publicProcedure
       .input(paginatedCatalogInputSchema)
       .query(async ({ input }) => {
-      const username = await getCurrentUsernameIfLoggedIn();
+        const username = await getCurrentUsernameIfLoggedIn();
 
-      if (!(await isCurrentUserModerator(username))) {
-        throw new Error('You are not allowed to view all realms.');
-      }
+        if (!(await isCurrentUserModerator(username))) {
+          throw new Error('You are not allowed to view all realms.');
+        }
 
-      return await listAllAdminModsPage({
-        page: input?.page ?? 0,
-        pageSize: input?.pageSize ?? 15,
-        ...(input?.query ? { query: input.query } : {}),
-      });
-    }),
+        return await listAllAdminModsPage({
+          page: input?.page ?? 0,
+          pageSize: input?.pageSize ?? 15,
+          ...(input?.query ? { query: input.query } : {}),
+        });
+      }),
     listMine: publicProcedure.query(async () => {
       if (!context.userId) {
         return [];

@@ -5,6 +5,7 @@ import {
   showToast,
 } from '@devvit/web/client';
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -55,6 +56,12 @@ import {
 import { trpc } from '../trpc';
 import { openEntry, setEditorTargetModId } from '../webview-navigation';
 import {
+  createEmptyPlayerProgress,
+  type PlayerProgress,
+  type PlayerProgressInput,
+  type SavedTableElement,
+} from '../game-progress';
+import {
   areBoardElementBoundsIntersecting,
   getBoundedBoardElementPosition,
   getEdgeBouncedBoardElementPosition,
@@ -76,7 +83,7 @@ type GameSessionProps = {
   ruleset: ActiveRuleset;
   initialUsername: string | null;
   isModerator: boolean;
-  initialDiscovered: string[];
+  initialProgress: PlayerProgress;
   progressScope: string;
   isPlaytest: boolean;
   currentPostId: string | null;
@@ -124,6 +131,7 @@ const STARTER_EDGE_MARGIN = 56;
 const FAIRY_ELEMENT_ID = 'fairy';
 const FAIRY_FLIGHT_INTERVAL_MS = 260;
 const FAIRY_GLITTER_LIFETIME_MS = 2400;
+const REMOTE_PROGRESS_SAVE_INTERVAL_MS = 15000;
 const HIDDEN_PLAYTEST_COUNTER_HINT =
   'This counter is hidden, you can see it only in the playtest mode';
 
@@ -583,105 +591,250 @@ const createStarterTableElements = (ruleset: ActiveRuleset): Element[] => {
   });
 };
 
+const readStorageJson = (key: string): unknown | null => {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+};
+
+const getPersistedStringArray = (value: unknown): string[] | null =>
+  Array.isArray(value)
+    ? value.filter((entry) => typeof entry === 'string')
+    : null;
+
+const getPersistedNumberRecord = (value: unknown): Record<string, number> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, entry]) =>
+      typeof entry === 'number' ? [[key, entry]] : []
+    )
+  );
+};
+
+const getDefaultTableElements = (ruleset: ActiveRuleset) =>
+  ruleset.showPalette ? [] : createStarterTableElements(ruleset);
+
+const getPersistedTableElements = (
+  ruleset: ActiveRuleset,
+  value: unknown
+): Element[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const validNames = new Set(Object.keys(ruleset.elementStyles));
+  const parsed = value.flatMap((entry) => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    if (
+      typeof entry.id !== 'string' ||
+      typeof entry.name !== 'string' ||
+      typeof entry.x !== 'number' ||
+      typeof entry.y !== 'number' ||
+      !Number.isFinite(entry.x) ||
+      !Number.isFinite(entry.y) ||
+      !validNames.has(entry.name)
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        id: entry.id,
+        name: entry.name,
+        x: entry.x,
+        y: entry.y,
+        ...(typeof entry.icon === 'string' ? { icon: entry.icon } : {}),
+        ...(typeof entry.hint === 'string' ? { hint: entry.hint } : {}),
+      },
+    ];
+  });
+
+  const maxId = parsed.reduce((max, element) => {
+    const idNum = parseInt(element.id.replace('el-', ''), 10);
+    return Number.isNaN(idNum) ? max : Math.max(max, idNum);
+  }, 0);
+  elementIdCounter = Math.max(elementIdCounter, maxId);
+  return parsed;
+};
+
+const serializeTableElements = (
+  tableElements: Element[]
+): SavedTableElement[] =>
+  tableElements.map((element) => ({
+    id: element.id,
+    name: element.name,
+    x: element.x,
+    y: element.y,
+    ...(typeof element.icon === 'string' ? { icon: element.icon } : {}),
+    ...(element.hint ? { hint: element.hint } : {}),
+  }));
+
+const createDefaultSessionProgress = (
+  ruleset: ActiveRuleset
+): PlayerProgressInput => ({
+  counterValues: getRulesetCounterValues(ruleset),
+  discovered: getValidDiscoveredItems(ruleset, ruleset.startingElements),
+  eventState: createEmptyReactionScriptEventState(),
+  tableElements: serializeTableElements(getDefaultTableElements(ruleset)),
+  visibleCounterNames: getDefaultVisibleCounterNames(ruleset),
+});
+
+type LocalSessionProgress = PlayerProgressInput & {
+  updatedAt: string;
+};
+
+const getProgressMetaUpdatedAt = (value: unknown) =>
+  isRecord(value) && typeof value.updatedAt === 'string' ? value.updatedAt : '';
+
+const readLocalSessionProgress = (
+  ruleset: ActiveRuleset
+): LocalSessionProgress | null => {
+  const storageKeys = getLocalStorageKeys(ruleset);
+  const storedDiscovered = readStorageJson(storageKeys.discovered);
+  const storedTableElements = readStorageJson(storageKeys.elements);
+  const storedCounters = readStorageJson(storageKeys.counters);
+  const storedCounterVisibility = readStorageJson(
+    storageKeys.counterVisibility
+  );
+  const storedEvents = readStorageJson(storageKeys.events);
+  const discoveredItems = getPersistedStringArray(storedDiscovered);
+  if (
+    !discoveredItems &&
+    storedTableElements === null &&
+    storedCounters === null &&
+    storedCounterVisibility === null &&
+    storedEvents === null
+  ) {
+    return null;
+  }
+
+  const tableElements =
+    storedTableElements === null
+      ? getDefaultTableElements(ruleset)
+      : getPersistedTableElements(ruleset, storedTableElements);
+
+  return {
+    counterValues: getRulesetCounterValues(
+      ruleset,
+      getPersistedNumberRecord(storedCounters)
+    ),
+    discovered: getValidDiscoveredItems(
+      ruleset,
+      discoveredItems ?? ruleset.startingElements
+    ),
+    eventState: getPersistedEventState(ruleset, storedEvents),
+    tableElements: serializeTableElements(tableElements),
+    updatedAt: getProgressMetaUpdatedAt(
+      readStorageJson(storageKeys.progressMeta)
+    ),
+    visibleCounterNames: getPersistedVisibleCounterNames(
+      ruleset,
+      storedCounterVisibility
+    ),
+  };
+};
+
+const normalizeRemoteSessionProgress = (
+  ruleset: ActiveRuleset,
+  progress: PlayerProgress
+): PlayerProgressInput => {
+  const tableElements = getPersistedTableElements(
+    ruleset,
+    progress.tableElements
+  );
+
+  return {
+    counterValues: getRulesetCounterValues(ruleset, progress.counterValues),
+    discovered: getValidDiscoveredItems(ruleset, progress.discovered),
+    eventState: getPersistedEventState(ruleset, progress.eventState),
+    tableElements: serializeTableElements(
+      tableElements.length > 0 || progress.updatedAt
+        ? tableElements
+        : getDefaultTableElements(ruleset)
+    ),
+    visibleCounterNames: getPersistedVisibleCounterNames(
+      ruleset,
+      progress.visibleCounterNames
+    ),
+  };
+};
+
+const hasRemoteSessionProgress = (progress: PlayerProgress) =>
+  progress.updatedAt.length > 0 ||
+  progress.discovered.length > 0 ||
+  progress.tableElements.length > 0 ||
+  Object.keys(progress.counterValues).length > 0 ||
+  progress.visibleCounterNames.length > 0 ||
+  progress.eventState.activeEventIds.length > 0 ||
+  progress.eventState.firedEventIds.length > 0;
+
+const resolveInitialSessionProgress = (
+  ruleset: ActiveRuleset,
+  remoteProgress: PlayerProgress
+): PlayerProgressInput => {
+  const localProgress = readLocalSessionProgress(ruleset);
+  const normalizedRemoteProgress = normalizeRemoteSessionProgress(
+    ruleset,
+    remoteProgress
+  );
+
+  if (
+    hasRemoteSessionProgress(remoteProgress) &&
+    (!localProgress || remoteProgress.updatedAt > localProgress.updatedAt)
+  ) {
+    return normalizedRemoteProgress;
+  }
+
+  return localProgress ?? createDefaultSessionProgress(ruleset);
+};
+
 const GameSession = ({
   ruleset,
   initialUsername,
   isModerator,
-  initialDiscovered,
+  initialProgress,
   progressScope,
   isPlaytest,
   currentPostId,
   currentSharePostId,
 }: GameSessionProps) => {
   const storageKeys = getLocalStorageKeys(ruleset);
+  const initialSessionProgressRef = useRef<PlayerProgressInput | null>(null);
+  if (initialSessionProgressRef.current === null) {
+    initialSessionProgressRef.current = resolveInitialSessionProgress(
+      ruleset,
+      initialProgress
+    );
+  }
+  const initialSessionProgress = initialSessionProgressRef.current;
   const introStorageKey = `${storageKeys.discovered}-intro-dismissed`;
   const completionStorageKey = `${storageKeys.discovered}-completion-dismissed`;
   const realmMenuAnchorRef = useRef<HTMLDivElement>(null);
   const realmMenuPanelRef = useRef<HTMLDivElement>(null);
-  const [discovered, setDiscovered] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(storageKeys.discovered);
-      const items = saved ? JSON.parse(saved) : ruleset.startingElements;
-      return getValidDiscoveredItems(ruleset, [...items, ...initialDiscovered]);
-    } catch {
-      return getValidDiscoveredItems(ruleset, initialDiscovered);
-    }
-  });
+  const [discovered, setDiscovered] = useState<string[]>(
+    () => initialSessionProgress.discovered
+  );
 
-  const [elements, setElements] = useState<Element[]>(() => {
-    const validNames = new Set(Object.keys(ruleset.elementStyles));
-
-    try {
-      const saved = localStorage.getItem(storageKeys.elements);
-      if (saved) {
-        const parsed = (JSON.parse(saved) as Element[]).filter((el) =>
-          validNames.has(el.name)
-        );
-        const maxId = parsed.reduce((max, el) => {
-          const idNum = parseInt(el.id.replace('el-', ''));
-          return isNaN(idNum) ? max : Math.max(max, idNum);
-        }, 0);
-        elementIdCounter = Math.max(elementIdCounter, maxId);
-        return parsed;
-      }
-    } catch (e) {
-      console.error('Failed to load elements', e);
-    }
-    return ruleset.showPalette ? [] : createStarterTableElements(ruleset);
-  });
+  const [elements, setElements] = useState<Element[]>(() =>
+    initialSessionProgress.tableElements.map((element) => ({ ...element }))
+  );
   const [counterValues, setCounterValues] = useState<Record<string, number>>(
-    () => {
-      try {
-        const saved = localStorage.getItem(storageKeys.counters);
-        if (!saved) {
-          return getRulesetCounterValues(ruleset);
-        }
-
-        const parsed = JSON.parse(saved);
-        if (!isRecord(parsed)) {
-          return getRulesetCounterValues(ruleset);
-        }
-
-        const persistedCounters: Record<string, number> = {};
-        Object.entries(parsed).forEach(([key, value]) => {
-          if (typeof value === 'number') {
-            persistedCounters[key] = value;
-          }
-        });
-        return getRulesetCounterValues(ruleset, persistedCounters);
-      } catch (error) {
-        console.error('Failed to load counters', error);
-        return getRulesetCounterValues(ruleset);
-      }
-    }
+    () => initialSessionProgress.counterValues
   );
   const [visibleCounterNames, setVisibleCounterNames] = useState<string[]>(
-    () => {
-      try {
-        const saved = localStorage.getItem(storageKeys.counterVisibility);
-        if (!saved) {
-          return getDefaultVisibleCounterNames(ruleset);
-        }
-
-        return getPersistedVisibleCounterNames(ruleset, JSON.parse(saved));
-      } catch (error) {
-        console.error('Failed to load counter visibility', error);
-        return getDefaultVisibleCounterNames(ruleset);
-      }
-    }
+    () => initialSessionProgress.visibleCounterNames
   );
   const [eventState, setEventState] = useState<ReactionScriptEventState>(() => {
-    try {
-      const saved = localStorage.getItem(storageKeys.events);
-      if (!saved) {
-        return createEmptyReactionScriptEventState();
-      }
-
-      return getPersistedEventState(ruleset, JSON.parse(saved));
-    } catch (error) {
-      console.error('Failed to load event state', error);
-      return createEmptyReactionScriptEventState();
-    }
+    return initialSessionProgress.eventState;
   });
   const [pulsingCounterTokens, setPulsingCounterTokens] = useState<
     Record<string, number>
@@ -1297,21 +1450,90 @@ const GameSession = ({
   // Persistence Effects
   useEffect(() => {
     localStorage.setItem(storageKeys.discovered, JSON.stringify(discovered));
-  }, [discovered]);
+  }, [discovered, storageKeys.discovered]);
 
-  // Reddit Progress Save (Discovery only)
-  const prevDiscoveredCount = useRef(discovered.length);
+  const createCurrentProgressInput = useCallback(
+    (overrides: Partial<PlayerProgressInput> = {}): PlayerProgressInput => ({
+      counterValues,
+      discovered,
+      eventState,
+      tableElements: serializeTableElements(elements),
+      visibleCounterNames,
+      ...overrides,
+    }),
+    [counterValues, discovered, elements, eventState, visibleCounterNames]
+  );
+
+  const saveProgressToReddit = useCallback(
+    (progress: PlayerProgressInput) => {
+      if (isPlaytest) {
+        return;
+      }
+
+      trpc.progress.save
+        .mutate({
+          ...progress,
+          progressScope,
+        })
+        .catch((err) => {
+          console.error('[Sync] Save failed:', err);
+        });
+    },
+    [isPlaytest, progressScope]
+  );
+
+  const lastRemoteProgressSaveAtRef = useRef(0);
+  const pendingRemoteProgressSaveRef = useRef<PlayerProgressInput | null>(null);
+  const remoteProgressSaveTimeoutRef = useRef<number | null>(null);
+  const flushProgressToReddit = useCallback(
+    (progress: PlayerProgressInput) => {
+      lastRemoteProgressSaveAtRef.current = Date.now();
+      pendingRemoteProgressSaveRef.current = null;
+      saveProgressToReddit(progress);
+    },
+    [saveProgressToReddit]
+  );
+  const requestReactionProgressSave = useCallback(
+    (progress: PlayerProgressInput) => {
+      if (isPlaytest) {
+        return;
+      }
+
+      const now = Date.now();
+      const elapsed = now - lastRemoteProgressSaveAtRef.current;
+      if (
+        elapsed >= REMOTE_PROGRESS_SAVE_INTERVAL_MS &&
+        remoteProgressSaveTimeoutRef.current === null
+      ) {
+        flushProgressToReddit(progress);
+        return;
+      }
+
+      pendingRemoteProgressSaveRef.current = progress;
+      if (remoteProgressSaveTimeoutRef.current !== null) {
+        return;
+      }
+
+      const delay = Math.max(REMOTE_PROGRESS_SAVE_INTERVAL_MS - elapsed, 0);
+      remoteProgressSaveTimeoutRef.current = window.setTimeout(() => {
+        remoteProgressSaveTimeoutRef.current = null;
+        const pendingProgress = pendingRemoteProgressSaveRef.current;
+        if (pendingProgress) {
+          flushProgressToReddit(pendingProgress);
+        }
+      }, delay);
+    },
+    [flushProgressToReddit, isPlaytest]
+  );
+
   useEffect(() => {
-    if (isPlaytest) return;
-
-    if (discovered.length > prevDiscoveredCount.current) {
-      console.log('[Sync] New discovery, saving to Reddit...');
-      trpc.progress.save.mutate({ discovered, progressScope }).catch((err) => {
-        console.error('[Sync] Save failed:', err);
-      });
-      prevDiscoveredCount.current = discovered.length;
-    }
-  }, [discovered, isPlaytest, progressScope]);
+    return () => {
+      if (remoteProgressSaveTimeoutRef.current !== null) {
+        window.clearTimeout(remoteProgressSaveTimeoutRef.current);
+        remoteProgressSaveTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (allGameplayElementIds.length === 0) {
@@ -1363,6 +1585,20 @@ const GameSession = ({
   useEffect(() => {
     localStorage.setItem(storageKeys.events, JSON.stringify(eventState));
   }, [eventState, storageKeys.events]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      storageKeys.progressMeta,
+      JSON.stringify({ updatedAt: new Date().toISOString() })
+    );
+  }, [
+    counterValues,
+    discovered,
+    elements,
+    eventState,
+    storageKeys.progressMeta,
+    visibleCounterNames,
+  ]);
 
   useEffect(() => {
     const currentCounterValues = Object.fromEntries(
@@ -1857,7 +2093,6 @@ const GameSession = ({
     setRealmReviewError(null);
     setShowReviewThanksPopup(false);
     setShowReviewActionsPopup(false);
-    prevDiscoveredCount.current = basic.length;
 
     localStorage.setItem(storageKeys.discovered, JSON.stringify(basic));
     localStorage.setItem(storageKeys.elements, JSON.stringify(resetElements));
@@ -1868,16 +2103,22 @@ const GameSession = ({
     );
     localStorage.setItem(storageKeys.events, JSON.stringify(resetEventState));
     localStorage.setItem(storageKeys.page, '0');
+    localStorage.setItem(
+      storageKeys.progressMeta,
+      JSON.stringify({ updatedAt: new Date().toISOString() })
+    );
     localStorage.removeItem(introStorageKey);
     localStorage.removeItem(completionStorageKey);
     setShowRealmIntro(Boolean(ruleset.intro.trim()));
     setShowCompletionPopup(false);
 
-    if (!isPlaytest) {
-      trpc.progress.save
-        .mutate({ discovered: basic, progressScope })
-        .catch(console.error);
-    }
+    saveProgressToReddit({
+      counterValues: resetCounters,
+      discovered: basic,
+      eventState: resetEventState,
+      tableElements: serializeTableElements(resetElements),
+      visibleCounterNames: resetVisibleCounterNames,
+    });
   };
 
   const closeActiveScriptedPopup = () => {
@@ -2323,19 +2564,19 @@ const GameSession = ({
             reactionClusterPositions[index] ?? { x: midX, y: midY },
           ])
         );
+        const nextEventState = result.eventState ?? latestEventStateRef.current;
+        const nextVisibleCounterNames = applyCounterVisibilityChanges({
+          currentVisibleCounterNames: visibleCounterNames,
+          hiddenCounterNames: result.hiddenCounterNames,
+          shownCounterNames: result.shownCounterNames,
+        });
         latestCounterValuesRef.current = result.counterValues;
         setCounterValues(result.counterValues);
         if (result.eventState) {
           latestEventStateRef.current = result.eventState;
           setEventState(result.eventState);
         }
-        setVisibleCounterNames((current) =>
-          applyCounterVisibilityChanges({
-            currentVisibleCounterNames: current,
-            hiddenCounterNames: result.hiddenCounterNames,
-            shownCounterNames: result.shownCounterNames,
-          })
-        );
+        setVisibleCounterNames(nextVisibleCounterNames);
         setReactionMessages(nextReactionMessages);
         if (result.popupEvents.length > 0) {
           setScriptedPopupQueue((current) => [
@@ -2364,33 +2605,50 @@ const GameSession = ({
         }
 
         // Step 1: Place at center
-        setElements(
-          [...updatedFilteredElements, ...newResultElements].map((element) =>
-            placeElementWithinViewport(element)
-          )
-        );
+        const nextCenteredElements = [
+          ...updatedFilteredElements,
+          ...newResultElements,
+        ].map((element) => placeElementWithinViewport(element));
+        const nextClusteredElements =
+          reactionClusterPositionByElementId.size > 0
+            ? nextCenteredElements.map((element) => {
+                const targetPosition = reactionClusterPositionByElementId.get(
+                  element.id
+                );
+                if (!targetPosition) {
+                  return element;
+                }
+
+                const boundedPosition = getBoundedPositionForElement(
+                  element,
+                  targetPosition
+                );
+                return {
+                  ...element,
+                  x: boundedPosition.x,
+                  y: boundedPosition.y,
+                };
+              })
+            : nextCenteredElements;
+        setElements(nextCenteredElements);
+        requestReactionProgressSave({
+          counterValues: result.counterValues,
+          discovered: nextDiscovered,
+          eventState: nextEventState,
+          tableElements: serializeTableElements(nextClusteredElements),
+          visibleCounterNames: nextVisibleCounterNames,
+        });
 
         // Step 2: Move surviving non-consumable inputs and outputs into the reaction cluster
         if (reactionClusterPositionByElementId.size > 0) {
           setTimeout(() => {
             setElements((prev) =>
-              prev.map((el) => {
-                const targetPosition = reactionClusterPositionByElementId.get(
-                  el.id
-                );
-                if (targetPosition) {
-                  const boundedPosition = getBoundedPositionForElement(
-                    el,
-                    targetPosition
-                  );
-                  return {
-                    ...el,
-                    x: boundedPosition.x,
-                    y: boundedPosition.y,
-                  };
-                }
-                return el;
-              })
+              prev.map(
+                (el) =>
+                  nextClusteredElements.find(
+                    (clusteredElement) => clusteredElement.id === el.id
+                  ) ?? el
+              )
             );
           }, 50);
         }
@@ -2467,12 +2725,15 @@ const GameSession = ({
               return el;
             })
           );
-        }, 50);
+        }, 100);
       }
-    }
 
-    setDragging(null);
-    setReactiveIDs([]);
+      setDragging(null);
+      setReactiveIDs([]);
+    } else {
+      setDragging(null);
+      setReactiveIDs([]);
+    }
   };
 
   // Palette Gesture Handlers
@@ -3391,11 +3652,9 @@ const GameSession = ({
                     onClick={() => {
                       const allElements = Object.keys(ruleset.elementStyles);
                       setDiscovered(allElements);
-                      if (!isPlaytest) {
-                        trpc.progress.save
-                          .mutate({ discovered: allElements, progressScope })
-                          .catch(console.error);
-                      }
+                      saveProgressToReddit(
+                        createCurrentProgressInput({ discovered: allElements })
+                      );
                       setShowOptions(false);
                     }}
                     className="w-full cursor-pointer rounded-xl bg-[var(--button-primary)] py-3 font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-[var(--button-primary-hover)] active:scale-95"
@@ -3901,7 +4160,7 @@ export const GameRoot = () => {
         isModerator: boolean;
         ruleset: ActiveRuleset;
         username: string | null;
-        redditDiscovered: string[];
+        redditProgress: PlayerProgress;
         progressScope: string;
         isPlaytest: boolean;
         currentPostId: string | null;
@@ -3917,7 +4176,7 @@ export const GameRoot = () => {
         isModerator: false,
         ruleset: playtestRuleset,
         username: context.username ?? null,
-        redditDiscovered: [],
+        redditProgress: createEmptyPlayerProgress(),
         progressScope: getProgressScope(playtestRuleset),
         isPlaytest: true,
         currentPostId: context.postId ?? null,
@@ -3952,7 +4211,10 @@ export const GameRoot = () => {
           isModerator: response.isModerator ?? false,
           ruleset: response.activeRuleset ?? BASE_RULESET,
           username: response.username ?? null,
-          redditDiscovered: response.redditDiscovered ?? [],
+          redditProgress: response.redditProgress ?? {
+            ...createEmptyPlayerProgress(),
+            discovered: response.redditDiscovered ?? [],
+          },
           progressScope: response.progressScope,
           isPlaytest: false,
           currentPostId: response.postId ?? context.postId ?? null,
@@ -3966,7 +4228,7 @@ export const GameRoot = () => {
           isModerator: false,
           ruleset: BASE_RULESET,
           username: context.username ?? null,
-          redditDiscovered: [],
+          redditProgress: createEmptyPlayerProgress(),
           progressScope: 'base',
           isPlaytest: false,
           currentPostId: context.postId ?? null,
@@ -4012,7 +4274,7 @@ export const GameRoot = () => {
       ruleset={state.ruleset}
       initialUsername={state.username}
       isModerator={state.isModerator}
-      initialDiscovered={state.redditDiscovered}
+      initialProgress={state.redditProgress}
       progressScope={state.progressScope}
       isPlaytest={state.isPlaytest}
       currentPostId={state.currentPostId}

@@ -10,7 +10,9 @@ import {
   vi,
 } from 'vitest';
 import { BASE_RULESET } from '../modding/base-ruleset';
+import { createEmptyPlayerProgress } from '../game-progress';
 import { buildRulesetFromDraft, getLocalStorageKeys } from '../modding/runtime';
+import { getReactionScriptEventId } from '../modding/reaction-script';
 import type { ActiveRuleset } from '../modding/types';
 import { GameElementTile, GameRoot } from './GameApp';
 import {
@@ -139,17 +141,27 @@ const createModRuleset = (): ActiveRuleset => ({
   publishedAt: '2026-03-01T00:00:00.000Z',
 });
 
-const createInitResponse = (overrides?: Record<string, unknown>) => ({
-  activeModListing: null,
-  activeRuleset: BASE_RULESET,
-  isModerator: false,
-  postId: clientContextMock.postId,
-  progressScope: BASE_RULESET.storageScope,
-  redditDiscovered: [],
-  rulesetUnavailableReason: null,
-  username: null,
-  ...overrides,
-});
+const createInitResponse = (overrides?: Record<string, unknown>) => {
+  const redditDiscovered = Array.isArray(overrides?.redditDiscovered)
+    ? overrides.redditDiscovered.filter((entry) => typeof entry === 'string')
+    : [];
+
+  return {
+    activeModListing: null,
+    activeRuleset: BASE_RULESET,
+    isModerator: false,
+    postId: clientContextMock.postId,
+    progressScope: BASE_RULESET.storageScope,
+    redditDiscovered,
+    redditProgress: {
+      ...createEmptyPlayerProgress(),
+      discovered: redditDiscovered,
+    },
+    rulesetUnavailableReason: null,
+    username: null,
+    ...overrides,
+  };
+};
 
 getPublishedQueryMock.mockResolvedValue(null);
 initGetQueryMock.mockResolvedValue(createInitResponse());
@@ -752,6 +764,270 @@ describe('GameRoot realm menu', () => {
     await game.unmount();
   });
 
+  it('hydrates remote full session progress when local progress is missing', async () => {
+    const progressRuleset: ActiveRuleset = {
+      ...createModRuleset(),
+      counterDefinitions: [
+        {
+          elementId: 'health',
+          initial: 10,
+          name: 'Health',
+        },
+      ],
+      counterNames: ['Health'],
+      elementEffects: {},
+      elementIcons: {
+        air: 'A',
+        fire: 'F',
+        health: 'H',
+        steam: 'S',
+      },
+      elementNames: {
+        air: 'Air',
+        fire: 'Fire',
+        health: 'Health',
+        steam: 'Steam',
+      },
+      elementStyles: {
+        air: 'bg-blue-400 border-blue-600',
+        fire: 'bg-orange-300 border-orange-500',
+        health: 'bg-red-400 border-red-600',
+        steam: 'bg-gray-200 border-gray-400',
+      },
+      events: [
+        {
+          condition: 'Health <= 0',
+          mode: 'once',
+          script: 'message "Low health."',
+        },
+      ],
+      keyItemData: {},
+      keyItems: [],
+      recipes: {
+        'air+fire': ['steam'],
+      },
+      startingElements: ['air', 'fire'],
+    };
+    const progressEvent = progressRuleset.events[0];
+    if (!progressEvent) {
+      throw new Error('Expected progress event.');
+    }
+    const eventId = getReactionScriptEventId(progressEvent);
+    initGetQueryMock.mockResolvedValue(
+      createInitResponse({
+        activeRuleset: progressRuleset,
+        progressScope: progressRuleset.storageScope,
+        redditDiscovered: ['air', 'fire', 'steam'],
+        redditProgress: {
+          ...createEmptyPlayerProgress(),
+          counterValues: { Health: 4 },
+          discovered: ['air', 'fire', 'steam'],
+          eventState: {
+            activeEventIds: [eventId],
+            firedEventIds: [eventId],
+          },
+          tableElements: [
+            {
+              id: 'remote-steam',
+              name: 'steam',
+              x: 180,
+              y: 210,
+            },
+          ],
+          updatedAt: '2026-05-07T10:00:00.000Z',
+          visibleCounterNames: ['Health'],
+        },
+      })
+    );
+
+    const game = await renderGameRoot();
+    const storageKeys = getLocalStorageKeys(progressRuleset);
+
+    expect(game.container.textContent).toContain('Steam');
+    expect(
+      JSON.parse(localStorage.getItem(storageKeys.elements) ?? '[]')
+    ).toEqual([
+      {
+        id: 'remote-steam',
+        name: 'steam',
+        x: 180,
+        y: 210,
+      },
+    ]);
+    expect(
+      JSON.parse(localStorage.getItem(storageKeys.counters) ?? '{}')
+    ).toEqual({
+      Health: 4,
+    });
+    expect(
+      JSON.parse(localStorage.getItem(storageKeys.counterVisibility) ?? '[]')
+    ).toEqual(['Health']);
+    expect(
+      JSON.parse(localStorage.getItem(storageKeys.events) ?? '{}')
+    ).toEqual({
+      activeEventIds: [eventId],
+      firedEventIds: [eventId],
+    });
+
+    await game.unmount();
+  });
+
+  it('hydrates newer remote session progress when local discoveries are not behind', async () => {
+    const progressRuleset: ActiveRuleset = {
+      ...createModRuleset(),
+      elementEffects: {},
+      elementIcons: {
+        air: 'A',
+        fire: 'F',
+        steam: 'S',
+      },
+      elementNames: {
+        air: 'Air',
+        fire: 'Fire',
+        steam: 'Steam',
+      },
+      elementStyles: {
+        air: 'bg-blue-400 border-blue-600',
+        fire: 'bg-orange-300 border-orange-500',
+        steam: 'bg-gray-200 border-gray-400',
+      },
+      keyItemData: {},
+      keyItems: [],
+      recipes: {
+        'air+fire': ['steam'],
+      },
+      startingElements: ['air', 'fire'],
+    };
+    const storageKeys = getLocalStorageKeys(progressRuleset);
+    localStorage.setItem(
+      storageKeys.discovered,
+      JSON.stringify(['air', 'fire', 'steam'])
+    );
+    localStorage.setItem(
+      storageKeys.elements,
+      JSON.stringify([{ id: 'local-steam', name: 'steam', x: 90, y: 120 }])
+    );
+    localStorage.setItem(storageKeys.counters, JSON.stringify({}));
+    localStorage.setItem(
+      storageKeys.progressMeta,
+      JSON.stringify({ updatedAt: '2026-05-07T09:00:00.000Z' })
+    );
+
+    initGetQueryMock.mockResolvedValue(
+      createInitResponse({
+        activeRuleset: progressRuleset,
+        progressScope: progressRuleset.storageScope,
+        redditDiscovered: ['air', 'fire', 'steam'],
+        redditProgress: {
+          ...createEmptyPlayerProgress(),
+          discovered: ['air', 'fire', 'steam'],
+          tableElements: [
+            {
+              id: 'remote-fire',
+              name: 'fire',
+              x: 300,
+              y: 320,
+            },
+          ],
+          updatedAt: '2026-05-07T10:00:00.000Z',
+        },
+      })
+    );
+
+    const game = await renderGameRoot();
+
+    expect(
+      JSON.parse(localStorage.getItem(storageKeys.elements) ?? '[]')
+    ).toEqual([
+      {
+        id: 'remote-fire',
+        name: 'fire',
+        x: 300,
+        y: 320,
+      },
+    ]);
+
+    await game.unmount();
+  });
+
+  it('keeps newer local session progress over older remote progress', async () => {
+    const progressRuleset: ActiveRuleset = {
+      ...createModRuleset(),
+      elementEffects: {},
+      elementIcons: {
+        air: 'A',
+        fire: 'F',
+        steam: 'S',
+      },
+      elementNames: {
+        air: 'Air',
+        fire: 'Fire',
+        steam: 'Steam',
+      },
+      elementStyles: {
+        air: 'bg-blue-400 border-blue-600',
+        fire: 'bg-orange-300 border-orange-500',
+        steam: 'bg-gray-200 border-gray-400',
+      },
+      keyItemData: {},
+      keyItems: [],
+      recipes: {
+        'air+fire': ['steam'],
+      },
+      startingElements: ['air', 'fire'],
+    };
+    const storageKeys = getLocalStorageKeys(progressRuleset);
+    localStorage.setItem(
+      storageKeys.discovered,
+      JSON.stringify(['air', 'fire', 'steam'])
+    );
+    localStorage.setItem(
+      storageKeys.elements,
+      JSON.stringify([{ id: 'local-steam', name: 'steam', x: 90, y: 120 }])
+    );
+    localStorage.setItem(
+      storageKeys.progressMeta,
+      JSON.stringify({ updatedAt: '2026-05-07T11:00:00.000Z' })
+    );
+
+    initGetQueryMock.mockResolvedValue(
+      createInitResponse({
+        activeRuleset: progressRuleset,
+        progressScope: progressRuleset.storageScope,
+        redditDiscovered: ['air', 'fire', 'steam'],
+        redditProgress: {
+          ...createEmptyPlayerProgress(),
+          discovered: ['air', 'fire', 'steam'],
+          tableElements: [
+            {
+              id: 'remote-fire',
+              name: 'fire',
+              x: 300,
+              y: 320,
+            },
+          ],
+          updatedAt: '2026-05-07T10:00:00.000Z',
+        },
+      })
+    );
+
+    const game = await renderGameRoot();
+
+    expect(game.container.textContent).toContain('Steam');
+    expect(
+      JSON.parse(localStorage.getItem(storageKeys.elements) ?? '[]')
+    ).toEqual([
+      {
+        id: 'local-steam',
+        name: 'steam',
+        x: 90,
+        y: 120,
+      },
+    ]);
+
+    await game.unmount();
+  });
+
   it('records a published realm completion when every gameplay element is discovered', async () => {
     const completeRuleset: ActiveRuleset = {
       ...createModRuleset(),
@@ -871,6 +1147,20 @@ describe('GameRoot realm menu', () => {
     expect(getButtonByText('Create My Realm')).toBeTruthy();
     expect(game.container.querySelector('textarea')).toBeNull();
 
+    await clickElement(getButtonByText('Reset progress and start over')!);
+
+    expect(progressSaveMutateMock).toHaveBeenCalledWith({
+      counterValues: {},
+      discovered: ['air', 'water'],
+      eventState: {
+        activeEventIds: [],
+        firedEventIds: [],
+      },
+      progressScope: completeRuleset.storageScope,
+      tableElements: [],
+      visibleCounterNames: [],
+    });
+
     await game.unmount();
   });
 
@@ -987,6 +1277,23 @@ describe('GameRoot realm menu', () => {
     await runReaction();
 
     expect(game.container.textContent).toContain('Noise is loud.');
+
+    const saveCalls = progressSaveMutateMock.mock.calls;
+    expect(saveCalls).toHaveLength(1);
+    const firstSaveCall = saveCalls[0];
+    expect(firstSaveCall?.[0]).toMatchObject({
+      counterValues: { Noise: 1 },
+      discovered: ['air', 'fire'],
+      progressScope: noiseRuleset.storageScope,
+      tableElements: expect.arrayContaining([
+        expect.objectContaining({ id: 'table-air', name: 'air' }),
+        expect.objectContaining({ id: 'table-fire', name: 'fire' }),
+      ]),
+      visibleCounterNames: [],
+    });
+    expect(firstSaveCall?.[0].eventState.firedEventIds.length).toBeGreaterThan(
+      0
+    );
 
     await game.unmount();
   });

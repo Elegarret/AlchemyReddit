@@ -48,7 +48,7 @@ Keep this file updated when architecture, major flows, or important project conv
 
 ## Key Flows
 
-- Game progress is stored locally per ruleset and synced to Reddit progress for non-playtest sessions.
+- Game progress is stored locally per ruleset and synced to Reddit progress for non-playtest sessions. Reddit progress uses a versioned full-session payload with discoveries, table elements, counters, visible counters, and reaction event state while still reading legacy discovery-only saves. Remote sync is reaction-driven and throttled, while load chooses the newest remote/local progress timestamp.
 - Programmatic post creation is Devvit Web-only: new `reddit.submitCustomPost()` flows must target named `devvit.json` entrypoints (`default`, `game`, `mod-catalog`, `mod-splash`, etc.) and must not reintroduce Blocks-era APIs, config, or splash fields.
 - Moderator subreddit menu actions can now create the full `mod-catalog` post, the default compact `mod-catalog-compact` post, or a featured-tab compact post via `mod-catalog-compact-featured`, so catalog UX variants stay separate.
 - Mod realms now expose authored counters with min/max/initial values in both the editor and the game. Counter values persist locally per ruleset, reset to authored initial values, clamp during scripted updates, and now persist a separate shown/hidden panel state per ruleset.
@@ -113,9 +113,7 @@ Keep this file updated when architecture, major flows, or important project conv
 - The emoji picker follows `prefers-color-scheme` by default, so it renders in light or dark mode to match the rest of the app instead of forcing dark mode.
 
 ## TODO
-- game, bug: hit shows "element-1-2" instead of real element's name like Water
--* editor: make the full-text script a source of truth
-- - Viking+Block=, Block+Eikthyr= converts to 2 separate reactions
+
 
 ## Future Plans
 
